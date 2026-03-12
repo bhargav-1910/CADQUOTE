@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, CheckCircle, AlertCircle, Loader2, ArrowRight, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Upload, CheckCircle, AlertCircle, Loader2, ArrowRight, X, FileText } from 'lucide-react';
 import type { CADFile, GeometryAnalysis } from '@/types';
 import { uploadCADFile, getCADFile, getGeometryAnalysis } from '@/services/api';
 
@@ -18,6 +19,7 @@ interface FileUploadProps {
 }
 
 const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<FileEntry[]>([]);
 
   const setEntryState = (id: string, patch: Partial<FileEntry>) => {
@@ -87,6 +89,19 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const doneEntries = entries.filter(
+    (e) => e.status === 'done' && e.cadFile && e.geometry
+  );
+
+  const handleQuoteAll = () => {
+    if (doneEntries.length < 1) return;
+    const files = doneEntries.map((e) => ({
+      cadFile: e.cadFile!,
+      geometry: e.geometry!,
+    }));
+    navigate('/quote', { state: { multiFiles: files } });
   };
 
   return (
@@ -179,6 +194,27 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
               </div>
             </div>
           ))}
+
+          {/* Quote all button — shown when 2+ files are ready */}
+          {doneEntries.length >= 2 && (
+            <div className="mt-3 p-4 bg-primary-50 border border-primary-200 rounded-xl flex items-center justify-between gap-4">
+              <div>
+                <p className="font-semibold text-primary-900">
+                  {doneEntries.length} files ready
+                </p>
+                <p className="text-sm text-primary-700 mt-0.5">
+                  Configure once and generate a combined quote for all files.
+                </p>
+              </div>
+              <button
+                onClick={handleQuoteAll}
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors whitespace-nowrap"
+              >
+                <FileText className="w-4 h-4" />
+                Quote All {doneEntries.length} Files
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -141,6 +141,24 @@ export interface QuoteCreateRequest {
   notes?: string;
 }
 
+export interface BatchQuoteCreateRequest {
+  cad_file_ids: string[];
+  material_id: string;
+  surface_finish_id: string;
+  inspection_level_id: string;
+  quantity: number;
+  customer_name?: string;
+  customer_email?: string;
+  customer_company?: string;
+  notes?: string;
+}
+
+export interface BatchQuoteResponse {
+  quotes: Quote[];
+  total_price: number;
+  quote_count: number;
+}
+
 export interface Quote {
   id: string;
   quote_number: string;

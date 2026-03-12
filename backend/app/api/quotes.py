@@ -15,7 +15,8 @@ from app.models.models import (
 )
 from app.schemas.schemas import (
     PricingRequest, PricingResponse, PriceBreakdown, BoundingBox,
-    QuoteCreateRequest, QuoteResponse, QuoteListResponse,
+    QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse,
+    QuoteResponse, QuoteListResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
@@ -112,6 +113,39 @@ async def get_instant_pricing(
         pricing_explanation=pricing_result.details,
     )
 
+@router.post("/quotes/batch", response_model=BatchQuoteResponse, status_code=201)
+async def create_batch_quotation(
+    request: BatchQuoteCreateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create multiple quotes at once with shared configuration.
+
+    All files use the same material, finish, inspection and quantity settings.
+    """
+    from decimal import Decimal as D
+    created = []
+    for cad_file_id in request.cad_file_ids:
+        try:
+            quote = await create_quote(
+                db=db,
+                cad_file_id=cad_file_id,
+                material_id=request.material_id,
+                surface_finish_id=request.surface_finish_id,
+                inspection_level_id=request.inspection_level_id,
+                quantity=request.quantity,
+                customer_name=request.customer_name,
+                customer_email=request.customer_email,
+                customer_company=request.customer_company,
+                notes=request.notes,
+            )
+            quote = await get_quote(db, quote.id)
+            created.append(_quote_to_response(quote))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    total = sum(D(str(q.total_price)) for q in created)
+    return BatchQuoteResponse(quotes=created, total_price=total, quote_count=len(created))
 
 @router.post("/quotes", response_model=QuoteResponse, status_code=201)
 async def create_quotation(

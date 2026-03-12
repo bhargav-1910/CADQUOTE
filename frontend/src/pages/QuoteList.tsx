@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { FileText, Plus, Clock, Loader2, AlertCircle } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { FileText, Plus, Clock, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
 
@@ -8,6 +8,9 @@ const QuoteList = () => {
   const [quotes, setQuotes] = useState<QuoteListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const location = useLocation();
+  const batchResult = location.state as { batchIds?: string[]; batchTotal?: number } | null;
 
   useEffect(() => {
     const fetchQuotes = async () => {
@@ -67,6 +70,23 @@ const QuoteList = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
+      {/* Batch success banner */}
+      {batchResult?.batchIds && batchResult.batchIds.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+          <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-green-900">
+              {batchResult.batchIds.length} quotes created successfully!
+            </p>
+            {batchResult.batchTotal !== undefined && (
+              <p className="text-sm text-green-700">
+                Combined total: {formatCurrency(Number(batchResult.batchTotal))}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Quotes</h1>

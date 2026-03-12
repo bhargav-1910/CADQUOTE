@@ -12,6 +12,8 @@ import type {
   PricingRequest,
   PricingResponse,
   QuoteCreateRequest,
+  BatchQuoteCreateRequest,
+  BatchQuoteResponse,
   Quote,
   QuoteListItem,
 } from '@/types';
@@ -151,6 +153,15 @@ export const getInstantPricing = async (request: PricingRequest): Promise<Pricin
 export const createQuote = async (request: QuoteCreateRequest): Promise<Quote> => {
   try {
     const response = await api.post<Quote>('/quotes', request);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const createBatchQuote = async (request: BatchQuoteCreateRequest): Promise<BatchQuoteResponse> => {
+  try {
+    const response = await api.post<BatchQuoteResponse>('/quotes/batch', request);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

@@ -297,6 +297,20 @@ class QuoteCreateRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class BatchQuoteCreateRequest(BaseModel):
+    """Request to create multiple quotes at once with shared configuration."""
+    cad_file_ids: List[UUID] = Field(..., min_length=1)
+    material_id: UUID
+    surface_finish_id: UUID
+    inspection_level_id: UUID
+    quantity: int = Field(default=1, ge=1, le=10000)
+
+    customer_name: Optional[str] = Field(None, max_length=200)
+    customer_email: Optional[str] = Field(None, max_length=200)
+    customer_company: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = None
+
+
 class QuoteResponse(BaseSchema):
     """Quote response schema."""
     id: UUID
@@ -347,6 +361,13 @@ class QuoteListResponse(BaseSchema):
     status: str
     valid_until: datetime
     created_at: datetime
+
+
+class BatchQuoteResponse(BaseModel):
+    """Response for batch quote creation."""
+    quotes: List[QuoteResponse]
+    total_price: Decimal
+    quote_count: int
 
 
 # ============================================================================
