@@ -1,0 +1,293 @@
+"""Database models for CNC Quote Platform."""
+import uuid
+from datetime import datetime
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import (
+    Column, String, Float, Integer, Boolean, DateTime, 
+    ForeignKey, Text, Numeric, Enum as SQLEnum, JSON, TypeDecorator, CHAR
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import relationship
+import enum
+
+from app.core.database import Base
+
+
+# Cross-database UUID type
+class UUID(TypeDecorator):
+    """Platform-independent UUID type - uses CHAR(32) for SQLite, native UUID for PostgreSQL."""
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(CHAR(32))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return value
+        else:
+            if isinstance(value, uuid.UUID):
+                return value.hex
+            return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return value
+        else:
+            if not isinstance(value, uuid.UUID):
+                return uuid.UUID(value)
+            return value
+
+
+class ProcessingStatus(str, enum.Enum):
+    """Status of geometry processing."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class QuoteStatus(str, enum.Enum):
+    """Status of a quote."""
+    DRAFT = "draft"
+    GENERATED = "generated"
+    SENT = "sent"
+    EXPIRED = "expired"
+
+
+# ============================================================================
+# Configuration Models (Data-Driven)
+# ============================================================================
+
+class Material(Base):
+    """Raw material configuration."""
+    __tablename__ = "materials"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=False)  # e.g., "aluminum", "steel", "plastic"
+    
+    # Physical properties
+    density = Column(Float, nullable=False)  # g/cm³
+    
+    # Cost factors
+    cost_per_kg = Column(Numeric(10, 2), nullable=False)  # USD per kg
+    machining_difficulty_factor = Column(Float, nullable=False, default=1.0)
+    
+    # Availability
+    availability_factor = Column(Float, default=1.0)  # Affects lead time
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    quotes = relationship("Quote", back_populates="material")
+
+
+class SurfaceFinish(Base):
+    """Surface finish configuration."""
+    __tablename__ = "surface_finishes"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    
+    # Cost factors
+    cost_multiplier = Column(Float, nullable=False, default=1.0)  # Multiplies machining cost
+    fixed_cost = Column(Numeric(10, 2), default=0)  # Additional fixed cost
+    
+    # Lead time impact
+    lead_time_addition_days = Column(Float, default=0)
+    
+    # Compatibility
+    compatible_materials = Column(JSON, nullable=True)  # List of material categories
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    quotes = relationship("Quote", back_populates="surface_finish")
+
+
+class InspectionLevel(Base):
+    """Inspection level configuration."""
+    __tablename__ = "inspection_levels"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    
+    # Cost factors
+    fixed_cost = Column(Numeric(10, 2), default=0)  # Fixed additional cost
+    percentage_cost = Column(Float, default=0)  # Percentage of total cost
+    
+    # Lead time impact
+    lead_time_addition_days = Column(Float, default=0)
+    
+    # Include documentation
+    includes_certificate = Column(Boolean, default=False)
+    includes_cmm_report = Column(Boolean, default=False)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    quotes = relationship("Quote", back_populates="inspection_level")
+
+
+class MachineRate(Base):
+    """Machine rate configuration for pricing."""
+    __tablename__ = "machine_rates"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    
+    hourly_rate = Column(Numeric(10, 2), nullable=False)  # USD per hour
+    efficiency_rate = Column(Float, default=0.75)  # Machine efficiency
+    setup_time_hours = Column(Float, default=0.5)  # Setup time per job
+    
+    is_default = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================================================
+# CAD File Model
+# ============================================================================
+
+class CADFile(Base):
+    """Uploaded CAD file."""
+    __tablename__ = "cad_files"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    original_filename = Column(String(255), nullable=False)
+    stored_filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_hash = Column(String(64), nullable=False, index=True)  # SHA-256
+    file_size = Column(Integer, nullable=False)  # bytes
+    file_format = Column(String(10), nullable=False)  # step, stp, stl
+    
+    # Processing status
+    processing_status = Column(
+        SQLEnum(ProcessingStatus), 
+        default=ProcessingStatus.PENDING
+    )
+    processing_error = Column(Text, nullable=True)
+    processed_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    geometry = relationship("GeometryAnalysis", back_populates="cad_file", uselist=False)
+    quotes = relationship("Quote", back_populates="cad_file")
+
+
+class GeometryAnalysis(Base):
+    """Geometry analysis results for a CAD file."""
+    __tablename__ = "geometry_analyses"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    cad_file_id = Column(UUID(), ForeignKey("cad_files.id"), nullable=False, unique=True)
+    
+    # Core metrics
+    volume = Column(Float, nullable=False)  # cm³
+    surface_area = Column(Float, nullable=False)  # cm²
+    
+    # Bounding box (cm)
+    bbox_x = Column(Float, nullable=False)
+    bbox_y = Column(Float, nullable=False)
+    bbox_z = Column(Float, nullable=False)
+    bounding_box_volume = Column(Float, nullable=False)  # cm³
+    
+    # Advanced metrics
+    min_wall_thickness = Column(Float, nullable=True)  # mm
+    hole_count = Column(Integer, default=0)
+    
+    # Computed scores
+    complexity_score = Column(Float, nullable=False)  # surface_area / volume
+    removal_ratio = Column(Float, nullable=False)  # volume / bounding_box_volume
+    
+    # Mesh info (for STL)
+    triangle_count = Column(Integer, nullable=True)
+    vertex_count = Column(Integer, nullable=True)
+    
+    # Processing info
+    analysis_time_seconds = Column(Float, nullable=True)
+    analysis_library = Column(String(50), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    cad_file = relationship("CADFile", back_populates="geometry")
+
+
+# ============================================================================
+# Quote Model
+# ============================================================================
+
+class Quote(Base):
+    """Generated quotation."""
+    __tablename__ = "quotes"
+    
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    quote_number = Column(String(20), unique=True, nullable=False, index=True)
+    
+    # Customer info
+    customer_name = Column(String(200), nullable=True)
+    customer_email = Column(String(200), nullable=True)
+    customer_company = Column(String(200), nullable=True)
+    
+    # References
+    cad_file_id = Column(UUID(), ForeignKey("cad_files.id"), nullable=False)
+    material_id = Column(UUID(), ForeignKey("materials.id"), nullable=False)
+    surface_finish_id = Column(UUID(), ForeignKey("surface_finishes.id"), nullable=False)
+    inspection_level_id = Column(UUID(), ForeignKey("inspection_levels.id"), nullable=False)
+    
+    # Quantity
+    quantity = Column(Integer, default=1)
+    
+    # Price breakdown (stored for historical accuracy)
+    material_cost = Column(Numeric(10, 2), nullable=False)
+    machining_cost = Column(Numeric(10, 2), nullable=False)
+    finish_cost = Column(Numeric(10, 2), nullable=False)
+    inspection_cost = Column(Numeric(10, 2), nullable=False)
+    subtotal = Column(Numeric(10, 2), nullable=False)
+    margin_factor = Column(Float, nullable=False)
+    total_price = Column(Numeric(10, 2), nullable=False)
+    unit_price = Column(Numeric(10, 2), nullable=False)
+    
+    # Lead time (days)
+    estimated_lead_time_days = Column(Float, nullable=False)
+    
+    # Status and validity
+    status = Column(SQLEnum(QuoteStatus), default=QuoteStatus.DRAFT)
+    valid_until = Column(DateTime, nullable=False)
+    
+    # Document
+    pdf_path = Column(String(500), nullable=True)
+    
+    # Metadata
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    cad_file = relationship("CADFile", back_populates="quotes")
+    material = relationship("Material", back_populates="quotes")
+    surface_finish = relationship("SurfaceFinish", back_populates="quotes")
+    inspection_level = relationship("InspectionLevel", back_populates="quotes")
