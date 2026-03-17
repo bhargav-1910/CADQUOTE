@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
-  ArrowLeft, Download, FileText, Mail, Loader2, 
+  ChevronRight, Download, FileText, Mail, Loader2, Home,
   AlertCircle, CheckCircle, Package, Clock, User 
 } from 'lucide-react';
 import type { Quote } from '@/types';
@@ -83,10 +83,10 @@ const QuoteDetail = () => {
             <p className="text-red-600 mt-1">{error || 'Quote not found'}</p>
             <Link
               to="/quotes"
-              className="inline-flex items-center gap-2 mt-4 text-red-700 hover:text-red-800"
+              className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 hover:text-red-800"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Quotes
+              <ChevronRight className="w-4 h-4 rotate-180" />
+              Back to My Quotes
             </Link>
           </div>
         </div>
@@ -98,39 +98,49 @@ const QuoteDetail = () => {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
+        <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+          <Home className="w-3.5 h-3.5" />
+          Home
+        </Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <Link to="/quotes" className="hover:text-gray-900 transition-colors">My Quotes</Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <span className="text-gray-900 font-medium">{quote.quote_number}</span>
+      </nav>
+
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link
-            to="/quotes"
-            className="w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">{quote.quote_number}</h1>
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${
-                  quote.status === 'generated'
-                    ? 'bg-green-100 text-green-700'
-                    : quote.status === 'sent'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                {quote.status}
-              </span>
-            </div>
-            <p className="text-gray-600">Created {formatDate(quote.created_at)}</p>
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-900">{quote.quote_number}</h1>
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${
+                quote.status === 'generated'
+                  ? 'bg-green-100 text-green-700'
+                  : quote.status === 'sent'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {quote.status}
+            </span>
           </div>
+          <p className="text-gray-500 text-sm mt-0.5">Created {formatDate(quote.created_at)}</p>
         </div>
         
         <div className="flex gap-3">
+          <Link
+            to="/quotes"
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm"
+          >
+            All Quotes
+          </Link>
           <button
             onClick={handleDownloadPDF}
             disabled={generating}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 text-sm"
           >
             {generating ? (
               <Loader2 className="w-4 h-4 animate-spin" />

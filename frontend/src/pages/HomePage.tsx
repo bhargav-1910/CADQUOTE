@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Upload, Calculator, FileText, CheckCircle, Zap, Shield } from 'lucide-react';
+import { Upload, Calculator, FileText, CheckCircle, Zap, Shield, List } from 'lucide-react';
 
 const HomePage = () => {
   const features = [
@@ -49,13 +49,22 @@ const HomePage = () => {
           Upload your CAD file, configure your requirements, and get a transparent,
           engineering-based price estimate in seconds.
         </p>
-        <Link
-          to="/quote"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          <Upload className="w-5 h-5" />
-          Start New Quote
-        </Link>
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <Link
+            to="/quote"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <Upload className="w-5 h-5" />
+            Start New Quote
+          </Link>
+          <Link
+            to="/quotes"
+            className="inline-flex items-center gap-2 px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <List className="w-5 h-5" />
+            View Quotes
+          </Link>
+        </div>
       </section>
 
       {/* How It Works */}

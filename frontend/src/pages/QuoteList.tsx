@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { FileText, Plus, Clock, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { FileText, Plus, Clock, Loader2, AlertCircle, CheckCircle, ChevronRight, Home } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
 
@@ -10,6 +10,7 @@ const QuoteList = () => {
   const [error, setError] = useState<string | null>(null);
 
   const location = useLocation();
+  const navigate = useNavigate();
   const batchResult = location.state as { batchIds?: string[]; batchTotal?: number } | null;
 
   useEffect(() => {
@@ -69,7 +70,16 @@ const QuoteList = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
+        <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+          <Home className="w-3.5 h-3.5" />
+          Home
+        </Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <span className="text-gray-900 font-medium">My Quotes</span>
+      </nav>
+
       {/* Batch success banner */}
       {batchResult?.batchIds && batchResult.batchIds.length > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
@@ -158,7 +168,7 @@ const QuoteList = () => {
                 <tr
                   key={quote.id}
                   className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => window.location.href = `/quotes/${quote.id}`}
+                  onClick={() => navigate(`/quotes/${quote.id}`)}
                 >
                   <td className="px-6 py-4">
                     <Link

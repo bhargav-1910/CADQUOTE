@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, FileText, Loader2, CheckCircle, Package } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
@@ -232,20 +232,35 @@ const QuoteBuilder = () => {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
+        <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+          <Home className="w-3.5 h-3.5" />
+          Home
+        </Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <Link to="/quotes" className="hover:text-gray-900 transition-colors">My Quotes</Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <span className="text-gray-900 font-medium">New Quote</span>
+      </nav>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
             {isMultiMode ? `New Quote — ${multiFiles.length} Files` : 'New Quote'}
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-500 text-sm mt-0.5">
             {isMultiMode
               ? `Configure shared options and generate quotes for all ${multiFiles.length} files at once.`
               : 'Upload your CAD file and configure options'}
           </p>
         </div>
-        {step === 'configure' && (
-          <button onClick={resetToUpload} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+        {step === 'configure' && !isMultiMode && (
+          <button
+            onClick={resetToUpload}
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <ArrowLeft className="w-4 h-4" />
             Start Over
           </button>
@@ -254,28 +269,41 @@ const QuoteBuilder = () => {
 
       {/* Progress steps — single-file only */}
       {!isMultiMode && (
-        <div className="flex items-center gap-4">
-          {(['upload', 'configure'] as const).map((s, i) => (
-            <div key={s} className="flex items-center gap-2">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step === s
-                    ? 'bg-primary-600 text-white'
-                    : i < (['upload', 'configure'] as const).indexOf(step)
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}
-              >
-                {i < (['upload', 'configure'] as const).indexOf(step)
-                  ? <CheckCircle className="w-5 h-5" />
-                  : i + 1}
+        <div className="flex items-center gap-2">
+          {(['upload', 'configure'] as const).map((s, i) => {
+            const steps = ['upload', 'configure'] as const;
+            const currentIdx = steps.indexOf(step);
+            const isDone = i < currentIdx;
+            const isCurrentStep = step === s;
+            const labels = ['Upload File', 'Configure & Price'];
+            return (
+              <div key={s} className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+                      isDone
+                        ? 'bg-green-500 text-white'
+                        : isCurrentStep
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-100 text-gray-400'
+                    }`}
+                  >
+                    {isDone ? <CheckCircle className="w-4 h-4" /> : i + 1}
+                  </div>
+                  <span
+                    className={`text-sm font-medium ${
+                      isCurrentStep ? 'text-primary-700' : isDone ? 'text-green-600' : 'text-gray-400'
+                    }`}
+                  >
+                    {labels[i]}
+                  </span>
+                </div>
+                {i < 1 && (
+                  <div className={`h-px w-10 mx-1 ${isDone ? 'bg-green-400' : 'bg-gray-200'}`} />
+                )}
               </div>
-              <span className={`text-sm font-medium capitalize ${step === s ? 'text-primary-600' : 'text-gray-500'}`}>
-                {s}
-              </span>
-              {i < 1 && <div className="w-12 h-0.5 bg-gray-200 ml-2" />}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
