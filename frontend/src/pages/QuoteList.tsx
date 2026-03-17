@@ -69,7 +69,7 @@ const QuoteList = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 lg:p-8 space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-500">
         <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">

@@ -177,7 +177,7 @@ const AdminPricing = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 lg:p-8 space-y-6">
       <div>
         <div className="flex items-center gap-3">
           <Settings className="w-6 h-6 text-primary-600" />
