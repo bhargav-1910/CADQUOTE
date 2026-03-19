@@ -146,6 +146,17 @@ export const getInstantPricing = async (request: PricingRequest): Promise<Pricin
   }
 };
 
+export const calculateBulkPricing = async (
+  requests: PricingRequest[],
+): Promise<PricingResponse[]> => {
+  try {
+    const response = await api.post<PricingResponse[]>('/pricing/bulk', { requests });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
 // ============================================================================
 // Quote API
 // ============================================================================

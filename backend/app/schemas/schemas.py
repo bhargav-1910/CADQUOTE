@@ -238,6 +238,11 @@ class PricingRequest(BaseModel):
     quantity: int = Field(default=1, ge=1, le=10000)
 
 
+class BulkPricingRequest(BaseModel):
+    """Request for bulk pricing of multiple files."""
+    requests: List[PricingRequest] = Field(..., min_items=1, max_items=100)
+
+
 class PriceBreakdown(BaseModel):
     """Detailed price breakdown."""
     material_cost: Decimal = Field(..., description="Raw material cost")

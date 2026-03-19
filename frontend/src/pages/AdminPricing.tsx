@@ -67,16 +67,16 @@ function PricingSection<T extends { id: string; name: string }>({
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button
-        className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50"
+        className="w-full flex items-center justify-between px-4 sm:px-6 py-4 text-left hover:bg-gray-50"
         onClick={() => setOpen((o) => !o)}
       >
-        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h2>
         {open ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
       </button>
 
       {open && (
         <div className="border-t border-gray-100">
-          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 px-6 py-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <div className="hidden md:grid grid-cols-[1fr_auto_auto] gap-x-4 px-6 py-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
             <span>Name</span>
             <span className="text-right w-48">{fieldLabel} ({fieldUnit})</span>
             <span className="w-20" />
@@ -89,46 +89,48 @@ function PricingSection<T extends { id: string; name: string }>({
             return (
               <div
                 key={item.id}
-                className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center px-6 py-3 border-t border-gray-100"
+                className="px-4 sm:px-6 py-3 border-t border-gray-100"
               >
-                <div>
-                  <p className="font-medium text-gray-900">{item.name}</p>
-                  {'description' in item && (item as { description?: string | null }).description && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">
-                      {(item as { description?: string | null }).description}
-                    </p>
-                  )}
-                </div>
+                <div className="md:grid md:grid-cols-[1fr_auto_auto] md:gap-x-4 md:items-center">
+                  <div className="mb-3 md:mb-0">
+                    <p className="font-medium text-gray-900">{item.name}</p>
+                    {'description' in item && (item as { description?: string | null }).description && (
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">
+                        {(item as { description?: string | null }).description}
+                      </p>
+                    )}
+                  </div>
 
-                <div className="flex items-center gap-2 w-48">
-                  <span className="text-gray-500 text-sm">₹</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={editVal}
-                    onChange={(e) => handleChange(item.id, e.target.value)}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-right focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  />
-                </div>
+                  <div className="flex items-center gap-2 w-full md:w-48">
+                    <span className="text-gray-500 text-sm">₹</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={editVal}
+                      onChange={(e) => handleChange(item.id, e.target.value)}
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-right focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                  </div>
 
-                <div className="w-20 flex justify-end">
-                  {state === 'saving' ? (
-                    <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-                  ) : state === 'saved' ? (
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                  ) : state === 'error' ? (
-                    <span className="text-xs text-red-500">{edits[item.id]?.errorMsg}</span>
-                  ) : (
-                    <button
-                      onClick={() => handleSave(item.id)}
-                      disabled={!changed}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      Save
-                    </button>
-                  )}
+                  <div className="mt-3 md:mt-0 md:w-20 flex justify-end">
+                    {state === 'saving' ? (
+                      <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                    ) : state === 'saved' ? (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    ) : state === 'error' ? (
+                      <span className="text-xs text-red-500">{edits[item.id]?.errorMsg}</span>
+                    ) : (
+                      <button
+                        onClick={() => handleSave(item.id)}
+                        disabled={!changed}
+                        className="w-full md:w-auto flex items-center justify-center gap-1 px-3 py-1.5 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        Save
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -161,7 +163,7 @@ const AdminPricing = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex items-center justify-center py-16 sm:py-20">
         <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
       </div>
     );
@@ -169,7 +171,7 @@ const AdminPricing = () => {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-center gap-3">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 flex items-center gap-3">
         <AlertCircle className="w-6 h-6 text-red-600" />
         <p className="text-red-700">{error}</p>
       </div>
@@ -177,13 +179,13 @@ const AdminPricing = () => {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <div>
         <div className="flex items-center gap-3">
           <Settings className="w-6 h-6 text-primary-600" />
-          <h1 className="text-2xl font-bold text-gray-900">Pricing Configuration</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Pricing Configuration</h1>
         </div>
-        <p className="text-gray-500 mt-1">Customize material costs, surface finish fees, inspection charges, and machine rates. All values in INR (₹).</p>
+        <p className="text-gray-500 mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. All values in INR (₹).</p>
       </div>
 
       <PricingSection

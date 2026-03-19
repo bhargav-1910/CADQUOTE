@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useNavigate } from 'react-router-dom';
-import { Upload, CheckCircle, AlertCircle, Loader2, ArrowRight, X, FileText } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, Loader2, X } from 'lucide-react';
 import type { CADFile, GeometryAnalysis } from '@/types';
-import { uploadCADFile, getCADFile, getGeometryAnalysis } from '@/services/api';
+import {
+  uploadAndProcessCADFile,
+  type ProcessedCADUpload,
+} from '@/services/uploadWorkflow';
 
 interface FileEntry {
   id: string;
@@ -15,60 +17,58 @@ interface FileEntry {
 }
 
 interface FileUploadProps {
-  onFileUploaded: (file: CADFile, geometry: GeometryAnalysis) => void;
+  onFilesUploaded: (files: ProcessedCADUpload[]) => void;
 }
 
-const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
-  const navigate = useNavigate();
+const FileUpload = ({ onFilesUploaded }: FileUploadProps) => {
   const [entries, setEntries] = useState<FileEntry[]>([]);
 
   const setEntryState = (id: string, patch: Partial<FileEntry>) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   };
 
-  const pollForGeometry = async (fileId: string, maxAttempts = 30): Promise<GeometryAnalysis> => {
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        return await getGeometryAnalysis(fileId);
-      } catch {
-        const f = await getCADFile(fileId);
-        if (f.processing_status === 'failed') throw new Error(f.processing_error || 'Processing failed');
-        if (f.processing_status === 'completed') return await getGeometryAnalysis(fileId);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-    throw new Error('Processing timeout. Please try again.');
-  };
-
-  const processFile = async (entry: FileEntry) => {
+  const processFile = async (entry: FileEntry): Promise<ProcessedCADUpload> => {
     const { id, file } = entry;
     try {
       setEntryState(id, { status: 'uploading' });
-      const uploadResult = await uploadCADFile(file);
-      setEntryState(id, { status: 'processing', cadFile: uploadResult });
-      const geometry = await pollForGeometry(uploadResult.id);
-      const updatedFile = await getCADFile(uploadResult.id);
-      setEntryState(id, { status: 'done', cadFile: updatedFile, geometry });
+      const uploadResult = await uploadAndProcessCADFile(file);
+      setEntryState(id, {
+        status: 'done',
+        cadFile: uploadResult.cadFile,
+        geometry: uploadResult.geometry,
+      });
+      return uploadResult;
     } catch (err) {
       setEntryState(id, {
         status: 'error',
         errorMsg: err instanceof Error ? err.message : 'Failed',
       });
+      throw err;
     }
   };
 
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
+    async (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return;
+
       const newEntries: FileEntry[] = acceptedFiles.map((file) => ({
         id: `${Date.now()}-${Math.random()}`,
         file,
         status: 'uploading' as const,
       }));
+
       setEntries((prev) => [...prev, ...newEntries]);
-      newEntries.forEach((entry) => processFile(entry));
+
+      const results = await Promise.allSettled(newEntries.map((entry) => processFile(entry)));
+      const successfulFiles = results
+        .filter((result): result is PromiseFulfilledResult<ProcessedCADUpload> => result.status === 'fulfilled')
+        .map((result) => result.value);
+
+      if (successfulFiles.length === acceptedFiles.length) {
+        onFilesUploaded(successfulFiles);
+      }
     },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    [onFilesUploaded]
   );
 
   const removeEntry = (id: string) => {
@@ -91,18 +91,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const doneEntries = entries.filter(
-    (e) => e.status === 'done' && e.cadFile && e.geometry
-  );
-
-  const handleQuoteAll = () => {
-    if (doneEntries.length < 1) return;
-    const files = doneEntries.map((e) => ({
-      cadFile: e.cadFile!,
-      geometry: e.geometry!,
-    }));
-    navigate('/quote', { state: { multiFiles: files } });
-  };
+  const hasInFlightEntries = entries.some((entry) => entry.status === 'uploading' || entry.status === 'processing');
 
   return (
     <div className="space-y-4">
@@ -129,6 +118,10 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
           </div>
         </div>
       </div>
+
+      <p className="text-sm text-gray-500">
+        One file opens single-part configuration immediately. Multiple files open shared configuration after all uploaded parts finish processing.
+      </p>
 
       {entries.length > 0 && (
         <div className="space-y-2">
@@ -174,15 +167,6 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
-                {entry.status === 'done' && entry.cadFile && entry.geometry && (
-                  <button
-                    onClick={() => onFileUploaded(entry.cadFile!, entry.geometry!)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
-                  >
-                    Use for Quote
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                )}
                 {(entry.status === 'done' || entry.status === 'error') && (
                   <button
                     onClick={() => removeEntry(entry.id)}
@@ -195,24 +179,12 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
             </div>
           ))}
 
-          {/* Quote all button — shown when 2+ files are ready */}
-          {doneEntries.length >= 2 && (
-            <div className="mt-3 p-4 bg-primary-50 border border-primary-200 rounded-xl flex items-center justify-between gap-4">
-              <div>
-                <p className="font-semibold text-primary-900">
-                  {doneEntries.length} files ready
-                </p>
-                <p className="text-sm text-primary-700 mt-0.5">
-                  Configure once and generate a combined quote for all files.
-                </p>
-              </div>
-              <button
-                onClick={handleQuoteAll}
-                className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors whitespace-nowrap"
-              >
-                <FileText className="w-4 h-4" />
-                Quote All {doneEntries.length} Files
-              </button>
+          {hasInFlightEntries && (
+            <div className="mt-3 p-4 bg-primary-50 border border-primary-200 rounded-xl">
+              <p className="font-semibold text-primary-900">Preparing your files</p>
+              <p className="text-sm text-primary-700 mt-0.5">
+                The app will move to configuration automatically when processing finishes.
+              </p>
             </div>
           )}
         </div>

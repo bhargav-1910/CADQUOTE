@@ -251,14 +251,14 @@ const Scene = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
 
 const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
   return (
-    <div className="relative bg-gray-100 rounded-lg overflow-hidden" style={{ height: '400px' }}>
+    <div className="relative bg-gray-100 rounded-lg overflow-hidden h-[280px] sm:h-[400px]">
       {/* Controls hint */}
-      <div className="absolute top-3 left-3 z-10 flex gap-2">
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs text-gray-600 shadow-sm">
+      <div className="absolute top-3 left-3 z-10 flex gap-2 flex-wrap max-w-[70%]">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 sm:px-3 py-1.5 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-600 shadow-sm">
           <Move className="w-3.5 h-3.5" />
           <span>Drag to rotate</span>
         </div>
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs text-gray-600 shadow-sm">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 sm:px-3 py-1.5 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-600 shadow-sm">
           <ZoomIn className="w-3.5 h-3.5" />
           <span>Scroll to zoom</span>
         </div>

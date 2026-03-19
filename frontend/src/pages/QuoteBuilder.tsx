@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
 import PricingDisplay from '@/components/PricingDisplay';
+import FilePreviewModal from '@/components/FilePreviewModal';
 import type { CADFile, GeometryAnalysis, PricingResponse, QuoteConfiguration } from '@/types';
 import { getInstantPricing, createQuote, createBatchQuote } from '@/services/api';
+import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 
 interface MultiFileEntry {
   cadFile: CADFile;
@@ -22,9 +24,8 @@ const QuoteBuilder = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const initialMultiFiles: Array<{ cadFile: CADFile; geometry: GeometryAnalysis }> =
+  const initialMultiFiles: ProcessedCADUpload[] =
     location.state?.multiFiles ?? [];
-  const isMultiMode = initialMultiFiles.length > 1;
 
   // Shared config (multi-file mode)
   const [materialId, setMaterialId] = useState<string | null>(null);
@@ -56,6 +57,9 @@ const QuoteBuilder = () => {
   const [multiFiles, setMultiFiles] = useState<MultiFileEntry[]>(
     initialMultiFiles.map((f) => ({ ...f, pricing: null, pricingLoading: false }))
   );
+  const [previewFile, setPreviewFile] = useState<MultiFileEntry | null>(null);
+  const isMultiMode = multiFiles.length > 1;
+  const pricingRequestVersion = useRef(0);
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,32 +94,78 @@ const QuoteBuilder = () => {
   }, [calculateSinglePricing, isMultiMode]);
 
   // Multi-file pricing: recalculate all when shared config changes
-  useEffect(() => {
-    if (!isMultiMode || !materialId || !surfaceFinishId || !inspectionLevelId) return;
-    setMultiFiles((prev) => prev.map((f) => ({ ...f, pricingLoading: true, pricing: null })));
-    initialMultiFiles.forEach((entry, i) => {
-      getInstantPricing({
-        cad_file_id: entry.cadFile.id,
-        material_id: materialId,
-        surface_finish_id: surfaceFinishId,
-        inspection_level_id: inspectionLevelId,
-        quantity,
-      })
-        .then((result) =>
-          setMultiFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, pricing: result, pricingLoading: false } : f))
-          )
-        )
-        .catch(() =>
-          setMultiFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, pricingLoading: false } : f))
-          )
-        );
-    });
-  }, [materialId, surfaceFinishId, inspectionLevelId, quantity, isMultiMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const multiFileIds = multiFiles.map((file) => file.cadFile.id).join(',');
 
-  const handleFileUploaded = (file: CADFile, geometry: GeometryAnalysis) => {
-    setConfig((prev) => ({ ...prev, cadFile: file, geometry }));
+  useEffect(() => {
+    if (!isMultiMode || multiFiles.length === 0) return;
+
+    if (!materialId || !surfaceFinishId || !inspectionLevelId) {
+      setMultiFiles((prev) => prev.map((f) => ({ ...f, pricing: null, pricingLoading: false })));
+      return;
+    }
+
+    let cancelled = false;
+    const requestVersion = ++pricingRequestVersion.current;
+
+    const filesToPrice = multiFiles.map((entry) => ({
+      cadFileId: entry.cadFile.id,
+    }));
+
+    setMultiFiles((prev) => prev.map((f) => ({ ...f, pricingLoading: true, pricing: null })));
+
+    const fetchAllPricing = async () => {
+      const results = await Promise.allSettled(
+        filesToPrice.map((entry) =>
+          getInstantPricing({
+            cad_file_id: entry.cadFileId,
+            material_id: materialId,
+            surface_finish_id: surfaceFinishId,
+            inspection_level_id: inspectionLevelId,
+            quantity,
+          })
+        )
+      );
+
+      if (cancelled || pricingRequestVersion.current !== requestVersion) {
+        return;
+      }
+
+      const pricingByCadFileId = new Map<string, PricingResponse>();
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          pricingByCadFileId.set(filesToPrice[index].cadFileId, result.value);
+        }
+      });
+
+      setMultiFiles((prev) =>
+        prev.map((file) => ({
+          ...file,
+          pricing: pricingByCadFileId.get(file.cadFile.id) ?? null,
+          pricingLoading: false,
+        }))
+      );
+    };
+
+    fetchAllPricing();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [materialId, surfaceFinishId, inspectionLevelId, quantity, isMultiMode, multiFileIds]);
+
+  const handleFilesUploaded = (files: ProcessedCADUpload[]) => {
+    setError(null);
+    setPricing(null);
+
+    if (files.length === 1) {
+      const [file] = files;
+      setConfig((prev) => ({ ...prev, cadFile: file.cadFile, geometry: file.geometry }));
+      setMultiFiles([{ ...file, pricing: null, pricingLoading: false }]);
+    } else {
+      setConfig((prev) => ({ ...prev, cadFile: null, geometry: null }));
+      setMultiFiles(files.map((file) => ({ ...file, pricing: null, pricingLoading: false })));
+    }
+
     setStep('configure');
   };
 
@@ -170,6 +220,15 @@ const QuoteBuilder = () => {
   };
 
   const resetToUpload = () => {
+    setMultiFiles([]);
+    setMaterialId(null);
+    setSurfaceFinishId(null);
+    setInspectionLevelId(null);
+    setQuantity(1);
+    setCustomerName('');
+    setCustomerEmail('');
+    setCustomerCompany('');
+    setNotes('');
     setConfig({
       cadFile: null, geometry: null, materialId: null, surfaceFinishId: null,
       inspectionLevelId: null, quantity: 1,
@@ -226,12 +285,14 @@ const QuoteBuilder = () => {
     </div>
   );
 
-  const multiTotal = multiFiles.reduce((sum, f) => sum + (f.pricing?.price_breakdown.total_price ?? 0), 0);
+  const multiTotal = multiFiles.reduce((sum, f) => sum + Number(f.pricing?.price_breakdown.total_price ?? 0), 0);
+  const pricedFileCount = multiFiles.filter((f) => f.pricing !== null).length;
+  const pendingFileCount = Math.max(multiFiles.length - pricedFileCount, 0);
   const allMultiPriced = multiFiles.length > 0 && multiFiles.every((f) => f.pricing !== null);
   const anyMultiLoading = multiFiles.some((f) => f.pricingLoading);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-500">
         <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
@@ -245,7 +306,7 @@ const QuoteBuilder = () => {
       </nav>
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
             {isMultiMode ? `New Quote — ${multiFiles.length} Files` : 'New Quote'}
@@ -256,7 +317,7 @@ const QuoteBuilder = () => {
               : 'Upload your CAD file and configure options'}
           </p>
         </div>
-        {step === 'configure' && !isMultiMode && (
+          {step === 'configure' && (
           <button
             onClick={resetToUpload}
             className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
@@ -315,7 +376,7 @@ const QuoteBuilder = () => {
       {step === 'upload' && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload CAD File</h2>
-          <FileUpload onFileUploaded={handleFileUploaded} />
+          <FileUpload onFilesUploaded={handleFilesUploaded} />
         </div>
       )}
 
@@ -331,7 +392,7 @@ const QuoteBuilder = () => {
                 geometry={config.geometry || undefined}
               />
               {config.geometry && (
-                <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                   {[
                     { label: 'Volume', value: `${config.geometry.volume.toFixed(2)} cm³` },
                     { label: 'Surface Area', value: `${config.geometry.surface_area.toFixed(2)} cm²` },
@@ -382,18 +443,18 @@ const QuoteBuilder = () => {
         <div className="grid lg:grid-cols-[1fr_380px] gap-6">
           <div className="space-y-6">
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center gap-2">
                 <Package className="w-5 h-5 text-primary-600" />
                 <h2 className="text-lg font-semibold text-gray-900">Files ({multiFiles.length})</h2>
               </div>
 
               <div className="divide-y divide-gray-100">
                 {multiFiles.map((entry, i) => (
-                  <div key={entry.cadFile.id} className="px-6 py-4 flex items-center gap-4">
+                  <div key={entry.cadFile.id} className="px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                     <span className="w-6 h-6 flex-shrink-0 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 w-full">
                       <p className="font-medium text-gray-900 truncate">{entry.cadFile.original_filename}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {entry.cadFile.file_format.toUpperCase()} &bull;{' '}
@@ -401,32 +462,52 @@ const QuoteBuilder = () => {
                         complexity {entry.geometry.complexity_score.toFixed(2)}
                       </p>
                     </div>
-                    <div className="text-right flex-shrink-0 min-w-[110px]">
-                      {entry.pricingLoading ? (
-                        <Loader2 className="w-4 h-4 text-primary-500 animate-spin ml-auto" />
-                      ) : entry.pricing ? (
-                        <>
-                          <p className="font-semibold text-gray-900">
-                            {formatINR(entry.pricing.price_breakdown.total_price)}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {formatINR(entry.pricing.price_breakdown.unit_price)}/unit
-                          </p>
-                        </>
-                      ) : (
-                        <span className="text-xs text-gray-400">— configure →</span>
-                      )}
+                    <div className="flex w-full sm:w-auto items-center justify-between sm:justify-end gap-3">
+                      <button
+                        onClick={() => setPreviewFile(entry)}
+                        className="px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200 flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>3D Preview</span>
+                      </button>
+
+                      <div className="text-right flex-shrink-0 min-w-[110px]">
+                        {entry.pricingLoading ? (
+                          <Loader2 className="w-4 h-4 text-primary-500 animate-spin ml-auto" />
+                        ) : entry.pricing ? (
+                          <>
+                            <p className="font-semibold text-gray-900">
+                              {formatINR(entry.pricing.price_breakdown.total_price)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {formatINR(entry.pricing.price_breakdown.unit_price)}/unit
+                            </p>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-400">— configure →</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {allMultiPriced && (
-                <div className="px-6 py-4 bg-primary-50 border-t border-primary-100 flex justify-between items-center">
-                  <p className="font-semibold text-primary-900">Grand Total ({multiFiles.length} parts)</p>
-                  <p className="text-xl font-bold text-primary-700">{formatINR(multiTotal)}</p>
+              <div className="px-4 sm:px-6 py-4 bg-primary-50 border-t border-primary-100 flex justify-between items-center gap-3">
+                <div>
+                  <p className="font-semibold text-primary-900">Grand Total ({pricedFileCount}/{multiFiles.length} priced)</p>
+                  {pendingFileCount > 0 && (
+                    <p className="text-xs text-primary-700 mt-0.5">
+                      Waiting for pricing for {pendingFileCount} file{pendingFileCount === 1 ? '' : 's'}.
+                    </p>
+                  )}
                 </div>
-              )}
+                <div className="text-right">
+                  <p className="text-xl font-bold text-primary-700">{formatINR(multiTotal)}</p>
+                  {anyMultiLoading && (
+                    <p className="text-xs text-primary-600">Updating...</p>
+                  )}
+                </div>
+              </div>
             </div>
 
             {customerForm}
@@ -462,6 +543,14 @@ const QuoteBuilder = () => {
               )}
             </button>
           </div>
+
+          {previewFile && (
+            <FilePreviewModal
+              cadFile={previewFile.cadFile}
+              geometry={previewFile.geometry}
+              onClose={() => setPreviewFile(null)}
+            />
+          )}
         </div>
       )}
     </div>

@@ -18,7 +18,7 @@ from app.schemas.schemas import (
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse,
     QuoteResponse, QuoteListResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
-    CADFileResponse,
+    CADFileResponse, BulkPricingRequest,
 )
 from app.services.pricing import calculate_pricing
 from app.services.quote import create_quote, get_quote, get_quote_by_number, list_quotes
@@ -112,6 +112,119 @@ async def get_instant_pricing(
         estimated_lead_time_days=pricing_result.estimated_lead_time_days,
         pricing_explanation=pricing_result.details,
     )
+
+
+@router.post("/pricing/bulk", response_model=List[PricingResponse])
+async def get_bulk_pricing(
+    request_data: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get pricing for multiple CNC jobs at once.
+    
+    Efficiently process multiple pricing requests in parallel.
+    Returns detailed price breakdown for each file.
+    """
+    from app.schemas.schemas import BulkPricingRequest
+    
+    # Parse the request
+    try:
+        bulk_request = BulkPricingRequest(**request_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request format: {str(e)}")
+    
+    responses: List[PricingResponse] = []
+    
+    for pricing_request in bulk_request.requests:
+        try:
+            # Fetch all required entities
+            cad_file = await db.get(CADFile, pricing_request.cad_file_id)
+            if not cad_file:
+                raise HTTPException(status_code=404, detail=f"CAD file {pricing_request.cad_file_id} not found")
+            
+            if cad_file.processing_status != ProcessingStatus.COMPLETED:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"CAD file {cad_file.original_filename} has not been processed yet"
+                )
+            
+            # Get geometry
+            geometry_query = select(GeometryAnalysis).where(
+                GeometryAnalysis.cad_file_id == pricing_request.cad_file_id
+            )
+            geometry_result = await db.execute(geometry_query)
+            geometry = geometry_result.scalar_one_or_none()
+            if not geometry:
+                raise HTTPException(status_code=404, detail=f"Geometry analysis not found for {pricing_request.cad_file_id}")
+            
+            # Get configuration options
+            material = await db.get(Material, pricing_request.material_id)
+            if not material:
+                raise HTTPException(status_code=404, detail=f"Material {pricing_request.material_id} not found")
+            
+            surface_finish = await db.get(SurfaceFinish, pricing_request.surface_finish_id)
+            if not surface_finish:
+                raise HTTPException(status_code=404, detail=f"Surface finish {pricing_request.surface_finish_id} not found")
+            
+            inspection_level = await db.get(InspectionLevel, pricing_request.inspection_level_id)
+            if not inspection_level:
+                raise HTTPException(status_code=404, detail=f"Inspection level {pricing_request.inspection_level_id} not found")
+            
+            # Calculate pricing
+            pricing_result = await calculate_pricing(
+                db=db,
+                geometry=geometry,
+                material=material,
+                surface_finish=surface_finish,
+                inspection_level=inspection_level,
+                quantity=pricing_request.quantity,
+            )
+            
+            # Calculate weight
+            weight_kg = (geometry.volume * material.density) / 1000
+            
+            responses.append(
+                PricingResponse(
+                    cad_file_id=cad_file.id,
+                    file_name=cad_file.original_filename,
+                    quantity=pricing_request.quantity,
+                    material=MaterialResponse.model_validate(material),
+                    surface_finish=SurfaceFinishResponse.model_validate(surface_finish),
+                    inspection_level=InspectionLevelResponse.model_validate(inspection_level),
+                    volume_cm3=geometry.volume,
+                    weight_kg=round(weight_kg, 4),
+                    bounding_box=BoundingBox(
+                        x=geometry.bbox_x,
+                        y=geometry.bbox_y,
+                        z=geometry.bbox_z,
+                        volume=geometry.bounding_box_volume,
+                    ),
+                    complexity_score=geometry.complexity_score,
+                    price_breakdown=PriceBreakdown(
+                        material_cost=pricing_result.material_cost,
+                        machining_cost=pricing_result.machining_cost,
+                        finish_cost=pricing_result.finish_cost,
+                        inspection_cost=pricing_result.inspection_cost,
+                        subtotal=pricing_result.subtotal,
+                        margin_factor=pricing_result.details["margin"]["margin_factor"],
+                        total_price=pricing_result.total_price,
+                        unit_price=pricing_result.unit_price,
+                    ),
+                    estimated_lead_time_days=pricing_result.estimated_lead_time_days,
+                    pricing_explanation=pricing_result.details,
+                )
+            )
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            # Log and continue with next request
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error processing pricing for file {pricing_request.cad_file_id}: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Error processing pricing: {str(e)}")
+    
+    return responses
 
 @router.post("/quotes/batch", response_model=BatchQuoteResponse, status_code=201)
 async def create_batch_quotation(

@@ -2,20 +2,18 @@
 import { useDropzone } from 'react-dropzone';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Cloud, Upload, FolderOpen, BarChart2, Clock, FileText,
-  ChevronRight, Settings, Loader2, AlertCircle,
+  Cloud, Upload, FolderOpen, FileText,
+  ChevronRight, Settings, Loader2, AlertCircle, ShieldCheck, Sparkles,
 } from 'lucide-react';
-import type { GeometryAnalysis, QuoteListItem } from '@/types';
-import { uploadCADFile, getGeometryAnalysis, getCADFile, listQuotes } from '@/services/api';
+import type { QuoteListItem } from '@/types';
+import { listQuotes } from '@/services/api';
+import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
 
-/* ────────────────────────────────────────────────
-   HomePage – Dashnode-style dashboard
-──────────────────────────────────────────────── */
 const HomePage = () => {
   const navigate = useNavigate();
 
   // Upload state
-  const [uploading, setUploading] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Recent quotes for "Recent uploads" widget
@@ -29,34 +27,26 @@ const HomePage = () => {
       .finally(() => setQuotesLoading(false));
   }, []);
 
-  const pollForGeometry = async (fileId: string): Promise<GeometryAnalysis> => {
-    for (let i = 0; i < 30; i++) {
-      try {
-        return await getGeometryAnalysis(fileId);
-      } catch {
-        const f = await getCADFile(fileId);
-        if (f.processing_status === 'failed') throw new Error(f.processing_error || 'Processing failed');
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-    throw new Error('Processing timeout. Please try again.');
-  };
+  const uploading = uploadingCount > 0;
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
+    if (acceptedFiles.length === 0) return;
+
     setUploadError(null);
-    setUploading(true);
+    setUploadingCount(acceptedFiles.length);
+
     try {
-      const uploadResult = await uploadCADFile(file);
-      const geometry = await pollForGeometry(uploadResult.id);
-      const updatedFile = await getCADFile(uploadResult.id);
+      const processedFiles = await Promise.all(
+        acceptedFiles.map((file) => uploadAndProcessCADFile(file))
+      );
+
       navigate('/quote', {
-        state: { multiFiles: [{ cadFile: updatedFile, geometry }] },
+        state: { multiFiles: processedFiles },
       });
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
-      setUploading(false);
+    } finally {
+      setUploadingCount(0);
     }
   }, [navigate]);
 
@@ -67,7 +57,6 @@ const HomePage = () => {
       'model/stl': ['.stl'],
       'application/octet-stream': ['.step', '.stp', '.stl'],
     },
-    maxFiles: 1,
     maxSize: 100 * 1024 * 1024,
     disabled: uploading,
     noClick: true,
@@ -87,239 +76,234 @@ const HomePage = () => {
       })()
     : '—';
 
+  const totalValue = quotes.reduce((sum, quote) => sum + Number(quote.total_price || 0), 0);
+
   return (
-    <div className="min-h-full p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm overflow-hidden relative animate-fade-up">
+        <div className="absolute -right-16 -top-16 w-52 h-52 rounded-full bg-sky-300/30 blur-3xl animate-float-soft" />
+        <div className="absolute -left-20 bottom-0 w-56 h-56 rounded-full bg-orange-300/20 blur-3xl animate-float-soft" />
 
-      {/* ── 2-column grid: main | right sidebar ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-6 max-w-[1200px]">
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-6 p-6 sm:p-8 lg:p-10">
+          <div className="space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-medium">
+              <Sparkles className="w-3.5 h-3.5" />
+              Precision Quoting Workspace
+            </div>
 
-        {/* ════════════ LEFT / CENTER ════════════ */}
-        <div className="space-y-6">
+            <div>
+              <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl leading-tight text-slate-900">
+                Build CNC quotes
+                <span className="block text-slate-600">without the spreadsheet grind.</span>
+              </h1>
+              <p className="text-slate-600 mt-4 max-w-2xl text-sm sm:text-base">
+                Drop one or many CAD files, get geometry analysis, per-part pricing, and lead-time estimates in one flow.
+              </p>
+            </div>
 
-          {/* Welcome */}
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">
-              Welcome back, Bhargava&nbsp;👋
-            </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Upload a STEP file to get cost, time, and DFM insights instantly.
-            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] text-slate-500">Quotes</p>
+                <p className="font-display text-2xl text-slate-900">{totalParts}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] text-slate-500">Total Value</p>
+                <p className="font-display text-2xl text-slate-900">{formatCurrency(totalValue)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] text-slate-500">Avg Costing</p>
+                <p className="font-display text-2xl text-slate-900">~8s</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] text-slate-500">Time Saved</p>
+                <p className="font-display text-2xl text-slate-900">{totalParts > 0 ? `${(totalParts * 0.48).toFixed(1)}h` : '—'}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                Secure uploads
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100">
+                <Upload className="w-3.5 h-3.5 text-sky-600" />
+                STEP, STP, STL up to 100MB each
+              </span>
+            </div>
           </div>
 
-          {/* Upload zone */}
           <div
             {...getRootProps()}
-            className={`relative rounded-2xl border-2 border-dashed transition-colors cursor-default ${
+            className={`rounded-3xl border-2 border-dashed p-6 sm:p-8 min-h-[330px] flex flex-col justify-center text-center transition-colors cursor-default ${
               isDragActive
-                ? 'border-primary-400 bg-primary-50'
+                ? 'border-sky-400 bg-sky-50'
                 : uploading
-                ? 'border-gray-200 bg-gray-50'
-                : 'border-primary-200 bg-blue-50/50 hover:border-primary-300'
+                ? 'border-slate-200 bg-slate-50'
+                : 'border-slate-300 bg-white hover:border-slate-400'
             }`}
-            style={{ minHeight: 260 }}
           >
             <input {...getInputProps()} />
-            <div className="flex flex-col items-center justify-center h-full py-14 gap-4 text-center px-6">
-              {uploading ? (
-                <>
-                  <Loader2 className="w-12 h-12 text-primary-500 animate-spin" />
-                  <p className="text-gray-600 font-medium">Analysing geometry…</p>
-                  <p className="text-sm text-gray-400">This may take a few seconds</p>
-                </>
-              ) : (
-                <>
-                  <div className="relative">
-                    <Cloud className="w-14 h-14 text-primary-400" />
-                    <Upload className="w-5 h-5 text-primary-600 absolute bottom-0 right-0" />
-                  </div>
-                  <div>
-                    <p className="text-gray-700 font-medium">
-                      {isDragActive ? 'Drop to upload' : <><strong>Drag and drop</strong> files to upload, or</>}
-                    </p>
-                  </div>
+
+            {uploading ? (
+              <div className="space-y-3">
+                <Loader2 className="w-10 h-10 text-sky-600 animate-spin mx-auto" />
+                <p className="font-medium text-slate-700">Analyzing geometry...</p>
+                <p className="text-sm text-slate-500">This usually takes a few seconds per file.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative w-fit mx-auto">
+                  <Cloud className="w-14 h-14 text-slate-400" />
+                  <Upload className="w-5 h-5 text-sky-600 absolute -bottom-1 -right-1" />
+                </div>
+
+                <p className="text-slate-700 font-medium">
+                  {isDragActive ? 'Release files to start upload' : 'Drag and drop CAD files here'}
+                </p>
+
+                <div className="flex flex-wrap justify-center gap-2">
                   <button
                     type="button"
                     onClick={open}
-                    className="px-5 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors"
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
                   >
-                    Upload new file
+                    Upload Files
                   </button>
-                  <p className="text-xs text-gray-400">
-                    Supports STEP &amp; STP files under 100 MB.{' '}
-                    <span className="text-primary-500">Your data is always secure</span>
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Upload error */}
-          {uploadError && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
-              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-red-800">Upload failed</p>
-                <p className="text-xs text-red-600 mt-0.5">{uploadError}</p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Bottom 2 cards ── */}
-          <div className="grid sm:grid-cols-2 gap-4">
-
-            {/* Recent uploads */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <FolderOpen className="w-5 h-5 text-blue-500" />
+                  <Link
+                    to="/quote/bulk"
+                    className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors"
+                  >
+                    Open Bulk Studio
+                  </Link>
                 </div>
-                <h2 className="font-semibold text-gray-900">Recent uploads</h2>
-              </div>
 
-              {quotesLoading ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="w-6 h-6 text-gray-300 animate-spin" />
-                </div>
-              ) : quotes.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-6">
-                  Once you upload your first file, you'll see all your projects and insights here.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {quotes.slice(0, 4).map((q) => (
-                    <li key={q.id}>
-                      <Link
-                        to={`/quotes/${q.id}`}
-                        className="flex items-center justify-between py-1.5 group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText className="w-4 h-4 text-gray-300 shrink-0" />
-                          <span className="text-sm text-gray-700 truncate group-hover:text-primary-600 transition-colors">
-                            {q.quote_number}
-                          </span>
-                        </div>
-                        <span className="text-xs text-gray-400 shrink-0 ml-2">
-                          {formatCurrency(q.total_price)}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {quotes.length > 0 && (
-                <Link
-                  to="/quotes"
-                  className="mt-3 flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  View all <ChevronRight className="w-3.5 h-3.5" />
-                </Link>
-              )}
-            </div>
-
-            {/* Manage Projects */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col items-center justify-center text-center gap-4">
-              <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center">
-                <BarChart2 className="w-10 h-10 text-blue-400" />
+                <p className="text-xs text-slate-500">Single upload opens quote builder automatically. Multi-upload opens batch mode.</p>
               </div>
-              <div>
-                <h2 className="font-semibold text-gray-900 mb-1">Manage Projects</h2>
-                <p className="text-sm text-gray-400">Add items to a project and customise their configurations.</p>
-              </div>
-              <Link
-                to="/quotes"
-                className="px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors"
-              >
-                View Quotes
-              </Link>
-            </div>
+            )}
           </div>
         </div>
+      </section>
 
-        {/* ════════════ RIGHT SIDEBAR ════════════ */}
-        <div className="space-y-4">
+      {uploadError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4 animate-fade-up">
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-800">Upload failed</p>
+            <p className="text-xs text-red-600 mt-0.5">{uploadError}</p>
+          </div>
+        </div>
+      )}
 
-          {/* Stats card */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr] gap-6">
+        <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+                <FolderOpen className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-display text-xl text-slate-900">Recent Quote Activity</h2>
+                <p className="text-xs text-slate-500">Track your latest generated quotes.</p>
+              </div>
+            </div>
+
+            <Link to="/quotes" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
+              All quotes
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {quotesLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+            </div>
+          ) : quotes.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+              <p className="text-slate-600 font-medium">No quotes yet.</p>
+              <p className="text-sm text-slate-500 mt-1">Upload your first file to start building estimates.</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {quotes.slice(0, 5).map((quote, index) => (
+                <li key={quote.id}>
+                  <Link
+                    to={`/quotes/${quote.id}`}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3 hover:border-slate-300 hover:shadow-sm transition-all"
+                    style={{ animationDelay: `${index * 60}ms` }}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900 truncate">{quote.quote_number}</p>
+                        <p className="text-xs text-slate-500">{new Date(quote.created_at).toLocaleDateString('en-IN')}</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700 ml-3">{formatCurrency(quote.total_price)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <div className="space-y-6">
+          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-900 text-sm">Files uploaded this</h2>
-              <span className="text-xs font-medium bg-primary-50 text-primary-600 px-2.5 py-1 rounded-lg">
-                Month ↓
-              </span>
+              <h2 className="font-display text-xl text-slate-900">Operations Snapshot</h2>
+              <span className="text-xs font-medium bg-slate-900 text-white px-2.5 py-1 rounded-lg">This Month</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              {/* Total parts */}
-              <div className="p-3 rounded-xl bg-blue-50">
-                <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center mb-2">
-                  <FileText className="w-4 h-4 text-blue-500" />
-                </div>
-                <p className="text-[11px] text-gray-500">Total Parts Uploaded</p>
-                <p className="text-lg font-bold text-gray-900">{totalParts}</p>
+              <div className="rounded-xl bg-sky-50 border border-sky-100 p-3">
+                <p className="text-[11px] text-sky-700">Total Parts</p>
+                <p className="font-display text-2xl text-slate-900">{totalParts}</p>
               </div>
-
-              {/* Most active week */}
-              <div className="p-3 rounded-xl bg-amber-50">
-                <div className="w-7 h-7 bg-amber-100 rounded-lg flex items-center justify-center mb-2">
-                  <BarChart2 className="w-4 h-4 text-amber-500" />
-                </div>
-                <p className="text-[11px] text-gray-500">Most Active Week</p>
-                <p className="text-xs font-semibold text-gray-900 leading-tight mt-1">{mostActiveWeek}</p>
+              <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                <p className="text-[11px] text-amber-700">Most Active Week</p>
+                <p className="text-xs font-semibold text-slate-900 mt-1">{mostActiveWeek}</p>
               </div>
-
-              {/* Time saved */}
-              <div className="p-3 rounded-xl bg-green-50">
-                <div className="w-7 h-7 bg-green-100 rounded-lg flex items-center justify-center mb-2">
-                  <Clock className="w-4 h-4 text-green-500" />
-                </div>
-                <p className="text-[11px] text-gray-500">Time Saved</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {totalParts > 0 ? `${(totalParts * 0.48).toFixed(2)} hrs` : '—'}
-                </p>
+              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                <p className="text-[11px] text-emerald-700">Time Saved</p>
+                <p className="font-display text-2xl text-slate-900">{totalParts > 0 ? `${(totalParts * 0.48).toFixed(2)}h` : '—'}</p>
               </div>
-
-              {/* Avg costing time */}
-              <div className="p-3 rounded-xl bg-purple-50">
-                <div className="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center mb-2">
-                  <BarChart2 className="w-4 h-4 text-purple-500" />
-                </div>
-                <p className="text-[11px] text-gray-500">Avg. Costing Time</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {totalParts > 0 ? '~8 sec' : '—'}
-                </p>
+              <div className="rounded-xl bg-orange-50 border border-orange-100 p-3">
+                <p className="text-[11px] text-orange-700">Avg Costing Time</p>
+                <p className="font-display text-2xl text-slate-900">{totalParts > 0 ? '~8s' : '—'}</p>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Costing preferences */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-            <h2 className="font-semibold text-gray-900 text-sm mb-1">
-              Set up your costing preferences
-            </h2>
-            <p className="text-xs text-gray-400 mb-4">
-              Customise machine rates, material pricing, and surface-finish costs to streamline your costing workflow.
-            </p>
+          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="font-display text-xl text-slate-900">Pricing Control Center</h2>
+                <p className="text-xs text-slate-500 mt-1">Tune material rates, finish fees, and machine pricing in one place.</p>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
+                <Settings className="w-4 h-4" />
+              </div>
+            </div>
+
             <Link
               to="/admin/pricing"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-xl hover:bg-primary-700 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
             >
-              <Settings className="w-4 h-4" />
               Go to Cost Master
               <ChevronRight className="w-4 h-4" />
             </Link>
 
-            {/* Decorative mini-chart */}
-            <div className="mt-4 rounded-xl bg-emerald-50 p-4 flex items-end gap-1 justify-center h-24">
-              {[40, 60, 45, 80, 55, 90, 70].map((h, i) => (
+            <div className="mt-5 rounded-2xl bg-gradient-to-r from-emerald-100 to-sky-100 p-4 flex items-end gap-1 justify-center h-24">
+              {[42, 58, 39, 73, 51, 86, 64].map((height, idx) => (
                 <div
-                  key={i}
-                  className="w-4 rounded-t-md bg-emerald-300 opacity-70"
-                  style={{ height: `${h}%` }}
+                  key={idx}
+                  className="w-4 rounded-t-md bg-slate-700/70"
+                  style={{ height: `${height}%` }}
                 />
               ))}
             </div>
-          </div>
-
+          </section>
         </div>
       </div>
     </div>

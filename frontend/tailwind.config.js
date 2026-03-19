@@ -22,7 +22,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+        display: ['"Space Grotesk"', '"IBM Plex Sans"', 'sans-serif'],
       },
     },
   },
