@@ -229,6 +229,19 @@ class GeometryAnalysisResponse(BaseSchema):
 # Pricing Schemas
 # ============================================================================
 
+class PricingOverrides(BaseModel):
+    """Optional quote-scoped pricing overrides (does not change global config)."""
+    material_cost_per_kg: Optional[Decimal] = Field(None, gt=0)
+    material_machining_difficulty_factor: Optional[float] = Field(None, ge=0.5, le=3.0)
+    surface_finish_fixed_cost: Optional[Decimal] = Field(None, ge=0)
+    surface_finish_cost_multiplier: Optional[float] = Field(None, ge=1.0)
+    inspection_fixed_cost: Optional[Decimal] = Field(None, ge=0)
+    inspection_percentage_cost: Optional[float] = Field(None, ge=0, le=100)
+    machine_hourly_rate: Optional[Decimal] = Field(None, gt=0)
+    machine_efficiency_rate: Optional[float] = Field(None, ge=0.1, le=1.0)
+    machine_setup_time_hours: Optional[float] = Field(None, ge=0)
+    margin_factor: Optional[float] = Field(None, ge=1.0, le=5.0)
+
 class PricingRequest(BaseModel):
     """Request for instant pricing."""
     cad_file_id: UUID
@@ -236,6 +249,7 @@ class PricingRequest(BaseModel):
     surface_finish_id: UUID
     inspection_level_id: UUID
     quantity: int = Field(default=1, ge=1, le=10000)
+    pricing_overrides: Optional[PricingOverrides] = None
 
 
 class BulkPricingRequest(BaseModel):
@@ -299,6 +313,7 @@ class QuoteCreateRequest(BaseModel):
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
     
+    pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
 
 
@@ -313,6 +328,7 @@ class BatchQuoteCreateRequest(BaseModel):
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
+    pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
 
 

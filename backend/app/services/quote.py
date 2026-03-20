@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -33,6 +33,7 @@ async def create_quote(
     customer_name: Optional[str] = None,
     customer_email: Optional[str] = None,
     customer_company: Optional[str] = None,
+    pricing_overrides: Optional[Dict[str, Any]] = None,
     notes: Optional[str] = None,
 ) -> Quote:
     """
@@ -73,6 +74,7 @@ async def create_quote(
         surface_finish=surface_finish,
         inspection_level=inspection_level,
         quantity=quantity,
+        pricing_overrides=pricing_overrides,
     )
     
     # Create quote
@@ -93,7 +95,7 @@ async def create_quote(
         finish_cost=pricing_result.finish_cost,
         inspection_cost=pricing_result.inspection_cost,
         subtotal=pricing_result.subtotal,
-        margin_factor=settings.DEFAULT_MARGIN_FACTOR,
+        margin_factor=pricing_result.details["margin"]["margin_factor"],
         total_price=pricing_result.total_price,
         unit_price=pricing_result.unit_price,
         estimated_lead_time_days=pricing_result.estimated_lead_time_days,

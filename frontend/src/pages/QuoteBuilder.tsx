@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
@@ -6,7 +6,7 @@ import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
 import PricingDisplay from '@/components/PricingDisplay';
 import FilePreviewModal from '@/components/FilePreviewModal';
-import type { CADFile, GeometryAnalysis, PricingResponse, QuoteConfiguration } from '@/types';
+import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides, QuoteConfiguration } from '@/types';
 import { getInstantPricing, createQuote, createBatchQuote } from '@/services/api';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 
@@ -19,6 +19,25 @@ interface MultiFileEntry {
 
 const formatINR = (v: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(v);
+
+const buildPricingOverridesPayload = (
+  enabled: boolean,
+  overrides: PricingOverrides,
+): PricingOverrides | undefined => {
+  if (!enabled) {
+    return undefined;
+  }
+
+  const filteredEntries = Object.entries(overrides).filter(([, value]) =>
+    typeof value === 'number' && Number.isFinite(value)
+  );
+
+  if (filteredEntries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(filteredEntries) as PricingOverrides;
+};
 
 const QuoteBuilder = () => {
   const navigate = useNavigate();
@@ -63,8 +82,15 @@ const QuoteBuilder = () => {
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [useQuoteSpecificPricing, setUseQuoteSpecificPricing] = useState(false);
+  const [pricingOverrides, setPricingOverrides] = useState<PricingOverrides>({});
   const [step, setStep] = useState<'upload' | 'configure'>(
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
+  );
+
+  const pricingOverridesPayload = useMemo(
+    () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
+    [useQuoteSpecificPricing, pricingOverrides],
   );
 
   // Single-file pricing
@@ -79,6 +105,7 @@ const QuoteBuilder = () => {
         surface_finish_id: config.surfaceFinishId,
         inspection_level_id: config.inspectionLevelId,
         quantity: config.quantity,
+        pricing_overrides: pricingOverridesPayload,
       });
       setPricing(result);
     } catch (err) {
@@ -87,7 +114,14 @@ const QuoteBuilder = () => {
     } finally {
       setPricingLoading(false);
     }
-  }, [config.cadFile, config.materialId, config.surfaceFinishId, config.inspectionLevelId, config.quantity]);
+  }, [
+    config.cadFile,
+    config.materialId,
+    config.surfaceFinishId,
+    config.inspectionLevelId,
+    config.quantity,
+    pricingOverridesPayload,
+  ]);
 
   useEffect(() => {
     if (!isMultiMode) calculateSinglePricing();
@@ -122,6 +156,7 @@ const QuoteBuilder = () => {
             surface_finish_id: surfaceFinishId,
             inspection_level_id: inspectionLevelId,
             quantity,
+            pricing_overrides: pricingOverridesPayload,
           })
         )
       );
@@ -151,11 +186,21 @@ const QuoteBuilder = () => {
     return () => {
       cancelled = true;
     };
-  }, [materialId, surfaceFinishId, inspectionLevelId, quantity, isMultiMode, multiFileIds]);
+  }, [
+    materialId,
+    surfaceFinishId,
+    inspectionLevelId,
+    quantity,
+    isMultiMode,
+    multiFileIds,
+    pricingOverridesPayload,
+  ]);
 
   const handleFilesUploaded = (files: ProcessedCADUpload[]) => {
     setError(null);
     setPricing(null);
+    setUseQuoteSpecificPricing(false);
+    setPricingOverrides({});
 
     if (files.length === 1) {
       const [file] = files;
@@ -180,6 +225,7 @@ const QuoteBuilder = () => {
         surface_finish_id: config.surfaceFinishId!,
         inspection_level_id: config.inspectionLevelId!,
         quantity: config.quantity,
+        pricing_overrides: pricingOverridesPayload,
         customer_name: config.customerName || undefined,
         customer_email: config.customerEmail || undefined,
         customer_company: config.customerCompany || undefined,
@@ -204,6 +250,7 @@ const QuoteBuilder = () => {
         surface_finish_id: surfaceFinishId,
         inspection_level_id: inspectionLevelId,
         quantity,
+        pricing_overrides: pricingOverridesPayload,
         customer_name: customerName || undefined,
         customer_email: customerEmail || undefined,
         customer_company: customerCompany || undefined,
@@ -235,6 +282,8 @@ const QuoteBuilder = () => {
       customerName: '', customerEmail: '', customerCompany: '', notes: '',
     });
     setPricing(null);
+    setUseQuoteSpecificPricing(false);
+    setPricingOverrides({});
     setStep('upload');
   };
 
@@ -414,6 +463,10 @@ const QuoteBuilder = () => {
                 surfaceFinishId={config.surfaceFinishId}
                 inspectionLevelId={config.inspectionLevelId}
                 quantity={config.quantity}
+                quoteSpecificPricingEnabled={useQuoteSpecificPricing}
+                onQuoteSpecificPricingEnabledChange={setUseQuoteSpecificPricing}
+                pricingOverrides={pricingOverrides}
+                onPricingOverridesChange={setPricingOverrides}
                 onMaterialChange={(id) => setConfig((p) => ({ ...p, materialId: id }))}
                 onSurfaceFinishChange={(id) => setConfig((p) => ({ ...p, surfaceFinishId: id }))}
                 onInspectionLevelChange={(id) => setConfig((p) => ({ ...p, inspectionLevelId: id }))}
@@ -522,6 +575,10 @@ const QuoteBuilder = () => {
                 surfaceFinishId={surfaceFinishId}
                 inspectionLevelId={inspectionLevelId}
                 quantity={quantity}
+                quoteSpecificPricingEnabled={useQuoteSpecificPricing}
+                onQuoteSpecificPricingEnabledChange={setUseQuoteSpecificPricing}
+                pricingOverrides={pricingOverrides}
+                onPricingOverridesChange={setPricingOverrides}
                 onMaterialChange={setMaterialId}
                 onSurfaceFinishChange={setSurfaceFinishId}
                 onInspectionLevelChange={setInspectionLevelId}

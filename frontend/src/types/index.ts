@@ -104,12 +104,26 @@ export interface PriceBreakdown {
   unit_price: number;
 }
 
+export interface PricingOverrides {
+  material_cost_per_kg?: number;
+  material_machining_difficulty_factor?: number;
+  surface_finish_fixed_cost?: number;
+  surface_finish_cost_multiplier?: number;
+  inspection_fixed_cost?: number;
+  inspection_percentage_cost?: number;
+  machine_hourly_rate?: number;
+  machine_efficiency_rate?: number;
+  machine_setup_time_hours?: number;
+  margin_factor?: number;
+}
+
 export interface PricingRequest {
   cad_file_id: string;
   material_id: string;
   surface_finish_id: string;
   inspection_level_id: string;
   quantity: number;
+  pricing_overrides?: PricingOverrides;
 }
 
 export interface PricingResponse {
@@ -135,6 +149,7 @@ export interface QuoteCreateRequest {
   surface_finish_id: string;
   inspection_level_id: string;
   quantity: number;
+  pricing_overrides?: PricingOverrides;
   customer_name?: string;
   customer_email?: string;
   customer_company?: string;
@@ -147,6 +162,7 @@ export interface BatchQuoteCreateRequest {
   surface_finish_id: string;
   inspection_level_id: string;
   quantity: number;
+  pricing_overrides?: PricingOverrides;
   customer_name?: string;
   customer_email?: string;
   customer_company?: string;

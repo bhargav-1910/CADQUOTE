@@ -1,6 +1,6 @@
 """Pricing and quote endpoints."""
 import uuid
-from typing import List
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -25,6 +25,14 @@ from app.services.quote import create_quote, get_quote, get_quote_by_number, lis
 from app.services.document import generate_quote_document
 
 router = APIRouter(tags=["Pricing & Quotes"])
+
+
+def _serialize_pricing_overrides(overrides: Any) -> Optional[Dict[str, Any]]:
+    """Convert optional override model to a compact dictionary payload."""
+    if overrides is None:
+        return None
+    payload = overrides.model_dump(exclude_none=True)
+    return payload or None
 
 
 @router.post("/pricing", response_model=PricingResponse)
@@ -78,6 +86,7 @@ async def get_instant_pricing(
         surface_finish=surface_finish,
         inspection_level=inspection_level,
         quantity=request.quantity,
+        pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
     )
     
     # Calculate weight
@@ -178,6 +187,7 @@ async def get_bulk_pricing(
                 surface_finish=surface_finish,
                 inspection_level=inspection_level,
                 quantity=pricing_request.quantity,
+                pricing_overrides=_serialize_pricing_overrides(pricing_request.pricing_overrides),
             )
             
             # Calculate weight
@@ -250,6 +260,7 @@ async def create_batch_quotation(
                 customer_name=request.customer_name,
                 customer_email=request.customer_email,
                 customer_company=request.customer_company,
+                pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
                 notes=request.notes,
             )
             quote = await get_quote(db, quote.id)
@@ -281,6 +292,7 @@ async def create_quotation(
             customer_name=request.customer_name,
             customer_email=request.customer_email,
             customer_company=request.customer_company,
+            pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
             notes=request.notes,
         )
     except ValueError as e:

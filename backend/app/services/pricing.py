@@ -180,6 +180,7 @@ class PricingEngine:
             "machining_difficulty_factor": inputs.machining_difficulty_factor,
             "total_difficulty_factor": round(total_difficulty, 4),
             "base_machining_time_hours": round(base_machining_time, 4),
+            "machine_efficiency": inputs.machine_efficiency,
             "setup_time_hours": inputs.setup_time_hours,
             "total_machining_time_hours": round(total_machining_time, 4),
             "hourly_rate": float(inputs.hourly_rate),
@@ -326,6 +327,7 @@ async def calculate_pricing(
     inspection_level: InspectionLevel,
     quantity: int = 1,
     margin_factor: Optional[float] = None,
+    pricing_overrides: Optional[Dict[str, Any]] = None,
 ) -> PricingResult:
     """
     Calculate pricing for a CNC job.
@@ -350,9 +352,56 @@ async def calculate_pricing(
         machine_efficiency = settings.DEFAULT_MACHINE_EFFICIENCY
         setup_time = 0.5
     
-    # Use default margin if not specified
-    if margin_factor is None:
-        margin_factor = settings.DEFAULT_MARGIN_FACTOR
+    # Resolve defaults before optional per-quote overrides are applied.
+    material_cost_per_kg = material.cost_per_kg
+    material_machining_difficulty_factor = material.machining_difficulty_factor
+    finish_cost_multiplier = surface_finish.cost_multiplier
+    finish_fixed_cost = surface_finish.fixed_cost
+    inspection_fixed_cost = inspection_level.fixed_cost
+    inspection_percentage_cost = inspection_level.percentage_cost
+    effective_margin_factor = margin_factor if margin_factor is not None else settings.DEFAULT_MARGIN_FACTOR
+
+    applied_overrides: Dict[str, Any] = {}
+    if pricing_overrides:
+        if pricing_overrides.get("material_cost_per_kg") is not None:
+            material_cost_per_kg = Decimal(str(pricing_overrides["material_cost_per_kg"]))
+            applied_overrides["material_cost_per_kg"] = float(material_cost_per_kg)
+
+        if pricing_overrides.get("material_machining_difficulty_factor") is not None:
+            material_machining_difficulty_factor = float(pricing_overrides["material_machining_difficulty_factor"])
+            applied_overrides["material_machining_difficulty_factor"] = material_machining_difficulty_factor
+
+        if pricing_overrides.get("surface_finish_fixed_cost") is not None:
+            finish_fixed_cost = Decimal(str(pricing_overrides["surface_finish_fixed_cost"]))
+            applied_overrides["surface_finish_fixed_cost"] = float(finish_fixed_cost)
+
+        if pricing_overrides.get("surface_finish_cost_multiplier") is not None:
+            finish_cost_multiplier = float(pricing_overrides["surface_finish_cost_multiplier"])
+            applied_overrides["surface_finish_cost_multiplier"] = finish_cost_multiplier
+
+        if pricing_overrides.get("inspection_fixed_cost") is not None:
+            inspection_fixed_cost = Decimal(str(pricing_overrides["inspection_fixed_cost"]))
+            applied_overrides["inspection_fixed_cost"] = float(inspection_fixed_cost)
+
+        if pricing_overrides.get("inspection_percentage_cost") is not None:
+            inspection_percentage_cost = float(pricing_overrides["inspection_percentage_cost"])
+            applied_overrides["inspection_percentage_cost"] = inspection_percentage_cost
+
+        if pricing_overrides.get("machine_hourly_rate") is not None:
+            hourly_rate = Decimal(str(pricing_overrides["machine_hourly_rate"]))
+            applied_overrides["machine_hourly_rate"] = float(hourly_rate)
+
+        if pricing_overrides.get("machine_efficiency_rate") is not None:
+            machine_efficiency = float(pricing_overrides["machine_efficiency_rate"])
+            applied_overrides["machine_efficiency_rate"] = machine_efficiency
+
+        if pricing_overrides.get("machine_setup_time_hours") is not None:
+            setup_time = float(pricing_overrides["machine_setup_time_hours"])
+            applied_overrides["machine_setup_time_hours"] = setup_time
+
+        if pricing_overrides.get("margin_factor") is not None:
+            effective_margin_factor = float(pricing_overrides["margin_factor"])
+            applied_overrides["margin_factor"] = effective_margin_factor
     
     # Assemble inputs
     inputs = PricingInputs(
@@ -366,18 +415,18 @@ async def calculate_pricing(
         
         # Material
         material_density=material.density,
-        material_cost_per_kg=material.cost_per_kg,
-        machining_difficulty_factor=material.machining_difficulty_factor,
+        material_cost_per_kg=material_cost_per_kg,
+        machining_difficulty_factor=material_machining_difficulty_factor,
         material_availability_factor=material.availability_factor,
         
         # Finish
-        finish_cost_multiplier=surface_finish.cost_multiplier,
-        finish_fixed_cost=surface_finish.fixed_cost,
+        finish_cost_multiplier=finish_cost_multiplier,
+        finish_fixed_cost=finish_fixed_cost,
         finish_lead_time_days=surface_finish.lead_time_addition_days,
         
         # Inspection
-        inspection_fixed_cost=inspection_level.fixed_cost,
-        inspection_percentage_cost=inspection_level.percentage_cost,
+        inspection_fixed_cost=inspection_fixed_cost,
+        inspection_percentage_cost=inspection_percentage_cost,
         inspection_lead_time_days=inspection_level.lead_time_addition_days,
         
         # Machine
@@ -387,7 +436,11 @@ async def calculate_pricing(
         
         # Order
         quantity=quantity,
-        margin_factor=margin_factor,
+        margin_factor=effective_margin_factor,
     )
-    
-    return pricing_engine.calculate_price(inputs)
+
+    result = pricing_engine.calculate_price(inputs)
+    if applied_overrides:
+        result.details["pricing_overrides"] = applied_overrides
+
+    return result

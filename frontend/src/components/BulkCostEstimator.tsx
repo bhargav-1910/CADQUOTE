@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { calculateBulkPricing } from '@/services/api';
+import { getInstantPricing } from '@/services/api';
 import type { BulkFileEntry } from './BulkUploadManager';
 import { DollarSign, TrendingUp, AlertCircle, Package, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 
@@ -43,6 +43,7 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
   const [stats, setStats] = useState<AggregatedStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [showCharts, setShowCharts] = useState(false);
 
@@ -51,24 +52,27 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
       try {
         setLoading(true);
         setError(null);
+        setWarning(null);
 
-        const pricingRequests = entries
-          .filter((e) => e.geometry && e.config && e.cadFile)
-          .map((e) => ({
-            cad_file_id: e.cadFile!.id,
-            material_id: e.config!.material_id,
-            surface_finish_id: e.config!.surface_finish_id,
-            inspection_level_id: e.config!.inspection_level_id,
-            quantity: e.config!.quantity,
-          }));
+        const pricedEntries = entries.filter((e) => e.geometry && e.config && e.cadFile);
+
+        const pricingRequests = pricedEntries.map((e) => ({
+          cad_file_id: e.cadFile!.id,
+          material_id: e.config!.material_id,
+          surface_finish_id: e.config!.surface_finish_id,
+          inspection_level_id: e.config!.inspection_level_id,
+          quantity: e.config!.quantity,
+          pricing_overrides: e.config!.pricing_overrides,
+        }));
 
         if (pricingRequests.length === 0) {
           setStats(null);
           return;
         }
 
-        const pricingResponses = await calculateBulkPricing(pricingRequests);
-        const pricingByCadFileId = new Map(pricingResponses.map((pricing) => [pricing.cad_file_id, pricing]));
+        const pricingResults = await Promise.allSettled(
+          pricingRequests.map((request) => getInstantPricing(request))
+        );
 
         let totalCost = 0;
         let totalMaterialCost = 0;
@@ -77,19 +81,19 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
         let totalInspectionCost = 0;
         let totalLeadTime = 0;
         let maxLeadTime = 0;
+        let failedCount = 0;
 
-        const pricedEntries = entries.filter((e) => e.geometry && e.config && e.cadFile);
         const perFileDetails: PerFilePricingDetail[] = [];
-
         const costByFile: Array<{ filename: string; cost: number; volume: number }> = [];
 
-        pricedEntries.forEach((entry) => {
-          const cadFileId = entry.cadFile!.id;
-          const pricing = pricingByCadFileId.get(cadFileId);
-
-          if (!pricing) {
+        pricingResults.forEach((result, index) => {
+          const entry = pricedEntries[index];
+          if (result.status !== 'fulfilled') {
+            failedCount += 1;
             return;
           }
+
+          const pricing = result.value;
 
           const quantity = pricing.quantity || entry.config!.quantity || 1;
           const cost = Number(pricing.price_breakdown.total_price);
@@ -133,7 +137,12 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
 
         if (fileCount === 0) {
           setStats(null);
+          setError('Unable to calculate pricing for configured files. Please verify selected options.');
           return;
+        }
+
+        if (failedCount > 0) {
+          setWarning(`Pricing unavailable for ${failedCount} file${failedCount === 1 ? '' : 's'}. Totals shown for ${fileCount} file${fileCount === 1 ? '' : 's'}.`);
         }
 
         setStats({
@@ -204,6 +213,12 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
 
   return (
     <div className="space-y-6">
+      {warning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 text-sm">
+          {warning}
+        </div>
+      )}
+
       {/* Header with Total Cost */}
       <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-lg p-6 sm:p-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

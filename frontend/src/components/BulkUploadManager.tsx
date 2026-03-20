@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Upload, Trash2, Play, Pause, AlertCircle, CheckCircle, Clock, Eye, AlertTriangle } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
-import type { CADFile, GeometryAnalysis, PricingResponse } from '@/types';
+import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides } from '@/types';
 import { uploadCADFile } from '@/services/api';
 import { pollForGeometry } from '@/services/uploadWorkflow';
 import BatchConfigPanel from './BatchConfigPanel';
@@ -25,6 +25,7 @@ export interface BulkFileEntry {
     surface_finish_id: string;
     inspection_level_id: string;
     quantity: number;
+    pricing_overrides?: PricingOverrides;
   };
 }
 
