@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { getInstantPricing } from '@/services/api';
+import { useState, useEffect, useRef } from 'react';
+import { downloadBulkReportPDF, getInstantPricing } from '@/services/api';
 import type { BulkFileEntry } from './BulkUploadManager';
-import { DollarSign, TrendingUp, AlertCircle, Package, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { AlertCircle, Package, ChevronDown, ChevronUp, Eye, Download, Mail, Send } from 'lucide-react';
 
 interface BulkCostEstimatorProps {
   entries: BulkFileEntry[];
@@ -13,6 +12,9 @@ interface PerFilePricingDetail {
   id: string;
   entry: BulkFileEntry;
   filename: string;
+  materialName: string;
+  surfaceFinishName: string;
+  inspectionLevelName: string;
   quantity: number;
   volume: number;
   complexity: number;
@@ -34,8 +36,6 @@ interface AggregatedStats {
   maxLeadTime: number;
   averageLeadTime: number;
   fileCount: number;
-  costByFile: Array<{ filename: string; cost: number; volume: number }>;
-  costBreakdown: Array<{ name: string; value: number }>;
   perFileDetails: PerFilePricingDetail[];
 }
 
@@ -45,10 +45,15 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const [showCharts, setShowCharts] = useState(false);
+  const [showEmailPanel, setShowEmailPanel] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailMessage, setEmailMessage] = useState('');
+  const pricingRequestVersion = useRef(0);
 
   useEffect(() => {
     const fetchPricing = async () => {
+      const requestVersion = ++pricingRequestVersion.current;
       try {
         setLoading(true);
         setError(null);
@@ -74,6 +79,10 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
           pricingRequests.map((request) => getInstantPricing(request))
         );
 
+        if (pricingRequestVersion.current !== requestVersion) {
+          return;
+        }
+
         let totalCost = 0;
         let totalMaterialCost = 0;
         let totalMachiningCost = 0;
@@ -84,7 +93,6 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
         let failedCount = 0;
 
         const perFileDetails: PerFilePricingDetail[] = [];
-        const costByFile: Array<{ filename: string; cost: number; volume: number }> = [];
 
         pricingResults.forEach((result, index) => {
           const entry = pricedEntries[index];
@@ -110,16 +118,13 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
           totalLeadTime += pricing.estimated_lead_time_days;
           maxLeadTime = Math.max(maxLeadTime, pricing.estimated_lead_time_days);
 
-          costByFile.push({
-            filename: entry.filename,
-            cost,
-            volume: entry.geometry!.volume,
-          });
-
           perFileDetails.push({
             id: entry.id,
             entry,
             filename: entry.filename,
+            materialName: pricing.material.name,
+            surfaceFinishName: pricing.surface_finish.name,
+            inspectionLevelName: pricing.inspection_level.name,
             quantity,
             volume: entry.geometry!.volume,
             complexity: pricing.complexity_score,
@@ -154,19 +159,17 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
           maxLeadTime,
           averageLeadTime: totalLeadTime / fileCount,
           fileCount,
-          costByFile,
-          costBreakdown: [
-            { name: 'Material', value: totalMaterialCost },
-            { name: 'Machining', value: totalMachiningCost },
-            { name: 'Finish', value: totalFinishCost },
-            { name: 'Inspection', value: totalInspectionCost },
-          ],
           perFileDetails,
         });
       } catch (err) {
+        if (pricingRequestVersion.current !== requestVersion) {
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Failed to calculate pricing');
       } finally {
-        setLoading(false);
+        if (pricingRequestVersion.current === requestVersion) {
+          setLoading(false);
+        }
       }
     };
 
@@ -183,6 +186,75 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
   const formatNumber = (value: number, decimals = 2) => {
     return value.toFixed(decimals);
   };
+
+  const downloadPdfReport = async () => {
+    if (!stats) return;
+    try {
+      const blob = await downloadBulkReportPDF({
+        report_title: 'Bulk Quote Summary',
+        currency: 'INR',
+        total_cost: Number(stats.totalCost.toFixed(2)),
+        file_count: stats.fileCount,
+        max_lead_time_days: Number(stats.maxLeadTime.toFixed(1)),
+        items: stats.perFileDetails.map((file) => ({
+          filename: file.filename,
+          quantity: file.quantity,
+          material_name: file.materialName,
+          surface_finish_name: file.surfaceFinishName,
+          inspection_level_name: file.inspectionLevelName,
+          lead_time_days: Number(file.leadTimeDays.toFixed(1)),
+          unit_price: Number(file.unitPrice.toFixed(2)),
+          line_total: Number(file.totalPrice.toFixed(2)),
+        })),
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `bulk-quote-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate PDF report');
+    }
+  };
+
+  const handleSendEmail = () => {
+    if (!stats) return;
+    if (!emailTo.trim()) {
+      return;
+    }
+
+    const perFileLines = stats.perFileDetails.map((file) => {
+      return `- ${file.filename} | Qty ${file.quantity} | ${file.materialName} | ${file.surfaceFinishName} | ${file.inspectionLevelName} | ${formatCurrency(file.totalPrice)} | ${formatNumber(file.leadTimeDays, 1)} days`;
+    });
+
+    const body = [
+      emailMessage.trim(),
+      emailMessage.trim() ? '' : undefined,
+      'Bulk Quote Summary',
+      `Total Files: ${stats.fileCount}`,
+      `Total Cost: ${formatCurrency(stats.totalCost)}`,
+      `Estimated Batch Lead Time: up to ${formatNumber(stats.maxLeadTime, 1)} days`,
+      '',
+      'Per-file details:',
+      ...perFileLines,
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join('\n');
+
+    const mailto = `mailto:${encodeURIComponent(emailTo.trim())}?subject=${encodeURIComponent(emailSubject.trim() || `Bulk Quote Report - ${stats.fileCount} Files`)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
+
+  const hasEmailTo = emailTo.trim().length > 0;
+
+  useEffect(() => {
+    if (!stats) {
+      return;
+    }
+    setEmailSubject(`Bulk Quote Report - ${stats.fileCount} Files`);
+  }, [stats]);
 
   if (loading) {
     return (
@@ -209,8 +281,6 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
     return null;
   }
 
-  const COLORS = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981'];
-
   return (
     <div className="space-y-6">
       {warning && (
@@ -236,7 +306,70 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
             </div>
           </div>
         </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button
+            onClick={() => void downloadPdfReport()}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-sm font-medium"
+          >
+            <Download className="w-4 h-4" />
+            Download PDF Report
+          </button>
+          <button
+            onClick={() => setShowEmailPanel((prev) => !prev)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-sm font-medium"
+          >
+            <Mail className="w-4 h-4" />
+            {showEmailPanel ? 'Hide Email' : 'Email Report'}
+          </button>
+        </div>
       </div>
+
+      {showEmailPanel && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 space-y-4">
+          <h3 className="font-semibold text-gray-900">Email Bulk Report</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label className="text-sm text-gray-700">
+              Recipient Email
+              <input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="customer@company.com"
+                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </label>
+            <label className="text-sm text-gray-700">
+              Subject
+              <input
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </label>
+          </div>
+          <label className="text-sm text-gray-700 block">
+            Message (optional)
+            <textarea
+              value={emailMessage}
+              onChange={(e) => setEmailMessage(e.target.value)}
+              rows={4}
+              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Add any comments to include in the report email"
+            />
+          </label>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSendEmail}
+              disabled={!hasEmailTo}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm font-medium"
+            >
+              <Send className="w-4 h-4" />
+              Open Email Draft
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Summary Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -278,85 +411,44 @@ const BulkCostEstimator = ({ entries, onPreviewFile }: BulkCostEstimatorProps) =
         </div>
       </div>
 
-      {/* Cost Breakdown */}
+      {/* Bulk-only detailed breakdown */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-gray-400" />
-            Cost Breakdown Details
-          </h3>
+          <h3 className="font-semibold text-gray-900">Detailed Pricing Breakdown (Bulk)</h3>
+          <p className="text-sm text-gray-500 mt-1">Component totals across all configured files.</p>
         </div>
-        <div className="p-6 space-y-3">
-          {stats.costBreakdown.map((item, index) => (
-            <div key={item.name} className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index] }} />
-                <span className="text-gray-700 font-medium">{item.name}</span>
-              </div>
-              <span className="text-gray-900 font-semibold">{formatCurrency(item.value)}</span>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Cost Component</th>
+                <th className="text-right px-4 py-3 font-semibold text-gray-700">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              <tr>
+                <td className="px-4 py-3 text-gray-700">Material</td>
+                <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(stats.totalMaterialCost)}</td>
+              </tr>
+              <tr>
+                <td className="px-4 py-3 text-gray-700">Machining</td>
+                <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(stats.totalMachiningCost)}</td>
+              </tr>
+              <tr>
+                <td className="px-4 py-3 text-gray-700">Surface Finish</td>
+                <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(stats.totalFinishCost)}</td>
+              </tr>
+              <tr>
+                <td className="px-4 py-3 text-gray-700">Inspection</td>
+                <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(stats.totalInspectionCost)}</td>
+              </tr>
+              <tr className="bg-blue-50">
+                <td className="px-4 py-3 font-semibold text-blue-900">Grand Total</td>
+                <td className="px-4 py-3 text-right font-bold text-blue-900">{formatCurrency(stats.totalCost)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      {/* Visualizations */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <button
-          onClick={() => setShowCharts(!showCharts)}
-          className="w-full px-6 py-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 transition-colors"
-        >
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-gray-400" />
-            Cost Visualizations
-          </h3>
-          {showCharts ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-        </button>
-
-        {showCharts && (
-          <div className="p-6 space-y-6">
-            {/* Pie Chart */}
-            <div className="overflow-x-auto">
-              <div className="flex flex-col items-center gap-4">
-                <h4 className="text-sm font-medium text-gray-700">Cost Distribution</h4>
-                <ResponsiveContainer width="100%" height={300} minWidth={250}>
-                  <PieChart>
-                    <Pie
-                      data={stats.costBreakdown}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }: any) => `${name}: ${formatCurrency(value as number)}`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {stats.costBreakdown.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: any) => formatCurrency(value as number)} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Bar Chart */}
-            <div className="overflow-x-auto">
-              <div className="flex flex-col items-center gap-4">
-                <h4 className="text-sm font-medium text-gray-700">Cost per File</h4>
-                <ResponsiveContainer width="100%" height={300} minWidth={250}>
-                  <BarChart data={stats.costByFile}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="filename" angle={-45} textAnchor="end" height={100} />
-                    <YAxis />
-                    <Tooltip formatter={(value: any) => formatCurrency(value as number)} />
-                    <Bar dataKey="cost" fill="#3b82f6" name="Cost" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Per-File Details */}

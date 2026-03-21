@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
 import PricingDisplay from '@/components/PricingDisplay';
+import DFXAnalysis from '@/components/DFXAnalysis';
 import FilePreviewModal from '@/components/FilePreviewModal';
 import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides, QuoteConfiguration } from '@/types';
 import { getInstantPricing, createQuote, createBatchQuote } from '@/services/api';
@@ -19,6 +20,16 @@ interface MultiFileEntry {
 
 const formatINR = (v: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(v);
+
+const getDFXSeverity = (geometry: GeometryAnalysis | null): 'error' | 'warning' | 'ok' => {
+  if (!geometry) return 'ok';
+
+  if (geometry.min_wall_thickness && geometry.min_wall_thickness < 1.5) return 'error';
+  if (geometry.min_wall_thickness && geometry.min_wall_thickness < 2.0) return 'warning';
+  if (geometry.complexity_score > 5) return 'warning';
+  if (geometry.removal_ratio < 0.3) return 'warning';
+  return 'ok';
+};
 
 const buildPricingOverridesPayload = (
   enabled: boolean,
@@ -71,6 +82,7 @@ const QuoteBuilder = () => {
   });
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [pricingLoading, setPricingLoading] = useState(false);
+  const singlePricingRequestVersion = useRef(0);
 
   // Multi-file state
   const [multiFiles, setMultiFiles] = useState<MultiFileEntry[]>(
@@ -88,14 +100,12 @@ const QuoteBuilder = () => {
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
   );
 
-  const pricingOverridesPayload = useMemo(
-    () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
-    [useQuoteSpecificPricing, pricingOverrides],
-  );
+  const pricingOverridesPayload = buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides);
 
   // Single-file pricing
   const calculateSinglePricing = useCallback(async () => {
     if (!config.cadFile || !config.materialId || !config.surfaceFinishId || !config.inspectionLevelId) return;
+    const requestVersion = ++singlePricingRequestVersion.current;
     setPricingLoading(true);
     setError(null);
     try {
@@ -107,12 +117,20 @@ const QuoteBuilder = () => {
         quantity: config.quantity,
         pricing_overrides: pricingOverridesPayload,
       });
+      if (singlePricingRequestVersion.current !== requestVersion) {
+        return;
+      }
       setPricing(result);
     } catch (err) {
+      if (singlePricingRequestVersion.current !== requestVersion) {
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to calculate pricing');
       setPricing(null);
     } finally {
-      setPricingLoading(false);
+      if (singlePricingRequestVersion.current === requestVersion) {
+        setPricingLoading(false);
+      }
     }
   }, [
     config.cadFile,
@@ -454,7 +472,28 @@ const QuoteBuilder = () => {
                   ))}
                 </div>
               )}
+
+              {config.geometry && getDFXSeverity(config.geometry) !== 'ok' && (
+                <div
+                  className={`mt-4 rounded-lg border p-3 text-sm ${
+                    getDFXSeverity(config.geometry) === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-800'
+                      : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                  }`}
+                >
+                  {getDFXSeverity(config.geometry) === 'error'
+                    ? 'DFX Error: This model has manufacturability risks that can block production quality.'
+                    : 'DFX Warning: This model may increase machining risk, cost, or lead time.'}
+                </div>
+              )}
             </div>
+
+            {config.geometry && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">DFX Analysis</h2>
+                <DFXAnalysis geometry={config.geometry} />
+              </div>
+            )}
 
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Configuration</h2>

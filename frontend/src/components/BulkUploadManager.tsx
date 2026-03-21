@@ -1,10 +1,10 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Upload, Trash2, Play, Pause, AlertCircle, CheckCircle, Clock, Eye, AlertTriangle } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides } from '@/types';
 import { uploadCADFile } from '@/services/api';
 import { pollForGeometry } from '@/services/uploadWorkflow';
-import BatchConfigPanel from './BatchConfigPanel';
+import BatchConfigPanel, { type BatchConfig } from './BatchConfigPanel';
 import BulkCostEstimator from './BulkCostEstimator';
 import FilePreviewModal from './FilePreviewModal';
 
@@ -40,6 +40,8 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
   const [showBatchConfig, setShowBatchConfig] = useState(false);
   const [previewEntry, setPreviewEntry] = useState<BulkFileEntry | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [singleConfigEntryId, setSingleConfigEntryId] = useState<string | null>(null);
+  const estimatorSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     onBulkFilesReady?.(entries);
@@ -98,7 +100,9 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
   };
 
   const processQueue = useCallback(async () => {
-    const pendingEntries = entries.filter((e) => e.status === 'pending');
+    const pendingEntries = entries.filter(
+      (e) => e.status === 'pending' || ((e.status === 'configured' || e.status === 'done') && (!e.cadFile || !e.geometry))
+    );
 
     if (pendingEntries.length === 0) return;
 
@@ -166,18 +170,47 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
   };
 
   const stats = useMemo(() => {
+    const readyCount = entries.filter(
+      (e) => (e.status === 'done' || e.status === 'configured') && e.cadFile && e.geometry
+    ).length;
+
     return {
       total: entries.length,
       pending: entries.filter((e) => e.status === 'pending').length,
       uploading: entries.filter((e) => e.status === 'uploading').length,
       processing: entries.filter((e) => e.status === 'processing').length,
-      done: entries.filter((e) => e.status === 'done' || e.status === 'configured').length,
+      done: readyCount,
       errors: entries.filter((e) => e.status === 'error').length,
     };
   }, [entries]);
 
   const hasInFlight = stats.uploading > 0 || stats.processing > 0;
   const configuredEntries = entries.filter((e) => e.cadFile && e.geometry && e.config);
+  const configuredButUnprocessedEntries = entries.filter(
+    (e) => e.config && (!e.cadFile || !e.geometry)
+  );
+  const singleConfigEntry = singleConfigEntryId ? entries.find((e) => e.id === singleConfigEntryId) ?? null : null;
+  const readyEntries = entries.filter((e) => (e.status === 'done' || e.status === 'configured') && e.cadFile && e.geometry);
+  const pendingEntries = entries.filter(
+    (e) => e.status === 'pending' || ((e.status === 'configured' || e.status === 'done') && (!e.cadFile || !e.geometry))
+  );
+
+  const applyConfigurationToEntry = (id: string, config: BatchConfig) => {
+    setEntries((prev) =>
+      prev.map((entry) => {
+        if (entry.id !== id) {
+          return entry;
+        }
+
+        const isReady = Boolean(entry.cadFile && entry.geometry);
+        return {
+          ...entry,
+          config,
+          status: isReady ? 'configured' : 'pending',
+        };
+      })
+    );
+  };
 
   const getStatusIcon = (status: BulkFileEntry['status']) => {
     switch (status) {
@@ -208,9 +241,16 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
   return (
     <div className="space-y-6">
         {/* Header */}
-        <div>
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+          <div>
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Bulk Upload & Pricing</h1>
           <p className="text-gray-600 mt-1 text-sm sm:text-base">Upload multiple CAD files and preview each one in 3D while estimating costs</p>
+          </div>
+          {entries.length > 0 && (
+            <div className="text-xs sm:text-sm text-gray-500">
+              {configuredEntries.length} configured of {entries.length}
+            </div>
+          )}
         </div>
 
         {/* Upload Area */}
@@ -264,13 +304,29 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
         {/* Controls */}
         {entries.length > 0 && (
           <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 space-y-4 sm:space-y-0">
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
+              <span className="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-full">
+                {pendingEntries.length} pending process
+              </span>
+              <span className="px-2.5 py-1 bg-green-50 border border-green-200 rounded-full">
+                {configuredEntries.length} ready for pricing/report
+              </span>
+              <button
+                onClick={() => estimatorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                disabled={configuredEntries.length === 0}
+                className="px-3 py-1 rounded-full border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Go to Pricing & Reports
+              </button>
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-start sm:items-center">
               <button
                 onClick={() => processQueue()}
-                disabled={hasInFlight}
+                disabled={hasInFlight || pendingEntries.length === 0}
                 className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium text-sm"
               >
-                {hasInFlight ? 'Processing...' : 'Start Processing'}
+                {hasInFlight ? 'Processing Files...' : `Process Files (${pendingEntries.length})`}
               </button>
 
               <button
@@ -303,7 +359,7 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
                     onClick={() => setShowBatchConfig(true)}
                     className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm"
                   >
-                    Configure ({selectedIds.size})
+                    Configure Selected ({selectedIds.size})
                   </button>
                   <button
                     onClick={() => deselectAll()}
@@ -315,12 +371,21 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
               )}
 
               {selectedIds.size === 0 && entries.length > 0 && (
-                <button
-                  onClick={() => selectAll()}
-                  className="w-full sm:w-auto px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg"
-                >
-                  Select All
-                </button>
+                <>
+                  <button
+                    onClick={() => selectAll()}
+                    className="w-full sm:w-auto px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set(readyEntries.map((entry) => entry.id)))}
+                    disabled={readyEntries.length === 0}
+                    className="w-full sm:w-auto px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg disabled:opacity-50"
+                  >
+                    Select Ready ({readyEntries.length})
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -388,6 +453,15 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
                             </button>
                           )}
 
+                          {(entry.status === 'done' || entry.status === 'configured') && (
+                            <button
+                              onClick={() => setSingleConfigEntryId(entry.id)}
+                              className="px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50 rounded border border-green-200 whitespace-nowrap"
+                            >
+                              {entry.config ? 'Edit Config' : 'Configure'}
+                            </button>
+                          )}
+
                           {/* Remove Button */}
                           <button
                             onClick={() => removeEntry(entry.id)}
@@ -428,20 +502,51 @@ const BulkUploadManager = ({ onBulkFilesReady }: BulkUploadManagerProps) => {
             onClose={() => setShowBatchConfig(false)}
             onApply={(config) => {
               selectedIds.forEach((id) => {
-                updateEntry(id, { config, status: 'configured' });
+                applyConfigurationToEntry(id, config);
               });
               setShowBatchConfig(false);
             }}
             selectedCount={selectedIds.size}
+            panelTitle="Batch Configuration"
+            targetDescription={`Apply configuration to ${selectedIds.size} selected file${selectedIds.size !== 1 ? 's' : ''}`}
+            applyButtonLabel="Apply to Selected"
+          />
+        )}
+
+        {singleConfigEntry && (
+          <BatchConfigPanel
+            onClose={() => setSingleConfigEntryId(null)}
+            onApply={(config) => {
+              applyConfigurationToEntry(singleConfigEntry.id, config);
+              setSingleConfigEntryId(null);
+            }}
+            selectedCount={1}
+            initialConfig={singleConfigEntry.config}
+            panelTitle="Configure File"
+            targetDescription={`Set configuration for ${singleConfigEntry.filename}`}
+            applyButtonLabel="Apply to File"
           />
         )}
 
         {/* Cost Estimator */}
+        {configuredButUnprocessedEntries.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 text-sm">
+            {configuredButUnprocessedEntries.length} configured file{configuredButUnprocessedEntries.length === 1 ? '' : 's'} still need processing.
+            Use <span className="font-semibold">Process Pending</span> to complete geometry and show pricing/report.
+          </div>
+        )}
+
         {configuredEntries.length > 0 && (
-          <BulkCostEstimator
-            entries={configuredEntries}
-            onPreviewFile={(entry) => setPreviewEntry(entry)}
-          />
+          <div ref={estimatorSectionRef} className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Pricing & Reports</h2>
+              <p className="text-xs sm:text-sm text-gray-500">{configuredEntries.length} configured file{configuredEntries.length === 1 ? '' : 's'}</p>
+            </div>
+            <BulkCostEstimator
+              entries={configuredEntries}
+              onPreviewFile={(entry) => setPreviewEntry(entry)}
+            />
+          </div>
         )}
 
         {/* File Preview Modal */}

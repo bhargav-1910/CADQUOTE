@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     
     # Quote settings
     QUOTE_VALIDITY_DAYS: int = 14
+
+    # Email settings
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = True
+    SMTP_FROM_EMAIL: str = "quotes@cncplatform.com"
+    SMTP_FROM_NAME: str = "CNC Quote Platform"
     
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]

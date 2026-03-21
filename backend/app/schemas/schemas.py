@@ -391,6 +391,50 @@ class BatchQuoteResponse(BaseModel):
     quote_count: int
 
 
+class BulkReportFileItem(BaseModel):
+    """Single file row in a bulk pricing report."""
+    filename: str = Field(..., min_length=1, max_length=255)
+    quantity: int = Field(..., ge=1, le=10000)
+    material_name: str = Field(..., min_length=1, max_length=100)
+    surface_finish_name: str = Field(..., min_length=1, max_length=100)
+    inspection_level_name: str = Field(..., min_length=1, max_length=100)
+    lead_time_days: float = Field(..., ge=0)
+    unit_price: Decimal = Field(..., ge=0)
+    line_total: Decimal = Field(..., ge=0)
+
+
+class BulkReportEmailRequest(BaseModel):
+    """Request payload for emailing a bulk pricing report."""
+    recipient_email: str = Field(..., min_length=5, max_length=200)
+    subject: Optional[str] = Field(None, max_length=200)
+    message: Optional[str] = Field(None, max_length=5000)
+    report_title: Optional[str] = Field(None, max_length=200)
+    currency: str = Field(default="INR", min_length=3, max_length=10)
+    total_cost: Decimal = Field(..., ge=0)
+    file_count: int = Field(..., ge=1, le=1000)
+    max_lead_time_days: float = Field(..., ge=0)
+    items: List[BulkReportFileItem] = Field(..., min_length=1, max_length=1000)
+
+
+class BulkReportPDFRequest(BaseModel):
+    """Request payload for generating a bulk pricing PDF report."""
+    report_title: Optional[str] = Field(None, max_length=200)
+    currency: str = Field(default="INR", min_length=3, max_length=10)
+    customer_name: Optional[str] = Field(None, max_length=200)
+    customer_email: Optional[str] = Field(None, max_length=200)
+    customer_company: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=5000)
+    total_cost: Decimal = Field(..., ge=0)
+    file_count: int = Field(..., ge=1, le=1000)
+    max_lead_time_days: float = Field(..., ge=0)
+    items: List[BulkReportFileItem] = Field(..., min_length=1, max_length=1000)
+
+
+class BulkReportEmailResponse(BaseModel):
+    """Response after attempting to send a bulk report email."""
+    message: str
+
+
 # ============================================================================
 # Error Schemas
 # ============================================================================

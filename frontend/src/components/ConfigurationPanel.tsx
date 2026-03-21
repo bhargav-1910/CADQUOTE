@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Box, Palette, ClipboardCheck, Loader2, Minus, Plus, Settings } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Box, Palette, ClipboardCheck, Loader2, Minus, Plus } from 'lucide-react';
 import type { Material, SurfaceFinish, InspectionLevel, PricingOverrides } from '@/types';
 import { getMaterials, getSurfaceFinishes, getInspectionLevels } from '@/services/api';
 
 const formatINR = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+
+type OverrideKey = keyof PricingOverrides;
 
 interface ConfigurationPanelProps {
   materialId: string | null;
@@ -43,6 +44,7 @@ const ConfigurationPanel = ({
   const [inspections, setInspections] = useState<InspectionLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [overrideDrafts, setOverrideDrafts] = useState<Partial<Record<OverrideKey, string>>>({});
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -56,7 +58,6 @@ const ConfigurationPanel = ({
         setFinishes(fins);
         setInspections(insps);
 
-        // Set defaults if not selected
         if (!materialId && mats.length > 0) {
           onMaterialChange(mats[0].id);
         }
@@ -76,7 +77,6 @@ const ConfigurationPanel = ({
     loadConfig();
   }, []);
 
-  // Group materials by category
   const materialsByCategory = materials.reduce((acc, mat) => {
     if (!acc[mat.category]) {
       acc[mat.category] = [];
@@ -85,13 +85,45 @@ const ConfigurationPanel = ({
     return acc;
   }, {} as Record<string, Material[]>);
 
-  const selectedMaterial = materials.find((mat) => mat.id === materialId) ?? null;
-  const selectedFinish = finishes.find((finish) => finish.id === surfaceFinishId) ?? null;
-  const selectedInspection = inspections.find((inspection) => inspection.id === inspectionLevelId) ?? null;
-
   const canEditQuoteSpecificPricing = Boolean(
     onQuoteSpecificPricingEnabledChange && onPricingOverridesChange,
   );
+
+  const selectedMaterial = materials.find((mat) => mat.id === materialId);
+  const selectedFinish = finishes.find((finish) => finish.id === surfaceFinishId);
+  const selectedInspection = inspections.find((inspection) => inspection.id === inspectionLevelId);
+
+  const applySelectionDefaultsToOverrides = (
+    current: PricingOverrides,
+    options?: {
+      includeMaterial?: boolean;
+      includeFinish?: boolean;
+      includeInspection?: boolean;
+    },
+  ) => {
+    const includeMaterial = options?.includeMaterial ?? true;
+    const includeFinish = options?.includeFinish ?? true;
+    const includeInspection = options?.includeInspection ?? true;
+
+    const next: PricingOverrides = { ...current };
+
+    if (includeMaterial && selectedMaterial) {
+      next.material_cost_per_kg = Number(selectedMaterial.cost_per_kg);
+      next.material_machining_difficulty_factor = Number(selectedMaterial.machining_difficulty_factor);
+    }
+
+    if (includeFinish && selectedFinish) {
+      next.surface_finish_fixed_cost = Number(selectedFinish.fixed_cost);
+      next.surface_finish_cost_multiplier = Number(selectedFinish.cost_multiplier);
+    }
+
+    if (includeInspection && selectedInspection) {
+      next.inspection_fixed_cost = Number(selectedInspection.fixed_cost);
+      next.inspection_percentage_cost = Number(selectedInspection.percentage_cost);
+    }
+
+    return next;
+  };
 
   const handleQuoteSpecificToggle = () => {
     if (!onQuoteSpecificPricingEnabledChange) {
@@ -101,9 +133,27 @@ const ConfigurationPanel = ({
     const nextEnabled = !quoteSpecificPricingEnabled;
     onQuoteSpecificPricingEnabledChange(nextEnabled);
 
-    if (!nextEnabled && onPricingOverridesChange) {
-      onPricingOverridesChange({});
+    if (!onPricingOverridesChange) {
+      return;
     }
+
+    if (!nextEnabled) {
+      onPricingOverridesChange({});
+      setOverrideDrafts({});
+      return;
+    }
+
+    const seeded = applySelectionDefaultsToOverrides(pricingOverrides);
+    onPricingOverridesChange(seeded);
+    setOverrideDrafts((prev) => ({
+      ...prev,
+      ...(seeded.material_cost_per_kg !== undefined ? { material_cost_per_kg: String(seeded.material_cost_per_kg) } : {}),
+      ...(seeded.material_machining_difficulty_factor !== undefined ? { material_machining_difficulty_factor: String(seeded.material_machining_difficulty_factor) } : {}),
+      ...(seeded.surface_finish_fixed_cost !== undefined ? { surface_finish_fixed_cost: String(seeded.surface_finish_fixed_cost) } : {}),
+      ...(seeded.surface_finish_cost_multiplier !== undefined ? { surface_finish_cost_multiplier: String(seeded.surface_finish_cost_multiplier) } : {}),
+      ...(seeded.inspection_fixed_cost !== undefined ? { inspection_fixed_cost: String(seeded.inspection_fixed_cost) } : {}),
+      ...(seeded.inspection_percentage_cost !== undefined ? { inspection_percentage_cost: String(seeded.inspection_percentage_cost) } : {}),
+    }));
   };
 
   const setOverride = (key: keyof PricingOverrides, value: number) => {
@@ -117,69 +167,63 @@ const ConfigurationPanel = ({
     });
   };
 
-  useEffect(() => {
-    if (!quoteSpecificPricingEnabled || !onPricingOverridesChange) {
+  const removeOverride = (key: OverrideKey) => {
+    if (!onPricingOverridesChange) {
       return;
     }
 
-    const nextOverrides: PricingOverrides = { ...pricingOverrides };
-    let changed = false;
+    const next = { ...pricingOverrides };
+    delete next[key];
+    onPricingOverridesChange(next);
+  };
 
-    if (selectedMaterial) {
-      const materialCost = Number(selectedMaterial.cost_per_kg);
-      const materialDifficulty = Number(selectedMaterial.machining_difficulty_factor);
+  const setDraft = (key: OverrideKey, value: string) => {
+    setOverrideDrafts((prev) => ({ ...prev, [key]: value }));
+  };
 
-      if (nextOverrides.material_cost_per_kg !== materialCost) {
-        nextOverrides.material_cost_per_kg = materialCost;
-        changed = true;
-      }
+  const getDraftValue = (key: OverrideKey, fallback: number) => {
+    if (overrideDrafts[key] !== undefined) {
+      return overrideDrafts[key] as string;
+    }
+    const overrideValue = pricingOverrides[key];
+    return overrideValue !== undefined ? String(overrideValue) : String(fallback);
+  };
 
-      if (nextOverrides.material_machining_difficulty_factor !== materialDifficulty) {
-        nextOverrides.material_machining_difficulty_factor = materialDifficulty;
-        changed = true;
-      }
+  const applyNumericOverrideInput = (key: OverrideKey, raw: string) => {
+    setDraft(key, raw);
+    if (raw.trim() === '') {
+      removeOverride(key);
+      return;
     }
 
-    if (selectedFinish) {
-      const finishFixedCost = Number(selectedFinish.fixed_cost);
-      const finishMultiplier = Number(selectedFinish.cost_multiplier);
-
-      if (nextOverrides.surface_finish_fixed_cost !== finishFixedCost) {
-        nextOverrides.surface_finish_fixed_cost = finishFixedCost;
-        changed = true;
-      }
-
-      if (nextOverrides.surface_finish_cost_multiplier !== finishMultiplier) {
-        nextOverrides.surface_finish_cost_multiplier = finishMultiplier;
-        changed = true;
-      }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      return;
     }
 
-    if (selectedInspection) {
-      const inspectionFixedCost = Number(selectedInspection.fixed_cost);
-      const inspectionPercentage = Number(selectedInspection.percentage_cost);
+    setOverride(key, parsed);
+  };
 
-      if (nextOverrides.inspection_fixed_cost !== inspectionFixedCost) {
-        nextOverrides.inspection_fixed_cost = inspectionFixedCost;
-        changed = true;
-      }
+  const commitNumericOverrideInput = (
+    key: OverrideKey,
+    fallback: number,
+    options?: { min?: number; max?: number },
+  ) => {
+    const raw = overrideDrafts[key];
+    const source = raw !== undefined ? raw : String(pricingOverrides[key] ?? fallback);
+    const parsed = Number(source);
 
-      if (nextOverrides.inspection_percentage_cost !== inspectionPercentage) {
-        nextOverrides.inspection_percentage_cost = inspectionPercentage;
-        changed = true;
-      }
+    let nextValue = Number.isFinite(parsed) ? parsed : fallback;
+    if (options?.min !== undefined) {
+      nextValue = Math.max(options.min, nextValue);
+    }
+    if (options?.max !== undefined) {
+      nextValue = Math.min(options.max, nextValue);
     }
 
-    if (changed) {
-      onPricingOverridesChange(nextOverrides);
-    }
-  }, [
-    quoteSpecificPricingEnabled,
-    selectedMaterial?.id,
-    selectedFinish?.id,
-    selectedInspection?.id,
-    onPricingOverridesChange,
-  ]);
+    setOverride(key, nextValue);
+    setDraft(key, String(nextValue));
+  };
 
   if (loading) {
     return (
@@ -227,7 +271,6 @@ const ConfigurationPanel = ({
         </div>
       )}
 
-      {/* Material Selection */}
       <div>
         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
           <Box className="w-4 h-4" />
@@ -253,13 +296,28 @@ const ConfigurationPanel = ({
                     >
                       <button
                         type="button"
-                        onClick={() => onMaterialChange(mat.id)}
+                        onClick={() => {
+                          onMaterialChange(mat.id);
+                          if (quoteSpecificPricingEnabled && onPricingOverridesChange) {
+                            const next = {
+                              ...pricingOverrides,
+                              material_cost_per_kg: Number(mat.cost_per_kg),
+                              material_machining_difficulty_factor: Number(mat.machining_difficulty_factor),
+                            };
+                            onPricingOverridesChange(next);
+                            setOverrideDrafts((prev) => ({
+                              ...prev,
+                              material_cost_per_kg: String(Number(mat.cost_per_kg)),
+                              material_machining_difficulty_factor: String(Number(mat.machining_difficulty_factor)),
+                            }));
+                          }
+                        }}
                         disabled={disabled}
                         className="w-full text-left"
                       >
                         <p className="font-medium text-gray-900 text-sm">{mat.name}</p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {formatINR(Number(mat.cost_per_kg))}/kg • {mat.density} g/cm³
+                          {formatINR(Number(mat.cost_per_kg))}/kg • {mat.density} g/cm3
                         </p>
                       </button>
 
@@ -274,8 +332,9 @@ const ConfigurationPanel = ({
                                 min="0.01"
                                 step="0.01"
                                 disabled={disabled}
-                                value={pricingOverrides.material_cost_per_kg ?? Number(mat.cost_per_kg)}
-                                onChange={(e) => setOverride('material_cost_per_kg', Math.max(0.01, Number(e.target.value) || 0.01))}
+                                value={getDraftValue('material_cost_per_kg', Number(mat.cost_per_kg))}
+                                onChange={(e) => applyNumericOverrideInput('material_cost_per_kg', e.target.value)}
+                                onBlur={() => commitNumericOverrideInput('material_cost_per_kg', Number(mat.cost_per_kg), { min: 0.01 })}
                                 className="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-xs"
                               />
                             </label>
@@ -287,8 +346,9 @@ const ConfigurationPanel = ({
                                 max="3"
                                 step="0.01"
                                 disabled={disabled}
-                                value={pricingOverrides.material_machining_difficulty_factor ?? Number(mat.machining_difficulty_factor)}
-                                onChange={(e) => setOverride('material_machining_difficulty_factor', Math.min(3, Math.max(0.5, Number(e.target.value) || 0.5)))}
+                                value={getDraftValue('material_machining_difficulty_factor', Number(mat.machining_difficulty_factor))}
+                                onChange={(e) => applyNumericOverrideInput('material_machining_difficulty_factor', e.target.value)}
+                                onBlur={() => commitNumericOverrideInput('material_machining_difficulty_factor', Number(mat.machining_difficulty_factor), { min: 0.5, max: 3 })}
                                 className="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-xs"
                               />
                             </label>
@@ -304,7 +364,6 @@ const ConfigurationPanel = ({
         </div>
       </div>
 
-      {/* Surface Finish Selection */}
       <div>
         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
           <Palette className="w-4 h-4" />
@@ -324,7 +383,22 @@ const ConfigurationPanel = ({
               >
                 <button
                   type="button"
-                  onClick={() => onSurfaceFinishChange(finish.id)}
+                  onClick={() => {
+                    onSurfaceFinishChange(finish.id);
+                    if (quoteSpecificPricingEnabled && onPricingOverridesChange) {
+                      const next = {
+                        ...pricingOverrides,
+                        surface_finish_fixed_cost: Number(finish.fixed_cost),
+                        surface_finish_cost_multiplier: Number(finish.cost_multiplier),
+                      };
+                      onPricingOverridesChange(next);
+                      setOverrideDrafts((prev) => ({
+                        ...prev,
+                        surface_finish_fixed_cost: String(Number(finish.fixed_cost)),
+                        surface_finish_cost_multiplier: String(Number(finish.cost_multiplier)),
+                      }));
+                    }
+                  }}
                   disabled={disabled}
                   className="w-full text-left"
                 >
@@ -350,8 +424,9 @@ const ConfigurationPanel = ({
                           min="0"
                           step="0.01"
                           disabled={disabled}
-                          value={pricingOverrides.surface_finish_fixed_cost ?? Number(finish.fixed_cost)}
-                          onChange={(e) => setOverride('surface_finish_fixed_cost', Math.max(0, Number(e.target.value) || 0))}
+                          value={getDraftValue('surface_finish_fixed_cost', Number(finish.fixed_cost))}
+                          onChange={(e) => applyNumericOverrideInput('surface_finish_fixed_cost', e.target.value)}
+                          onBlur={() => commitNumericOverrideInput('surface_finish_fixed_cost', Number(finish.fixed_cost), { min: 0 })}
                           className="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-xs"
                         />
                       </label>
@@ -362,8 +437,9 @@ const ConfigurationPanel = ({
                           min="1"
                           step="0.01"
                           disabled={disabled}
-                          value={pricingOverrides.surface_finish_cost_multiplier ?? Number(finish.cost_multiplier)}
-                          onChange={(e) => setOverride('surface_finish_cost_multiplier', Math.max(1, Number(e.target.value) || 1))}
+                          value={getDraftValue('surface_finish_cost_multiplier', Number(finish.cost_multiplier))}
+                          onChange={(e) => applyNumericOverrideInput('surface_finish_cost_multiplier', e.target.value)}
+                          onBlur={() => commitNumericOverrideInput('surface_finish_cost_multiplier', Number(finish.cost_multiplier), { min: 1 })}
                           className="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-xs"
                         />
                       </label>
@@ -376,7 +452,6 @@ const ConfigurationPanel = ({
         </div>
       </div>
 
-      {/* Inspection Level Selection */}
       <div>
         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
           <ClipboardCheck className="w-4 h-4" />
@@ -396,7 +471,22 @@ const ConfigurationPanel = ({
               >
                 <button
                   type="button"
-                  onClick={() => onInspectionLevelChange(inspection.id)}
+                  onClick={() => {
+                    onInspectionLevelChange(inspection.id);
+                    if (quoteSpecificPricingEnabled && onPricingOverridesChange) {
+                      const next = {
+                        ...pricingOverrides,
+                        inspection_fixed_cost: Number(inspection.fixed_cost),
+                        inspection_percentage_cost: Number(inspection.percentage_cost),
+                      };
+                      onPricingOverridesChange(next);
+                      setOverrideDrafts((prev) => ({
+                        ...prev,
+                        inspection_fixed_cost: String(Number(inspection.fixed_cost)),
+                        inspection_percentage_cost: String(Number(inspection.percentage_cost)),
+                      }));
+                    }
+                  }}
                   disabled={disabled}
                   className="w-full text-left"
                 >
@@ -442,8 +532,9 @@ const ConfigurationPanel = ({
                           min="0"
                           step="0.01"
                           disabled={disabled}
-                          value={pricingOverrides.inspection_fixed_cost ?? Number(inspection.fixed_cost)}
-                          onChange={(e) => setOverride('inspection_fixed_cost', Math.max(0, Number(e.target.value) || 0))}
+                          value={getDraftValue('inspection_fixed_cost', Number(inspection.fixed_cost))}
+                          onChange={(e) => applyNumericOverrideInput('inspection_fixed_cost', e.target.value)}
+                          onBlur={() => commitNumericOverrideInput('inspection_fixed_cost', Number(inspection.fixed_cost), { min: 0 })}
                           className="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-xs"
                         />
                       </label>
@@ -455,8 +546,9 @@ const ConfigurationPanel = ({
                           max="100"
                           step="0.01"
                           disabled={disabled}
-                          value={pricingOverrides.inspection_percentage_cost ?? Number(inspection.percentage_cost)}
-                          onChange={(e) => setOverride('inspection_percentage_cost', Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                          value={getDraftValue('inspection_percentage_cost', Number(inspection.percentage_cost))}
+                          onChange={(e) => applyNumericOverrideInput('inspection_percentage_cost', e.target.value)}
+                          onBlur={() => commitNumericOverrideInput('inspection_percentage_cost', Number(inspection.percentage_cost), { min: 0, max: 100 })}
                           className="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-xs"
                         />
                       </label>
@@ -469,7 +561,6 @@ const ConfigurationPanel = ({
         </div>
       </div>
 
-      {/* Quantity */}
       <div>
         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
           Quantity
@@ -506,17 +597,6 @@ const ConfigurationPanel = ({
         <p className="text-xs text-gray-500 mt-2">
           Volume discounts: 5+ (5%), 10+ (10%), 25+ (15%), 50+ (20%), 100+ (25%)
         </p>
-      </div>
-
-      {/* Admin pricing link */}
-      <div className="border-t border-gray-100 pt-4">
-        <Link
-          to="/admin/pricing"
-          className="flex items-center gap-2 text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
-        >
-          <Settings className="w-3.5 h-3.5" />
-          Customize Pricing Values
-        </Link>
       </div>
     </div>
   );

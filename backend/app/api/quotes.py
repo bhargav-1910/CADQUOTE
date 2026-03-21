@@ -18,11 +18,13 @@ from app.schemas.schemas import (
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse,
     QuoteResponse, QuoteListResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
-    CADFileResponse, BulkPricingRequest,
+    CADFileResponse, BulkPricingRequest, BulkReportEmailRequest, BulkReportEmailResponse,
+    BulkReportPDFRequest,
 )
 from app.services.pricing import calculate_pricing
 from app.services.quote import create_quote, get_quote, get_quote_by_number, list_quotes
-from app.services.document import generate_quote_document
+from app.services.document import generate_quote_document, generate_bulk_report_pdf
+from app.services.email import send_bulk_report_email
 
 router = APIRouter(tags=["Pricing & Quotes"])
 
@@ -370,6 +372,34 @@ async def generate_quote_pdf(
             status_code=500,
             detail=f"PDF generation failed: {str(e)}"
         )
+
+
+@router.post("/reports/bulk/email", response_model=BulkReportEmailResponse)
+async def email_bulk_report(request: BulkReportEmailRequest):
+    """Email a pre-computed bulk pricing report summary to a recipient."""
+    try:
+        await send_bulk_report_email(request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send report email: {str(e)}")
+
+    return BulkReportEmailResponse(message="Bulk report email sent successfully")
+
+
+@router.post("/reports/bulk/pdf")
+async def download_bulk_report_pdf(request: BulkReportPDFRequest):
+    """Generate and download bulk quote report PDF."""
+    try:
+        pdf_path = generate_bulk_report_pdf(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate bulk PDF report: {str(e)}")
+
+    return FileResponse(
+        path=pdf_path,
+        filename="bulk-quote-report.pdf",
+        media_type="application/pdf",
+    )
 
 
 @router.get("/quotes/{quote_id}/pdf/download")
