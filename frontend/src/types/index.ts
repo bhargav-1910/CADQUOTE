@@ -175,33 +175,6 @@ export interface BatchQuoteResponse {
   quote_count: number;
 }
 
-export interface BulkReportFileItem {
-  filename: string;
-  quantity: number;
-  material_name: string;
-  surface_finish_name: string;
-  inspection_level_name: string;
-  lead_time_days: number;
-  unit_price: number;
-  line_total: number;
-}
-
-export interface BulkReportEmailRequest {
-  recipient_email: string;
-  subject?: string;
-  message?: string;
-  report_title?: string;
-  currency: string;
-  total_cost: number;
-  file_count: number;
-  max_lead_time_days: number;
-  items: BulkReportFileItem[];
-}
-
-export interface BulkReportEmailResponse {
-  message: string;
-}
-
 export interface Quote {
   id: string;
   quote_number: string;

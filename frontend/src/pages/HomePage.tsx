@@ -169,15 +169,9 @@ const HomePage = () => {
                   >
                     Upload Files
                   </button>
-                  <Link
-                    to="/quote/bulk"
-                    className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors"
-                  >
-                    Open Bulk Studio
-                  </Link>
                 </div>
 
-                <p className="text-xs text-slate-500">Single upload opens quote builder automatically. Multi-upload opens batch mode.</p>
+                <p className="text-xs text-slate-500">Single and multi-file uploads both open the same quote builder flow.</p>
               </div>
             )}
           </div>

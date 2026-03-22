@@ -16,9 +16,6 @@ import type {
   BatchQuoteResponse,
   Quote,
   QuoteListItem,
-  BulkReportEmailRequest,
-  BulkReportEmailResponse,
-  BulkReportFileItem,
 } from '@/types';
 
 // Create axios instance
@@ -149,17 +146,6 @@ export const getInstantPricing = async (request: PricingRequest): Promise<Pricin
   }
 };
 
-export const calculateBulkPricing = async (
-  requests: PricingRequest[],
-): Promise<PricingResponse[]> => {
-  try {
-    const response = await api.post<PricingResponse[]>('/pricing/bulk', { requests });
-    return response.data;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
-};
-
 // ============================================================================
 // Quote API
 // ============================================================================
@@ -222,39 +208,6 @@ export const generateQuotePDF = async (quoteId: string): Promise<{ pdf_path: str
 
 export const getQuotePDFUrl = (quoteId: string): string => {
   return `/api/quotes/${quoteId}/pdf/download`;
-};
-
-export const sendBulkReportEmail = async (request: BulkReportEmailRequest): Promise<BulkReportEmailResponse> => {
-  try {
-    const response = await api.post<BulkReportEmailResponse>('/reports/bulk/email', request);
-    return response.data;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
-};
-
-export interface BulkReportPDFRequest {
-  report_title?: string;
-  currency: string;
-  customer_name?: string;
-  customer_email?: string;
-  customer_company?: string;
-  notes?: string;
-  total_cost: number;
-  file_count: number;
-  max_lead_time_days: number;
-  items: BulkReportFileItem[];
-}
-
-export const downloadBulkReportPDF = async (request: BulkReportPDFRequest): Promise<Blob> => {
-  try {
-    const response = await api.post('/reports/bulk/pdf', request, {
-      responseType: 'blob',
-    });
-    return response.data as Blob;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
 };
 
 // ============================================================================
