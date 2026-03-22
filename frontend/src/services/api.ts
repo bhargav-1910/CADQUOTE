@@ -11,6 +11,8 @@ import type {
   InspectionLevel,
   PricingRequest,
   PricingResponse,
+  BatchPricingRequest,
+  BatchPricingResponse,
   QuoteCreateRequest,
   BatchQuoteCreateRequest,
   BatchQuoteResponse,
@@ -140,6 +142,15 @@ export const getInspectionLevels = async (activeOnly = true): Promise<Inspection
 export const getInstantPricing = async (request: PricingRequest): Promise<PricingResponse> => {
   try {
     const response = await api.post<PricingResponse>('/pricing', request);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getBatchPricing = async (request: BatchPricingRequest): Promise<BatchPricingResponse> => {
+  try {
+    const response = await api.post<BatchPricingResponse>('/pricing/batch', request);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

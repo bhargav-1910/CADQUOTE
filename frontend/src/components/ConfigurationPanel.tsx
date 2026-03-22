@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Palette, ClipboardCheck, Loader2, Minus, Plus } from 'lucide-react';
 import type { Material, SurfaceFinish, InspectionLevel, PricingOverrides } from '@/types';
 import { getMaterials, getSurfaceFinishes, getInspectionLevels } from '@/services/api';
@@ -45,6 +45,7 @@ const ConfigurationPanel = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overrideDrafts, setOverrideDrafts] = useState<Partial<Record<OverrideKey, string>>>({});
+  const overrideDebounceTimers = useRef<Partial<Record<OverrideKey, ReturnType<typeof setTimeout>>>>({});
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -75,6 +76,16 @@ const ConfigurationPanel = ({
     };
 
     loadConfig();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(overrideDebounceTimers.current).forEach((timer) => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      });
+    };
   }, []);
 
   const materialsByCategory = materials.reduce((acc, mat) => {
@@ -191,6 +202,12 @@ const ConfigurationPanel = ({
 
   const applyNumericOverrideInput = (key: OverrideKey, raw: string) => {
     setDraft(key, raw);
+
+    const existingTimer = overrideDebounceTimers.current[key];
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
     if (raw.trim() === '') {
       removeOverride(key);
       return;
@@ -201,7 +218,9 @@ const ConfigurationPanel = ({
       return;
     }
 
-    setOverride(key, parsed);
+    overrideDebounceTimers.current[key] = setTimeout(() => {
+      setOverride(key, parsed);
+    }, 300);
   };
 
   const commitNumericOverrideInput = (
@@ -209,6 +228,12 @@ const ConfigurationPanel = ({
     fallback: number,
     options?: { min?: number; max?: number },
   ) => {
+    const existingTimer = overrideDebounceTimers.current[key];
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      delete overrideDebounceTimers.current[key];
+    }
+
     const raw = overrideDrafts[key];
     const source = raw !== undefined ? raw : String(pricingOverrides[key] ?? fallback);
     const parsed = Number(source);
@@ -251,6 +276,11 @@ const ConfigurationPanel = ({
               <p className="text-xs text-amber-700 mt-0.5">
                 Enable to edit pricing values inline. Changes apply only to this quote.
               </p>
+              {quoteSpecificPricingEnabled && (
+                <p className="text-[11px] text-amber-800 mt-1">
+                  Pricing updates automatically as you type.
+                </p>
+              )}
             </div>
             <button
               type="button"

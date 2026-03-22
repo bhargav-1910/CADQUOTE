@@ -252,6 +252,16 @@ class PricingRequest(BaseModel):
     pricing_overrides: Optional[PricingOverrides] = None
 
 
+class BatchPricingRequest(BaseModel):
+    """Request for pricing multiple CAD files with shared configuration."""
+    cad_file_ids: List[UUID] = Field(..., min_length=1)
+    material_id: UUID
+    surface_finish_id: UUID
+    inspection_level_id: UUID
+    quantity: int = Field(default=1, ge=1, le=10000)
+    pricing_overrides: Optional[PricingOverrides] = None
+
+
 class PriceBreakdown(BaseModel):
     """Detailed price breakdown."""
     material_cost: Decimal = Field(..., description="Raw material cost")
@@ -289,6 +299,12 @@ class PricingResponse(BaseModel):
     
     # Explanation
     pricing_explanation: dict
+
+
+class BatchPricingResponse(BaseModel):
+    """Response for batch pricing requests."""
+    results: List[PricingResponse]
+    priced_count: int
 
 
 # ============================================================================

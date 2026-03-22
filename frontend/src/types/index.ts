@@ -126,6 +126,15 @@ export interface PricingRequest {
   pricing_overrides?: PricingOverrides;
 }
 
+export interface BatchPricingRequest {
+  cad_file_ids: string[];
+  material_id: string;
+  surface_finish_id: string;
+  inspection_level_id: string;
+  quantity: number;
+  pricing_overrides?: PricingOverrides;
+}
+
 export interface PricingResponse {
   cad_file_id: string;
   file_name: string;
@@ -140,6 +149,11 @@ export interface PricingResponse {
   price_breakdown: PriceBreakdown;
   estimated_lead_time_days: number;
   pricing_explanation: Record<string, unknown>;
+}
+
+export interface BatchPricingResponse {
+  results: PricingResponse[];
+  priced_count: number;
 }
 
 // Quote

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
@@ -8,7 +8,7 @@ import PricingDisplay from '@/components/PricingDisplay';
 import DFXAnalysis from '@/components/DFXAnalysis';
 import FilePreviewModal from '@/components/FilePreviewModal';
 import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides, QuoteConfiguration } from '@/types';
-import { getInstantPricing, createQuote, createBatchQuote } from '@/services/api';
+import { getInstantPricing, getBatchPricing, createQuote, createBatchQuote } from '@/services/api';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 
 interface MultiFileEntry {
@@ -100,7 +100,10 @@ const QuoteBuilder = () => {
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
   );
 
-  const pricingOverridesPayload = buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides);
+  const pricingOverridesPayload = useMemo(
+    () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
+    [useQuoteSpecificPricing, pricingOverrides]
+  );
 
   // Single-file pricing
   const calculateSinglePricing = useCallback(async () => {
@@ -159,35 +162,27 @@ const QuoteBuilder = () => {
     let cancelled = false;
     const requestVersion = ++pricingRequestVersion.current;
 
-    const filesToPrice = multiFiles.map((entry) => ({
-      cadFileId: entry.cadFile.id,
-    }));
+    const cadFileIds = multiFiles.map((entry) => entry.cadFile.id);
 
     setMultiFiles((prev) => prev.map((f) => ({ ...f, pricingLoading: true, pricing: null })));
 
     const fetchAllPricing = async () => {
-      const results = await Promise.allSettled(
-        filesToPrice.map((entry) =>
-          getInstantPricing({
-            cad_file_id: entry.cadFileId,
-            material_id: materialId,
-            surface_finish_id: surfaceFinishId,
-            inspection_level_id: inspectionLevelId,
-            quantity,
-            pricing_overrides: pricingOverridesPayload,
-          })
-        )
-      );
+      const batchResult = await getBatchPricing({
+        cad_file_ids: cadFileIds,
+        material_id: materialId,
+        surface_finish_id: surfaceFinishId,
+        inspection_level_id: inspectionLevelId,
+        quantity,
+        pricing_overrides: pricingOverridesPayload,
+      });
 
       if (cancelled || pricingRequestVersion.current !== requestVersion) {
         return;
       }
 
       const pricingByCadFileId = new Map<string, PricingResponse>();
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          pricingByCadFileId.set(filesToPrice[index].cadFileId, result.value);
-        }
+      batchResult.results.forEach((item) => {
+        pricingByCadFileId.set(item.cad_file_id, item);
       });
 
       setMultiFiles((prev) =>
@@ -199,7 +194,13 @@ const QuoteBuilder = () => {
       );
     };
 
-    fetchAllPricing();
+    fetchAllPricing().catch(() => {
+      if (cancelled || pricingRequestVersion.current !== requestVersion) {
+        return;
+      }
+      setError('Failed to calculate pricing');
+      setMultiFiles((prev) => prev.map((f) => ({ ...f, pricingLoading: false })));
+    });
 
     return () => {
       cancelled = true;
@@ -514,7 +515,7 @@ const QuoteBuilder = () => {
             </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-6 self-start">
             <PricingDisplay pricing={pricing} loading={pricingLoading} />
             {customerForm}
             <button
@@ -605,7 +606,7 @@ const QuoteBuilder = () => {
             {customerForm}
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-6 self-start">
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Shared Configuration</h2>
               <p className="text-sm text-gray-500 mb-4">Applies to all {multiFiles.length} files.</p>

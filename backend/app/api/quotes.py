@@ -14,7 +14,8 @@ from app.models.models import (
     InspectionLevel, Quote, ProcessingStatus
 )
 from app.schemas.schemas import (
-    PricingRequest, PricingResponse, PriceBreakdown, BoundingBox,
+    PricingRequest, PricingResponse, BatchPricingRequest, BatchPricingResponse,
+    PriceBreakdown, BoundingBox,
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse,
     QuoteResponse, QuoteListResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
@@ -33,6 +34,49 @@ def _serialize_pricing_overrides(overrides: Any) -> Optional[Dict[str, Any]]:
         return None
     payload = overrides.model_dump(exclude_none=True)
     return payload or None
+
+
+def _pricing_result_to_response(
+    *,
+    cad_file: CADFile,
+    geometry: GeometryAnalysis,
+    material: Material,
+    surface_finish: SurfaceFinish,
+    inspection_level: InspectionLevel,
+    quantity: int,
+    pricing_result: Any,
+) -> PricingResponse:
+    """Convert internal pricing result to API schema."""
+    weight_kg = (geometry.volume * material.density) / 1000
+    return PricingResponse(
+        cad_file_id=cad_file.id,
+        file_name=cad_file.original_filename,
+        quantity=quantity,
+        material=MaterialResponse.model_validate(material),
+        surface_finish=SurfaceFinishResponse.model_validate(surface_finish),
+        inspection_level=InspectionLevelResponse.model_validate(inspection_level),
+        volume_cm3=geometry.volume,
+        weight_kg=round(weight_kg, 4),
+        bounding_box=BoundingBox(
+            x=geometry.bbox_x,
+            y=geometry.bbox_y,
+            z=geometry.bbox_z,
+            volume=geometry.bounding_box_volume,
+        ),
+        complexity_score=geometry.complexity_score,
+        price_breakdown=PriceBreakdown(
+            material_cost=pricing_result.material_cost,
+            machining_cost=pricing_result.machining_cost,
+            finish_cost=pricing_result.finish_cost,
+            inspection_cost=pricing_result.inspection_cost,
+            subtotal=pricing_result.subtotal,
+            margin_factor=pricing_result.details["margin"]["margin_factor"],
+            total_price=pricing_result.total_price,
+            unit_price=pricing_result.unit_price,
+        ),
+        estimated_lead_time_days=pricing_result.estimated_lead_time_days,
+        pricing_explanation=pricing_result.details,
+    )
 
 
 @router.post("/pricing", response_model=PricingResponse)
@@ -89,38 +133,94 @@ async def get_instant_pricing(
         pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
     )
     
-    # Calculate weight
-    weight_kg = (geometry.volume * material.density) / 1000
-    
-    return PricingResponse(
-        cad_file_id=cad_file.id,
-        file_name=cad_file.original_filename,
+    return _pricing_result_to_response(
+        cad_file=cad_file,
+        geometry=geometry,
+        material=material,
+        surface_finish=surface_finish,
+        inspection_level=inspection_level,
         quantity=request.quantity,
-        material=MaterialResponse.model_validate(material),
-        surface_finish=SurfaceFinishResponse.model_validate(surface_finish),
-        inspection_level=InspectionLevelResponse.model_validate(inspection_level),
-        volume_cm3=geometry.volume,
-        weight_kg=round(weight_kg, 4),
-        bounding_box=BoundingBox(
-            x=geometry.bbox_x,
-            y=geometry.bbox_y,
-            z=geometry.bbox_z,
-            volume=geometry.bounding_box_volume,
-        ),
-        complexity_score=geometry.complexity_score,
-        price_breakdown=PriceBreakdown(
-            material_cost=pricing_result.material_cost,
-            machining_cost=pricing_result.machining_cost,
-            finish_cost=pricing_result.finish_cost,
-            inspection_cost=pricing_result.inspection_cost,
-            subtotal=pricing_result.subtotal,
-            margin_factor=pricing_result.details["margin"]["margin_factor"],
-            total_price=pricing_result.total_price,
-            unit_price=pricing_result.unit_price,
-        ),
-        estimated_lead_time_days=pricing_result.estimated_lead_time_days,
-        pricing_explanation=pricing_result.details,
+        pricing_result=pricing_result,
     )
+
+
+@router.post("/pricing/batch", response_model=BatchPricingResponse)
+async def get_batch_pricing(
+    request: BatchPricingRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get pricing for multiple CAD files with shared configuration in one request."""
+    material = await db.get(Material, request.material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    surface_finish = await db.get(SurfaceFinish, request.surface_finish_id)
+    if not surface_finish:
+        raise HTTPException(status_code=404, detail="Surface finish not found")
+
+    inspection_level = await db.get(InspectionLevel, request.inspection_level_id)
+    if not inspection_level:
+        raise HTTPException(status_code=404, detail="Inspection level not found")
+
+    file_query = select(CADFile).where(CADFile.id.in_(request.cad_file_ids))
+    file_result = await db.execute(file_query)
+    cad_files = list(file_result.scalars().all())
+    cad_file_map = {file.id: file for file in cad_files}
+
+    missing_files = [file_id for file_id in request.cad_file_ids if file_id not in cad_file_map]
+    if missing_files:
+        raise HTTPException(status_code=404, detail="One or more CAD files not found")
+
+    unprocessed_files = [
+        str(file.id)
+        for file in cad_files
+        if file.processing_status != ProcessingStatus.COMPLETED
+    ]
+    if unprocessed_files:
+        raise HTTPException(
+            status_code=400,
+            detail="One or more CAD files have not been processed yet",
+        )
+
+    geometry_query = select(GeometryAnalysis).where(
+        GeometryAnalysis.cad_file_id.in_(request.cad_file_ids)
+    )
+    geometry_result = await db.execute(geometry_query)
+    geometries = list(geometry_result.scalars().all())
+    geometry_map = {geometry.cad_file_id: geometry for geometry in geometries}
+
+    missing_geometry = [file_id for file_id in request.cad_file_ids if file_id not in geometry_map]
+    if missing_geometry:
+        raise HTTPException(status_code=404, detail="Geometry analysis not found for one or more files")
+
+    serialized_overrides = _serialize_pricing_overrides(request.pricing_overrides)
+    responses: List[PricingResponse] = []
+
+    for cad_file_id in request.cad_file_ids:
+        cad_file = cad_file_map[cad_file_id]
+        geometry = geometry_map[cad_file_id]
+        pricing_result = await calculate_pricing(
+            db=db,
+            geometry=geometry,
+            material=material,
+            surface_finish=surface_finish,
+            inspection_level=inspection_level,
+            quantity=request.quantity,
+            pricing_overrides=serialized_overrides,
+        )
+        responses.append(
+            _pricing_result_to_response(
+                cad_file=cad_file,
+                geometry=geometry,
+                material=material,
+                surface_finish=surface_finish,
+                inspection_level=inspection_level,
+                quantity=request.quantity,
+                pricing_result=pricing_result,
+            )
+        )
+
+    return BatchPricingResponse(results=responses, priced_count=len(responses))
 
 
 @router.post("/quotes/batch", response_model=BatchQuoteResponse, status_code=201)
