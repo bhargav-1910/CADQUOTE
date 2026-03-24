@@ -326,6 +326,7 @@ class QuoteCreateRequest(BaseModel):
     
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
+    auto_send_email: bool = True
 
 
 class BatchQuoteCreateRequest(BaseModel):
@@ -341,6 +342,28 @@ class BatchQuoteCreateRequest(BaseModel):
     customer_company: Optional[str] = Field(None, max_length=200)
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
+    auto_send_email: bool = True
+
+
+class CombinedQuoteLineItemRequest(BaseModel):
+    """One line item in a combined multi-file quotation."""
+    cad_file_id: UUID
+    material_id: UUID
+    surface_finish_id: UUID
+    inspection_level_id: UUID
+    quantity: int = Field(default=1, ge=1, le=10000)
+
+
+class CombinedQuoteCreateRequest(BaseModel):
+    """Request to create a single quotation that aggregates multiple files."""
+    items: List[CombinedQuoteLineItemRequest] = Field(..., min_length=1)
+
+    customer_name: Optional[str] = Field(None, max_length=200)
+    customer_email: Optional[str] = Field(None, max_length=200)
+    customer_company: Optional[str] = Field(None, max_length=200)
+    pricing_overrides: Optional[PricingOverrides] = None
+    notes: Optional[str] = None
+    auto_send_email: bool = True
 
 
 class QuoteResponse(BaseSchema):
@@ -400,6 +423,81 @@ class BatchQuoteResponse(BaseModel):
     quotes: List[QuoteResponse]
     total_price: Decimal
     quote_count: int
+
+
+class QuoteEmailRequest(BaseModel):
+    """Request payload for emailing a quote to a customer."""
+    recipient_email: Optional[str] = Field(None, max_length=200)
+    subject: Optional[str] = Field(None, max_length=200)
+    message: Optional[str] = None
+
+
+class QuoteEmailResponse(BaseModel):
+    """Response payload for quote email dispatch."""
+    message: str
+    recipient_email: str
+    quote_id: UUID
+
+
+# ============================================================================
+# Auth Schemas
+# ============================================================================
+
+class UserProfileResponse(BaseSchema):
+    """Authenticated user profile response."""
+    id: UUID
+    full_name: str
+    email: str
+    company_name: str
+    company_address: str
+    company_logo_url: Optional[str] = None
+    created_at: datetime
+
+
+class LoginRequest(BaseModel):
+    """Credentials for logging in."""
+    email: str = Field(..., max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
+
+
+class AuthTokenResponse(BaseModel):
+    """JWT token and current user payload."""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserProfileResponse
+
+
+class RefreshTokenRequest(BaseModel):
+    """Request payload for access token refresh."""
+    refresh_token: str
+
+
+class SignupOtpRequest(BaseModel):
+    """Request OTP for signup verification."""
+    email: str = Field(..., max_length=200)
+
+
+class SignupOtpResponse(BaseModel):
+    """Response when OTP email is dispatched."""
+    message: str
+    expires_in_seconds: int
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request password reset email."""
+    email: str = Field(..., max_length=200)
+
+
+class ResetPasswordRequest(BaseModel):
+    """Reset password using one-time reset token."""
+    token: str
+    new_password: str = Field(..., min_length=10, max_length=200)
+
+
+class GenericMessageResponse(BaseModel):
+    """Simple message response."""
+    message: str
 
 
 # ============================================================================

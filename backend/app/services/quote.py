@@ -25,6 +25,7 @@ def generate_quote_number() -> str:
 
 async def create_quote(
     db: AsyncSession,
+    user_id: uuid.UUID,
     cad_file_id: uuid.UUID,
     material_id: uuid.UUID,
     surface_finish_id: uuid.UUID,
@@ -44,6 +45,8 @@ async def create_quote(
     # Fetch all required entities
     cad_file = await db.get(CADFile, cad_file_id)
     if not cad_file:
+        raise ValueError("CAD file not found")
+    if cad_file.user_id != user_id:
         raise ValueError("CAD file not found")
     
     geometry_query = select(GeometryAnalysis).where(
@@ -82,6 +85,7 @@ async def create_quote(
     
     quote = Quote(
         quote_number=generate_quote_number(),
+        user_id=user_id,
         customer_name=customer_name,
         customer_email=customer_email,
         customer_company=customer_company,
@@ -113,6 +117,7 @@ async def create_quote(
 
 async def get_quote(
     db: AsyncSession,
+    user_id: uuid.UUID,
     quote_id: uuid.UUID,
 ) -> Optional[Quote]:
     """Get quote by ID with all relationships loaded."""
@@ -124,7 +129,7 @@ async def get_quote(
             selectinload(Quote.surface_finish),
             selectinload(Quote.inspection_level),
         )
-        .where(Quote.id == quote_id)
+        .where(Quote.id == quote_id, Quote.user_id == user_id)
     )
     result = await db.execute(query)
     return result.scalar_one_or_none()
@@ -132,6 +137,7 @@ async def get_quote(
 
 async def get_quote_by_number(
     db: AsyncSession,
+    user_id: uuid.UUID,
     quote_number: str,
 ) -> Optional[Quote]:
     """Get quote by quote number with all relationships loaded."""
@@ -143,7 +149,7 @@ async def get_quote_by_number(
             selectinload(Quote.surface_finish),
             selectinload(Quote.inspection_level),
         )
-        .where(Quote.quote_number == quote_number)
+        .where(Quote.quote_number == quote_number, Quote.user_id == user_id)
     )
     result = await db.execute(query)
     return result.scalar_one_or_none()
@@ -151,12 +157,13 @@ async def get_quote_by_number(
 
 async def list_quotes(
     db: AsyncSession,
+    user_id: uuid.UUID,
     skip: int = 0,
     limit: int = 50,
     status: Optional[QuoteStatus] = None,
 ) -> List[Quote]:
     """List quotes with optional filtering."""
-    query = select(Quote).order_by(desc(Quote.created_at))
+    query = select(Quote).where(Quote.user_id == user_id).order_by(desc(Quote.created_at))
     
     if status:
         query = query.where(Quote.status == status)

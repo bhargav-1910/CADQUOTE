@@ -183,10 +183,39 @@ export interface BatchQuoteCreateRequest {
   notes?: string;
 }
 
+export interface CombinedQuoteLineItemRequest {
+  cad_file_id: string;
+  material_id: string;
+  surface_finish_id: string;
+  inspection_level_id: string;
+  quantity: number;
+}
+
+export interface CombinedQuoteCreateRequest {
+  items: CombinedQuoteLineItemRequest[];
+  pricing_overrides?: PricingOverrides;
+  customer_name?: string;
+  customer_email?: string;
+  customer_company?: string;
+  notes?: string;
+}
+
 export interface BatchQuoteResponse {
   quotes: Quote[];
   total_price: number;
   quote_count: number;
+}
+
+export interface QuoteEmailRequest {
+  recipient_email?: string;
+  subject?: string;
+  message?: string;
+}
+
+export interface QuoteEmailResponse {
+  message: string;
+  recipient_email: string;
+  quote_id: string;
 }
 
 export interface Quote {
@@ -239,4 +268,59 @@ export interface QuoteConfiguration {
   customerEmail: string;
   customerCompany: string;
   notes: string;
+}
+
+// Authentication
+export interface UserProfile {
+  id: string;
+  full_name: string;
+  email: string;
+  company_name: string;
+  company_address: string;
+  company_logo_url: string | null;
+  created_at: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  full_name: string;
+  email: string;
+  password: string;
+  company_name: string;
+  company_address: string;
+  otp: string;
+  logo?: File;
+}
+
+export interface SignupOtpRequest {
+  email: string;
+}
+
+export interface SignupOtpResponse {
+  message: string;
+  expires_in_seconds: number;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  new_password: string;
+}
+
+export interface GenericMessageResponse {
+  message: string;
+}
+
+export interface AuthTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: UserProfile;
 }

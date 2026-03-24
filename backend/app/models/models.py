@@ -64,6 +64,62 @@ class QuoteStatus(str, enum.Enum):
     EXPIRED = "expired"
 
 
+class User(Base):
+    """Application user for authentication and company profile data."""
+    __tablename__ = "users"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    full_name = Column(String(200), nullable=False)
+    email = Column(String(200), nullable=False, unique=True, index=True)
+    hashed_password = Column(String(255), nullable=False)
+
+    company_name = Column(String(200), nullable=False)
+    company_address = Column(Text, nullable=False)
+    company_logo_path = Column(String(500), nullable=True)
+    refresh_token_hash = Column(String(128), nullable=True)
+    refresh_token_expires_at = Column(DateTime, nullable=True)
+
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    cad_files = relationship("CADFile", back_populates="user")
+    quotes = relationship("Quote", back_populates="user")
+    signup_otps = relationship("SignupOTP", back_populates="user")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user")
+
+
+class SignupOTP(Base):
+    """One-time password used to verify signup email ownership."""
+    __tablename__ = "signup_otps"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    email = Column(String(200), nullable=False, index=True)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
+    otp_hash = Column(String(128), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    attempts = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="signup_otps")
+
+
+class PasswordResetToken(Base):
+    """Single-use password reset token."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="password_reset_tokens")
+
+
 # ============================================================================
 # Configuration Models (Data-Driven)
 # ============================================================================
@@ -175,6 +231,7 @@ class CADFile(Base):
     __tablename__ = "cad_files"
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
     original_filename = Column(String(255), nullable=False)
     stored_filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)
@@ -193,6 +250,7 @@ class CADFile(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
+    user = relationship("User", back_populates="cad_files")
     geometry = relationship("GeometryAnalysis", back_populates="cad_file", uselist=False)
     quotes = relationship("Quote", back_populates="cad_file")
 
@@ -245,6 +303,7 @@ class Quote(Base):
     __tablename__ = "quotes"
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
     quote_number = Column(String(20), unique=True, nullable=False, index=True)
     
     # Customer info
@@ -287,6 +346,7 @@ class Quote(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
+    user = relationship("User", back_populates="quotes")
     cad_file = relationship("CADFile", back_populates="quotes")
     material = relationship("Material", back_populates="quotes")
     surface_finish = relationship("SurfaceFinish", back_populates="quotes")

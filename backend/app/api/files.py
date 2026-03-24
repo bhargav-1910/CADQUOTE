@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db, get_db_session
-from app.models.models import CADFile, GeometryAnalysis, ProcessingStatus
+from app.api.deps import get_current_user
+from app.models.models import CADFile, GeometryAnalysis, ProcessingStatus, User
 from app.schemas.schemas import (
     CADFileUploadResponse, CADFileResponse, 
     GeometryAnalysisResponse, BoundingBox
@@ -18,7 +19,11 @@ from app.services.upload import upload_cad_file, get_cad_file, get_cad_file_cont
 from app.services.geometry import process_cad_file, get_geometry_analysis
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/files", tags=["CAD Files"])
+router = APIRouter(
+    prefix="/files",
+    tags=["CAD Files"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("/upload", response_model=CADFileUploadResponse)
@@ -26,6 +31,7 @@ async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload a CAD file for analysis.
@@ -34,7 +40,7 @@ async def upload_file(
     
     The file will be validated, stored, and queued for geometry processing.
     """
-    cad_file, is_duplicate = await upload_cad_file(db, file)
+    cad_file, is_duplicate = await upload_cad_file(db, file, current_user.id)
     
     if is_duplicate:
         return CADFileUploadResponse(
@@ -57,7 +63,7 @@ async def upload_file(
     async def process_geometry():
         try:
             async with get_db_session() as session:
-                cad = await get_cad_file(session, file_id)
+                cad = await get_cad_file(session, file_id, current_user.id)
                 if cad:
                     await process_cad_file(session, cad)
                     logger.info(f"Geometry processing completed for file {file_id}")
@@ -68,7 +74,7 @@ async def upload_file(
             # Update file status to failed
             try:
                 async with get_db_session() as session:
-                    cad = await get_cad_file(session, file_id)
+                    cad = await get_cad_file(session, file_id, current_user.id)
                     if cad:
                         cad.processing_status = ProcessingStatus.FAILED
                         cad.processing_error = str(e)
@@ -93,9 +99,10 @@ async def upload_file(
 async def get_file(
     file_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get CAD file details by ID."""
-    cad_file = await get_cad_file(db, file_id)
+    cad_file = await get_cad_file(db, file_id, current_user.id)
     if not cad_file:
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -116,10 +123,11 @@ async def get_file(
 async def get_file_geometry(
     file_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get geometry analysis for a CAD file."""
     # Check file exists
-    cad_file = await get_cad_file(db, file_id)
+    cad_file = await get_cad_file(db, file_id, current_user.id)
     if not cad_file:
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -171,9 +179,10 @@ async def get_file_geometry(
 async def trigger_processing(
     file_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Manually trigger geometry processing for a file."""
-    cad_file = await get_cad_file(db, file_id)
+    cad_file = await get_cad_file(db, file_id, current_user.id)
     if not cad_file:
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -200,9 +209,10 @@ async def trigger_processing(
 async def download_file(
     file_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Download the original CAD file."""
-    cad_file = await get_cad_file(db, file_id)
+    cad_file = await get_cad_file(db, file_id, current_user.id)
     if not cad_file:
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -217,6 +227,7 @@ async def download_file(
 async def preview_file(
     file_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get a web-viewable version of the CAD file.
@@ -227,7 +238,7 @@ async def preview_file(
     import os
     import tempfile
     
-    cad_file = await get_cad_file(db, file_id)
+    cad_file = await get_cad_file(db, file_id, current_user.id)
     if not cad_file:
         raise HTTPException(status_code=404, detail="File not found")
     

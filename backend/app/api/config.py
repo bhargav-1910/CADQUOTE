@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.api.deps import get_current_user
 from app.models.models import Material, SurfaceFinish, InspectionLevel, MachineRate
 from app.schemas.schemas import (
     MaterialResponse, MaterialCreate, MaterialUpdate,
@@ -15,7 +16,11 @@ from app.schemas.schemas import (
     MachineRateResponse, MachineRateCreate, MachineRateUpdate,
 )
 
-router = APIRouter(prefix="/config", tags=["Configuration"])
+router = APIRouter(
+    prefix="/config",
+    tags=["Configuration"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ============================================================================

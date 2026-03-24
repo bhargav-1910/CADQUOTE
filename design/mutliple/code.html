@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Precision CNC | Multi-File Quote Estimator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "tertiary": "#001728",
+              "surface-dim": "#d8dadc",
+              "on-secondary-container": "#556679",
+              "surface-bright": "#f7f9fb",
+              "surface-tint": "#005bc1",
+              "background": "#f7f9fb",
+              "outline-variant": "#c4c6cd",
+              "on-secondary": "#ffffff",
+              "on-primary-container": "#4b8eff",
+              "error": "#ba1a1a",
+              "on-primary-fixed-variant": "#004493",
+              "tertiary-container": "#0c2c43",
+              "on-tertiary": "#ffffff",
+              "surface-variant": "#e0e3e5",
+              "on-error": "#ffffff",
+              "inverse-on-surface": "#eff1f3",
+              "on-tertiary-fixed-variant": "#2d4961",
+              "primary-container": "#00285c",
+              "on-error-container": "#93000a",
+              "primary-fixed": "#d8e2ff",
+              "secondary": "#4f6073",
+              "on-background": "#191c1e",
+              "inverse-primary": "#adc6ff",
+              "surface-container-low": "#f2f4f6",
+              "inverse-surface": "#2d3133",
+              "on-primary-fixed": "#001a41",
+              "primary": "#001435",
+              "on-tertiary-container": "#7894af",
+              "error-container": "#ffdad6",
+              "on-surface": "#191c1e",
+              "surface-container-lowest": "#ffffff",
+              "tertiary-fixed": "#cde5ff",
+              "on-tertiary-fixed": "#001d32",
+              "on-secondary-fixed": "#0b1d2d",
+              "surface-container-highest": "#e0e3e5",
+              "surface": "#f7f9fb",
+              "secondary-fixed": "#d2e4fb",
+              "secondary-container": "#d2e4fb",
+              "on-secondary-fixed-variant": "#38485a",
+              "on-primary": "#ffffff",
+              "tertiary-fixed-dim": "#adcae6",
+              "surface-container": "#eceef0",
+              "primary-fixed-dim": "#adc6ff",
+              "surface-container-high": "#e6e8ea",
+              "outline": "#74777d",
+              "secondary-fixed-dim": "#b7c8de",
+              "on-surface-variant": "#44474c"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-effect {
+        backdrop-filter: blur(12px);
+        background: rgba(255, 255, 255, 0.8);
+      }
+    </style>
+</head>
+<body class="bg-background font-body text-on-surface antialiased">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-slate-50/80 backdrop-blur-md shadow-sm">
+<div class="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
+<div class="text-xl font-black tracking-tighter text-slate-900 font-headline">Precision CNC</div>
+<div class="hidden md:flex items-center space-gap-8 gap-8">
+<a class="font-headline font-bold tracking-tight text-sm text-slate-600 hover:text-slate-900 transition-colors" href="#">Services</a>
+<a class="font-headline font-bold tracking-tight text-sm text-slate-600 hover:text-slate-900 transition-colors" href="#">How it Works</a>
+<a class="font-headline font-bold tracking-tight text-sm text-slate-600 hover:text-slate-900 transition-colors" href="#">Pricing</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="font-headline font-bold tracking-tight text-sm text-slate-600 px-4 py-2 hover:bg-slate-100 rounded-md transition-colors active:scale-95 duration-150">Login</button>
+<button class="font-headline font-bold tracking-tight text-sm bg-primary text-on-primary px-5 py-2.5 rounded-md hover:opacity-90 transition-colors active:scale-95 duration-150">Signup</button>
+</div>
+</div>
+</nav>
+<main class="pt-24 pb-20 px-6 max-w-7xl mx-auto">
+<!-- Stepper Component -->
+<div class="mb-12 flex justify-center items-center gap-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center text-xs font-bold ring-2 ring-primary-container ring-offset-2">1</div>
+<span class="font-headline font-bold text-sm tracking-tight text-on-surface">Upload</span>
+</div>
+<div class="w-16 h-0.5 bg-surface-variant rounded-full"></div>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-tint text-on-primary flex items-center justify-center text-xs font-bold ring-2 ring-surface-tint ring-offset-2">2</div>
+<span class="font-headline font-bold text-sm tracking-tight text-on-surface">Configure</span>
+</div>
+<div class="w-16 h-0.5 bg-surface-variant rounded-full"></div>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center text-xs font-bold">3</div>
+<span class="font-headline font-bold text-sm tracking-tight text-on-surface-variant">Price</span>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- Left Column: Multi-File List -->
+<div class="lg:col-span-8 space-y-6">
+<div class="flex items-center justify-between">
+<h1 class="text-3xl font-headline font-extrabold tracking-tighter text-primary">Configuration <span class="text-surface-tint">(4 Parts)</span></h1>
+<button class="flex items-center gap-2 text-surface-tint font-bold text-sm hover:underline">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+                        Add More Files
+                    </button>
+</div>
+<div class="space-y-4">
+<!-- Part Item 1 -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0_20px_40px_rgba(25,28,30,0.06)] overflow-hidden group">
+<div class="flex items-center p-4 gap-6">
+<div class="w-24 h-24 bg-surface-container-low rounded-lg flex items-center justify-center relative group-hover:bg-surface-container">
+<span class="material-symbols-outlined text-outline text-3xl">deployed_code</span>
+<div class="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-xl">zoom_in</span>
+</div>
+</div>
+<div class="flex-grow">
+<div class="flex items-center justify-between mb-2">
+<h3 class="font-headline font-bold text-lg text-primary">Brackets_Support_V2.step</h3>
+<span class="bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Priced</span>
+</div>
+<div class="grid grid-cols-3 gap-4 text-xs text-on-surface-variant">
+<div>
+<p class="font-bold opacity-60 mb-1 uppercase">Material</p>
+<p class="font-semibold text-on-surface">Aluminum 6061-T6</p>
+</div>
+<div>
+<p class="font-bold opacity-60 mb-1 uppercase">Finish</p>
+<p class="font-semibold text-on-surface">Bead Blast (Natural)</p>
+</div>
+<div>
+<p class="font-bold opacity-60 mb-1 uppercase">Unit Price</p>
+<p class="font-semibold text-on-surface-variant text-base">$42.50 <span class="text-[10px] font-normal">x 10 units</span></p>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low/30 px-6 py-3 border-t border-outline-variant/10 flex justify-between items-center">
+<div class="flex gap-4">
+<button class="text-xs font-bold text-surface-tint flex items-center gap-1"><span class="material-symbols-outlined text-sm">edit</span> Edit Config</button>
+<button class="text-xs font-bold text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-sm">content_copy</span> Duplicate</button>
+</div>
+<button class="text-xs font-bold text-error flex items-center gap-1"><span class="material-symbols-outlined text-sm">delete</span> Remove</button>
+</div>
+</div>
+<!-- Part Item 2 -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0_20px_40px_rgba(25,28,30,0.06)] overflow-hidden group border-2 border-surface-tint/20">
+<div class="flex items-center p-4 gap-6">
+<div class="w-24 h-24 bg-surface-container-low rounded-lg flex items-center justify-center relative">
+<span class="material-symbols-outlined text-outline text-3xl">precision_manufacturing</span>
+</div>
+<div class="flex-grow">
+<div class="flex items-center justify-between mb-2">
+<h3 class="font-headline font-bold text-lg text-primary">Main_Housing_Internal.stl</h3>
+<span class="bg-secondary-fixed text-on-secondary-fixed px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Configuring...</span>
+</div>
+<div class="grid grid-cols-3 gap-4 text-xs">
+<div class="col-span-2">
+<p class="font-bold opacity-60 mb-2 uppercase text-on-surface-variant">Configure to see price</p>
+<div class="flex gap-2">
+<select class="bg-surface-container-low border-none rounded-md text-[11px] font-semibold py-1 pr-8">
+<option>Stainless Steel 304</option>
+<option>Stainless Steel 316</option>
+</select>
+<input class="w-16 bg-surface-container-low border-none rounded-md text-[11px] font-semibold py-1" type="number" value="1"/>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold opacity-60 mb-1 uppercase text-on-surface-variant">Unit Price</p>
+<p class="font-semibold text-outline">--</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Part Item 3 (Warning State) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0_20px_40px_rgba(25,28,30,0.06)] overflow-hidden border-l-4 border-error">
+<div class="flex items-center p-4 gap-6">
+<div class="w-24 h-24 bg-surface-container-low rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-error text-3xl">warning</span>
+</div>
+<div class="flex-grow">
+<div class="flex items-center justify-between mb-2">
+<h3 class="font-headline font-bold text-lg text-primary">Heat_Sink_Complex.obj</h3>
+<span class="bg-error-container text-on-error-container px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">DFM Alert</span>
+</div>
+<p class="text-xs text-error font-semibold mb-2">Internal radii too small for standard CNC tooling. Please review.</p>
+<button class="text-xs font-bold text-surface-tint underline">View DFM Analysis</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Summary & Bulk Config -->
+<aside class="lg:col-span-4 space-y-6 sticky top-24">
+<!-- Shared Config Card -->
+<div class="bg-primary p-6 rounded-xl text-white shadow-xl">
+<h2 class="font-headline font-bold text-lg mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-on-primary-container">tune</span>
+                        Bulk Configuration
+                    </h2>
+<div class="space-y-4">
+<div>
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-tertiary-container mb-2 block">Material for all parts</label>
+<select class="w-full bg-white/10 border-white/20 rounded-lg text-sm font-semibold text-white focus:ring-surface-tint">
+<option class="text-primary">Custom (Mixed)</option>
+<option class="text-primary">Aluminum 6061-T6</option>
+<option class="text-primary">Stainless Steel 304</option>
+<option class="text-primary">Brass C360</option>
+</select>
+</div>
+<div>
+<label class="text-[10px] font-bold uppercase tracking-widest text-on-tertiary-container mb-2 block">Lead Time</label>
+<div class="grid grid-cols-2 gap-2">
+<button class="py-2 px-3 bg-surface-tint rounded-lg text-xs font-bold border border-white/20">Standard (10 Days)</button>
+<button class="py-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold border border-white/10 transition-colors">Expedited (3 Days)</button>
+</div>
+</div>
+</div>
+</div>
+<!-- 3D Preview Glass Card -->
+<div class="bg-surface-container-highest rounded-xl h-64 relative overflow-hidden flex items-center justify-center">
+<div class="absolute inset-0 z-0">
+<img class="w-full h-full object-cover opacity-30 grayscale contrast-125" data-alt="Technical CAD drawing wireframe 3D view" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCx7m_du9pmXdu8DhMzRLz3ECDyOoyJsX1tf1j29e7PX6KCb7lOv1PW2DFEzFwJ-aDBfPTXNIkNkXiQPzZt7n0PlhzbNGwTkeM7hN6Z0uiMGIfa8x_X2KyTxXW9t-iYD02uFJK6U5TdBD8wVKsRJ1q4ewMSmI2Ky2rIDVvPrl_tH2Nm9JxStymqY8twMhQaLNUOYkflqSxp2vHX4fnCo5tOFAuG-b-eNuvboTZVd9X9Wn_mLDLGNaLLC8TiDinyERRYQxKNafengsc"/>
+</div>
+<div class="z-10 flex flex-col items-center gap-3">
+<span class="material-symbols-outlined text-primary text-5xl">view_in_ar</span>
+<p class="font-headline font-bold text-primary text-sm">Brackets_Support_V2.step</p>
+</div>
+<div class="absolute bottom-4 left-4 right-4 flex justify-between">
+<button class="glass-effect w-10 h-10 rounded-lg flex items-center justify-center text-primary shadow-sm hover:bg-white transition-colors">
+<span class="material-symbols-outlined">rotate_right</span>
+</button>
+<button class="glass-effect px-4 py-2 rounded-lg text-xs font-bold text-primary shadow-sm flex items-center gap-2 hover:bg-white transition-colors">
+<span class="material-symbols-outlined text-sm">fullscreen</span> View Fullscreen
+                        </button>
+</div>
+</div>
+<!-- Grand Total Card -->
+<div class="bg-surface-container-lowest p-8 rounded-xl shadow-lg border-2 border-primary/5">
+<h2 class="font-headline font-extrabold text-2xl text-primary mb-6 tracking-tight">Quote Summary</h2>
+<div class="space-y-3 mb-8">
+<div class="flex justify-between text-sm">
+<span class="text-on-surface-variant font-medium">Parts Subtotal (4)</span>
+<span class="text-primary font-bold">$1,245.00</span>
+</div>
+<div class="flex justify-between text-sm">
+<span class="text-on-surface-variant font-medium">Shipping (Expedited)</span>
+<span class="text-primary font-bold">$85.00</span>
+</div>
+<div class="flex justify-between text-sm">
+<span class="text-on-surface-variant font-medium">Bulk Discount</span>
+<span class="text-error font-bold">-$45.00</span>
+</div>
+<div class="pt-4 mt-4 border-t border-dashed border-outline-variant flex justify-between items-end">
+<span class="font-headline font-extrabold text-primary text-lg">Grand Total</span>
+<span class="text-3xl font-black text-surface-tint font-headline tracking-tighter">$1,285.00</span>
+</div>
+</div>
+<!-- Customer Info -->
+<div class="space-y-4 mb-8">
+<input class="w-full bg-surface-container-low border-none rounded-lg text-sm px-4 py-3 focus:ring-2 focus:ring-surface-tint transition-all" placeholder="Project Name" type="text"/>
+<input class="w-full bg-surface-container-low border-none rounded-lg text-sm px-4 py-3 focus:ring-2 focus:ring-surface-tint transition-all" placeholder="Contact Email" type="email"/>
+</div>
+<button class="w-full bg-gradient-to-r from-primary to-primary-container text-on-primary py-4 rounded-xl font-headline font-extrabold tracking-tight hover:shadow-xl hover:shadow-primary/20 active:scale-95 transition-all duration-200 uppercase text-sm">
+                        Generate Precision Quote
+                    </button>
+<p class="text-center mt-4 text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest">Pricing valid for 14 days</p>
+</div>
+</aside>
+</div>
+</main>
+<!-- Footer -->
+<footer class="w-full border-t border-slate-200 bg-slate-50">
+<div class="max-w-7xl mx-auto px-6 py-12 flex flex-col md:flex-row justify-between items-center gap-8">
+<div class="text-lg font-bold text-slate-900 font-headline">Precision CNC Manufacturing</div>
+<div class="flex flex-wrap justify-center gap-6">
+<a class="font-['Inter'] text-xs text-slate-500 hover:text-blue-600 underline-offset-4 hover:underline transition-all duration-200" href="#">Contact</a>
+<a class="font-['Inter'] text-xs text-slate-500 hover:text-blue-600 underline-offset-4 hover:underline transition-all duration-200" href="#">Privacy Policy</a>
+<a class="font-['Inter'] text-xs text-slate-500 hover:text-blue-600 underline-offset-4 hover:underline transition-all duration-200" href="#">Terms of Service</a>
+<a class="font-['Inter'] text-xs text-slate-500 hover:text-blue-600 underline-offset-4 hover:underline transition-all duration-200" href="#">Documentation</a>
+<a class="font-['Inter'] text-xs text-slate-500 hover:text-blue-600 underline-offset-4 hover:underline transition-all duration-200" href="#">API</a>
+</div>
+<p class="font-['Inter'] text-xs text-slate-500">© 2024 Precision CNC Manufacturing. All rights reserved.</p>
+</div>
+</footer>
+</body></html>

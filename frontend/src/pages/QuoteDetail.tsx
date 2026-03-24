@@ -5,7 +5,52 @@ import {
   AlertCircle, CheckCircle, Package, Clock, User 
 } from 'lucide-react';
 import type { Quote } from '@/types';
-import { getQuote, getQuotePDFUrl, generateQuotePDF } from '@/services/api';
+import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail } from '@/services/api';
+
+interface CombinedFileLine {
+  fileName: string;
+  quantity: number;
+  totalPrice: number;
+}
+
+const parseCombinedNotes = (rawNotes: string | null): { files: CombinedFileLine[]; cleanNotes: string | null } => {
+  if (!rawNotes) {
+    return { files: [], cleanNotes: null };
+  }
+
+  const startTag = '[COMBINED_FILES]';
+  const endTag = '[/COMBINED_FILES]';
+  const start = rawNotes.indexOf(startTag);
+  const end = rawNotes.indexOf(endTag);
+
+  if (start === -1 || end === -1 || end <= start) {
+    return { files: [], cleanNotes: rawNotes };
+  }
+
+  const metadataBlock = rawNotes
+    .slice(start + startTag.length, end)
+    .trim();
+
+  const files: CombinedFileLine[] = metadataBlock
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [fileName, qtyRaw, totalRaw] = line.split('|');
+      return {
+        fileName: fileName ?? 'Unknown file',
+        quantity: Number(qtyRaw ?? 1),
+        totalPrice: Number(totalRaw ?? 0),
+      };
+    })
+    .filter((line) => Number.isFinite(line.quantity) && Number.isFinite(line.totalPrice));
+
+  const cleanNotes = `${rawNotes.slice(0, start)}${rawNotes.slice(end + endTag.length)}`.trim();
+  return {
+    files,
+    cleanNotes: cleanNotes || null,
+  };
+};
 
 const QuoteDetail = () => {
   const { quoteId } = useParams<{ quoteId: string }>();
@@ -13,6 +58,8 @@ const QuoteDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [emailing, setEmailing] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchQuote = async () => {
@@ -48,20 +95,42 @@ const QuoteDetail = () => {
 
   const handleDownloadPDF = async () => {
     if (!quote) return;
-    
+
+    setError(null);
     setGenerating(true);
     try {
-      // Generate PDF if not already generated
       if (!quote.pdf_path) {
         await generateQuotePDF(quote.id);
       }
-      
-      // Download
-      window.open(getQuotePDFUrl(quote.id), '_blank');
+
+      await downloadQuotePDF(quote.id, quote.quote_number);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate PDF');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleEmailQuote = async () => {
+    if (!quote || !quote.customer_email) {
+      setError('Customer email is missing for this quote');
+      return;
+    }
+
+    setError(null);
+    setEmailSuccess(null);
+    setEmailing(true);
+
+    try {
+      const response = await sendQuoteEmail(quote.id, {
+        recipient_email: quote.customer_email,
+      });
+      setEmailSuccess(`Email sent to ${response.recipient_email}`);
+      setQuote((prev) => (prev ? { ...prev, status: 'sent' } : prev));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to email quote');
+    } finally {
+      setEmailing(false);
     }
   };
 
@@ -95,12 +164,13 @@ const QuoteDetail = () => {
   }
 
   const isExpired = new Date(quote.valid_until) < new Date();
+  const combinedQuote = parseCombinedNotes(quote.notes);
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-500">
-        <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+        <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
           <Home className="w-3.5 h-3.5" />
           Home
         </Link>
@@ -165,6 +235,13 @@ const QuoteDetail = () => {
         </div>
       )}
 
+      {emailSuccess && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-green-700">{emailSuccess}</p>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
@@ -201,20 +278,34 @@ const QuoteDetail = () => {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Package className="w-5 h-5 text-gray-400" />
-              Part Details
+              {combinedQuote.files.length > 0 ? 'Uploaded Files' : 'Part Details'}
             </h2>
             
             <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">File</p>
-                <p className="font-medium text-gray-900">
-                  {quote.cad_file.original_filename}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {quote.cad_file.file_format.toUpperCase()} • 
-                  {(quote.cad_file.file_size / 1024).toFixed(1)} KB
-                </p>
-              </div>
+              {combinedQuote.files.length > 0 ? (
+                <div className="space-y-2">
+                  {combinedQuote.files.map((file) => (
+                    <div key={`${file.fileName}-${file.quantity}-${file.totalPrice}`} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{file.fileName}</p>
+                        <p className="text-xs text-gray-500">Qty {file.quantity}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">{formatCurrency(file.totalPrice)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">File</p>
+                  <p className="font-medium text-gray-900">
+                    {quote.cad_file.original_filename}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {quote.cad_file.file_format.toUpperCase()} • 
+                    {(quote.cad_file.file_size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+              )}
 
               <div className="grid sm:grid-cols-3 gap-4">
                 <div>
@@ -307,10 +398,10 @@ const QuoteDetail = () => {
           </div>
 
           {/* Notes */}
-          {quote.notes && (
+          {combinedQuote.cleanNotes && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Notes</h2>
-              <p className="text-gray-700 whitespace-pre-wrap">{quote.notes}</p>
+              <p className="text-gray-700 whitespace-pre-wrap">{combinedQuote.cleanNotes}</p>
             </div>
           )}
         </div>
@@ -327,7 +418,11 @@ const QuoteDetail = () => {
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Package className="w-4 h-4 text-primary-200" />
-                <span>{quote.quantity} unit{quote.quantity > 1 ? 's' : ''}</span>
+                <span>
+                  {combinedQuote.files.length > 0
+                    ? `${combinedQuote.files.length} file${combinedQuote.files.length === 1 ? '' : 's'}`
+                    : `${quote.quantity} unit${quote.quantity > 1 ? 's' : ''}`}
+                </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="w-4 h-4 text-primary-200" />
@@ -371,13 +466,14 @@ const QuoteDetail = () => {
             </button>
             
             {quote.customer_email && (
-              <a
-                href={`mailto:${quote.customer_email}?subject=Quote ${quote.quote_number}`}
+              <button
+                onClick={handleEmailQuote}
+                disabled={emailing}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
               >
-                <Mail className="w-4 h-4" />
-                Email Customer
-              </a>
+                {emailing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                {emailing ? 'Sending Email...' : 'Email Customer'}
+              </button>
             )}
           </div>
         </div>

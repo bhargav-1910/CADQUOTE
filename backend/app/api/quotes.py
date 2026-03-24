@@ -1,6 +1,8 @@
 """Pricing and quote endpoints."""
 import uuid
 from typing import List, Optional, Dict, Any
+from decimal import Decimal
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -9,23 +11,62 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.api.deps import get_current_user
 from app.models.models import (
     CADFile, GeometryAnalysis, Material, SurfaceFinish, 
-    InspectionLevel, Quote, ProcessingStatus
+    InspectionLevel, Quote, ProcessingStatus, QuoteStatus, User
 )
 from app.schemas.schemas import (
     PricingRequest, PricingResponse, BatchPricingRequest, BatchPricingResponse,
     PriceBreakdown, BoundingBox,
-    QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse,
+    QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse, CombinedQuoteCreateRequest,
     QuoteResponse, QuoteListResponse,
+    QuoteEmailRequest, QuoteEmailResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
 from app.services.pricing import calculate_pricing
-from app.services.quote import create_quote, get_quote, get_quote_by_number, list_quotes
+from app.services.quote import (
+    create_quote,
+    get_quote,
+    get_quote_by_number,
+    list_quotes,
+    generate_quote_number,
+    update_quote_status,
+)
 from app.services.document import generate_quote_document
+from app.services.email import send_quote_email
+from app.core.config import settings
 
-router = APIRouter(tags=["Pricing & Quotes"])
+router = APIRouter(tags=["Pricing & Quotes"], dependencies=[Depends(get_current_user)])
+
+
+async def _auto_send_quote_email_if_requested(
+    *,
+    db: AsyncSession,
+    quote: Quote,
+    current_user: User,
+    auto_send_email: bool,
+) -> None:
+    if not auto_send_email:
+        return
+
+    recipient_email = (quote.customer_email or "").strip()
+    if not recipient_email:
+        return
+
+    if not quote.pdf_path:
+        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
+    else:
+        pdf_path = quote.pdf_path
+
+    await send_quote_email(
+        quote=quote,
+        sender=current_user,
+        recipient_email=recipient_email,
+        pdf_path=pdf_path,
+    )
+    await update_quote_status(db, quote.id, QuoteStatus.SENT)
 
 
 def _serialize_pricing_overrides(overrides: Any) -> Optional[Dict[str, Any]]:
@@ -83,6 +124,7 @@ def _pricing_result_to_response(
 async def get_instant_pricing(
     request: PricingRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get instant pricing for a CNC job.
@@ -92,6 +134,8 @@ async def get_instant_pricing(
     # Fetch all required entities
     cad_file = await db.get(CADFile, request.cad_file_id)
     if not cad_file:
+        raise HTTPException(status_code=404, detail="CAD file not found")
+    if cad_file.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="CAD file not found")
     
     if cad_file.processing_status != ProcessingStatus.COMPLETED:
@@ -148,6 +192,7 @@ async def get_instant_pricing(
 async def get_batch_pricing(
     request: BatchPricingRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get pricing for multiple CAD files with shared configuration in one request."""
     material = await db.get(Material, request.material_id)
@@ -162,7 +207,7 @@ async def get_batch_pricing(
     if not inspection_level:
         raise HTTPException(status_code=404, detail="Inspection level not found")
 
-    file_query = select(CADFile).where(CADFile.id.in_(request.cad_file_ids))
+    file_query = select(CADFile).where(CADFile.id.in_(request.cad_file_ids), CADFile.user_id == current_user.id)
     file_result = await db.execute(file_query)
     cad_files = list(file_result.scalars().all())
     cad_file_map = {file.id: file for file in cad_files}
@@ -227,6 +272,7 @@ async def get_batch_pricing(
 async def create_batch_quotation(
     request: BatchQuoteCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Create multiple quotes at once with shared configuration.
@@ -239,6 +285,7 @@ async def create_batch_quotation(
         try:
             quote = await create_quote(
                 db=db,
+                user_id=current_user.id,
                 cad_file_id=cad_file_id,
                 material_id=request.material_id,
                 surface_finish_id=request.surface_finish_id,
@@ -250,18 +297,159 @@ async def create_batch_quotation(
                 pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
                 notes=request.notes,
             )
-            quote = await get_quote(db, quote.id)
+            quote = await get_quote(db, current_user.id, quote.id)
+            await _auto_send_quote_email_if_requested(
+                db=db,
+                quote=quote,
+                current_user=current_user,
+                auto_send_email=request.auto_send_email,
+            )
+            quote = await get_quote(db, current_user.id, quote.id)
             created.append(_quote_to_response(quote))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Quote email delivery failed: {str(e)}")
 
     total = sum(D(str(q.total_price)) for q in created)
     return BatchQuoteResponse(quotes=created, total_price=total, quote_count=len(created))
+
+
+@router.post("/quotes/combined", response_model=QuoteResponse, status_code=201)
+async def create_combined_quotation(
+    request: CombinedQuoteCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a single quotation that aggregates multiple CAD files into one record."""
+    material_cache: Dict[uuid.UUID, Material] = {}
+    finish_cache: Dict[uuid.UUID, SurfaceFinish] = {}
+    inspection_cache: Dict[uuid.UUID, InspectionLevel] = {}
+
+    total_material_cost = Decimal("0")
+    total_machining_cost = Decimal("0")
+    total_finish_cost = Decimal("0")
+    total_inspection_cost = Decimal("0")
+    total_subtotal = Decimal("0")
+    total_price = Decimal("0")
+    max_lead_time = 0.0
+
+    first_item = request.items[0]
+    combined_lines: List[str] = []
+    serialized_overrides = _serialize_pricing_overrides(request.pricing_overrides)
+
+    for item in request.items:
+        cad_file = await db.get(CADFile, item.cad_file_id)
+        if not cad_file:
+            raise HTTPException(status_code=404, detail="CAD file not found")
+        if cad_file.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="CAD file not found")
+
+        if cad_file.processing_status != ProcessingStatus.COMPLETED:
+            raise HTTPException(status_code=400, detail="One or more CAD files have not been processed yet")
+
+        geometry_query = select(GeometryAnalysis).where(
+            GeometryAnalysis.cad_file_id == item.cad_file_id
+        )
+        geometry_result = await db.execute(geometry_query)
+        geometry = geometry_result.scalar_one_or_none()
+        if not geometry:
+            raise HTTPException(status_code=404, detail="Geometry analysis not found")
+
+        material = material_cache.get(item.material_id)
+        if material is None:
+            material = await db.get(Material, item.material_id)
+            if not material:
+                raise HTTPException(status_code=404, detail="Material not found")
+            material_cache[item.material_id] = material
+
+        surface_finish = finish_cache.get(item.surface_finish_id)
+        if surface_finish is None:
+            surface_finish = await db.get(SurfaceFinish, item.surface_finish_id)
+            if not surface_finish:
+                raise HTTPException(status_code=404, detail="Surface finish not found")
+            finish_cache[item.surface_finish_id] = surface_finish
+
+        inspection_level = inspection_cache.get(item.inspection_level_id)
+        if inspection_level is None:
+            inspection_level = await db.get(InspectionLevel, item.inspection_level_id)
+            if not inspection_level:
+                raise HTTPException(status_code=404, detail="Inspection level not found")
+            inspection_cache[item.inspection_level_id] = inspection_level
+
+        pricing_result = await calculate_pricing(
+            db=db,
+            geometry=geometry,
+            material=material,
+            surface_finish=surface_finish,
+            inspection_level=inspection_level,
+            quantity=item.quantity,
+            pricing_overrides=serialized_overrides,
+        )
+
+        total_material_cost += Decimal(str(pricing_result.material_cost))
+        total_machining_cost += Decimal(str(pricing_result.machining_cost))
+        total_finish_cost += Decimal(str(pricing_result.finish_cost))
+        total_inspection_cost += Decimal(str(pricing_result.inspection_cost))
+        total_subtotal += Decimal(str(pricing_result.subtotal))
+        total_price += Decimal(str(pricing_result.total_price))
+        max_lead_time = max(max_lead_time, float(pricing_result.estimated_lead_time_days))
+
+        safe_filename = cad_file.original_filename.replace("|", "/")
+        combined_lines.append(f"{safe_filename}|{item.quantity}|{Decimal(str(pricing_result.total_price)):.2f}")
+
+    margin_factor = float(total_price / total_subtotal) if total_subtotal > 0 else 1.0
+    combined_notes = "[COMBINED_FILES]\n" + "\n".join(combined_lines) + "\n[/COMBINED_FILES]"
+    final_notes = f"{combined_notes}\n\n{request.notes}" if request.notes else combined_notes
+
+    quote = Quote(
+        quote_number=generate_quote_number(),
+        user_id=current_user.id,
+        customer_name=request.customer_name,
+        customer_email=request.customer_email,
+        customer_company=request.customer_company,
+        cad_file_id=first_item.cad_file_id,
+        material_id=first_item.material_id,
+        surface_finish_id=first_item.surface_finish_id,
+        inspection_level_id=first_item.inspection_level_id,
+        quantity=1,
+        material_cost=total_material_cost,
+        machining_cost=total_machining_cost,
+        finish_cost=total_finish_cost,
+        inspection_cost=total_inspection_cost,
+        subtotal=total_subtotal,
+        margin_factor=margin_factor,
+        total_price=total_price,
+        unit_price=total_price,
+        estimated_lead_time_days=max_lead_time,
+        status=QuoteStatus.GENERATED,
+        valid_until=datetime.utcnow() + timedelta(days=settings.QUOTE_VALIDITY_DAYS),
+        notes=final_notes,
+    )
+
+    db.add(quote)
+    await db.commit()
+    await db.refresh(quote)
+    quote = await get_quote(db, current_user.id, quote.id)
+
+    try:
+        await _auto_send_quote_email_if_requested(
+            db=db,
+            quote=quote,
+            current_user=current_user,
+            auto_send_email=request.auto_send_email,
+        )
+        quote = await get_quote(db, current_user.id, quote.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Quote email delivery failed: {str(e)}")
+
+    return _quote_to_response(quote)
 
 @router.post("/quotes", response_model=QuoteResponse, status_code=201)
 async def create_quotation(
     request: QuoteCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Create a formal quotation.
@@ -271,22 +459,33 @@ async def create_quotation(
     try:
         quote = await create_quote(
             db=db,
+            user_id=current_user.id,
             cad_file_id=request.cad_file_id,
             material_id=request.material_id,
             surface_finish_id=request.surface_finish_id,
             inspection_level_id=request.inspection_level_id,
             quantity=request.quantity,
-            customer_name=request.customer_name,
+            customer_name=request.customer_name or current_user.full_name,
             customer_email=request.customer_email,
-            customer_company=request.customer_company,
+            customer_company=request.customer_company or current_user.company_name,
             pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
             notes=request.notes,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    # Reload with relationships
-    quote = await get_quote(db, quote.id)
+    quote = await get_quote(db, current_user.id, quote.id)
+
+    try:
+        await _auto_send_quote_email_if_requested(
+            db=db,
+            quote=quote,
+            current_user=current_user,
+            auto_send_email=request.auto_send_email,
+        )
+        quote = await get_quote(db, current_user.id, quote.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Quote email delivery failed: {str(e)}")
     
     return _quote_to_response(quote)
 
@@ -296,9 +495,10 @@ async def list_quotations(
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """List all quotations."""
-    quotes = await list_quotes(db, skip=skip, limit=limit)
+    quotes = await list_quotes(db, current_user.id, skip=skip, limit=limit)
     return [
         QuoteListResponse(
             id=q.id,
@@ -317,9 +517,10 @@ async def list_quotations(
 async def get_quotation(
     quote_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get quotation by ID."""
-    quote = await get_quote(db, quote_id)
+    quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
     
@@ -330,9 +531,10 @@ async def get_quotation(
 async def get_quotation_by_number(
     quote_number: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get quotation by quote number."""
-    quote = await get_quote_by_number(db, quote_number)
+    quote = await get_quote_by_number(db, current_user.id, quote_number)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
     
@@ -343,14 +545,15 @@ async def get_quotation_by_number(
 async def generate_quote_pdf(
     quote_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate PDF document for a quote."""
-    quote = await get_quote(db, quote_id)
+    quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
     
     try:
-        pdf_path = await generate_quote_document(db, quote)
+        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
         return {"pdf_path": pdf_path, "message": "PDF generated successfully"}
     except Exception as e:
         raise HTTPException(
@@ -363,16 +566,17 @@ async def generate_quote_pdf(
 async def download_quote_pdf(
     quote_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Download the PDF document for a quote."""
-    quote = await get_quote(db, quote_id)
+    quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
     
     if not quote.pdf_path:
         # Generate PDF if not exists
         try:
-            pdf_path = await generate_quote_document(db, quote)
+            pdf_path = await generate_quote_document(db, quote, issuer=current_user)
         except Exception as e:
             raise HTTPException(
                 status_code=500,
@@ -385,6 +589,56 @@ async def download_quote_pdf(
         path=pdf_path,
         filename=f"{quote.quote_number}.pdf",
         media_type="application/pdf",
+    )
+
+
+@router.post("/quotes/{quote_id}/email", response_model=QuoteEmailResponse)
+async def email_quote_to_customer(
+    quote_id: uuid.UUID,
+    request: QuoteEmailRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send the quote PDF to the customer using SMTP."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    recipient_email = (request.recipient_email or quote.customer_email or "").strip()
+    if not recipient_email:
+        raise HTTPException(status_code=400, detail="Customer email is required to send quote")
+
+    if not quote.pdf_path:
+        try:
+            pdf_path = await generate_quote_document(db, quote, issuer=current_user)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"PDF generation failed: {str(e)}",
+            )
+    else:
+        pdf_path = quote.pdf_path
+
+    try:
+        await send_quote_email(
+            quote=quote,
+            sender=current_user,
+            recipient_email=recipient_email,
+            pdf_path=pdf_path,
+            subject=request.subject,
+            message=request.message,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email delivery failed: {str(e)}")
+
+    await update_quote_status(db, quote.id, QuoteStatus.SENT)
+
+    return QuoteEmailResponse(
+        message="Quote emailed successfully",
+        recipient_email=recipient_email,
+        quote_id=quote.id,
     )
 
 

@@ -1,21 +1,34 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2 } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
 import PricingDisplay from '@/components/PricingDisplay';
 import DFXAnalysis from '@/components/DFXAnalysis';
 import FilePreviewModal from '@/components/FilePreviewModal';
+import { useAuth } from '@/components/AuthProvider';
 import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides, QuoteConfiguration } from '@/types';
-import { getInstantPricing, getBatchPricing, createQuote, createBatchQuote } from '@/services/api';
+import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote } from '@/services/api';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 
 interface MultiFileEntry {
   cadFile: CADFile;
   geometry: GeometryAnalysis;
+  selected: boolean;
+  materialId: string | null;
+  surfaceFinishId: string | null;
+  inspectionLevelId: string | null;
+  quantity: number;
   pricing: PricingResponse | null;
   pricingLoading: boolean;
+}
+
+interface EffectiveConfig {
+  materialId: string | null;
+  surfaceFinishId: string | null;
+  inspectionLevelId: string | null;
+  quantity: number;
 }
 
 const formatINR = (v: number) =>
@@ -53,6 +66,7 @@ const buildPricingOverridesPayload = (
 const QuoteBuilder = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
   const initialMultiFiles: ProcessedCADUpload[] =
     location.state?.multiFiles ?? [];
@@ -62,9 +76,9 @@ const QuoteBuilder = () => {
   const [surfaceFinishId, setSurfaceFinishId] = useState<string | null>(null);
   const [inspectionLevelId, setInspectionLevelId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerCompany, setCustomerCompany] = useState('');
+  const [customerName, setCustomerName] = useState(user?.full_name ?? '');
+  const [customerEmail, setCustomerEmail] = useState(user?.email ?? '');
+  const [customerCompany, setCustomerCompany] = useState(user?.company_name ?? '');
   const [notes, setNotes] = useState('');
 
   // Single-file state
@@ -75,9 +89,9 @@ const QuoteBuilder = () => {
     surfaceFinishId: null,
     inspectionLevelId: null,
     quantity: 1,
-    customerName: '',
-    customerEmail: '',
-    customerCompany: '',
+    customerName: user?.full_name ?? '',
+    customerEmail: user?.email ?? '',
+    customerCompany: user?.company_name ?? '',
     notes: '',
   });
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
@@ -86,7 +100,20 @@ const QuoteBuilder = () => {
 
   // Multi-file state
   const [multiFiles, setMultiFiles] = useState<MultiFileEntry[]>(
-    initialMultiFiles.map((f) => ({ ...f, pricing: null, pricingLoading: false }))
+    initialMultiFiles.map((f) => ({
+      ...f,
+      selected: true,
+      materialId: null,
+      surfaceFinishId: null,
+      inspectionLevelId: null,
+      quantity: 1,
+      pricing: null,
+      pricingLoading: false,
+    }))
+  );
+  const [configureIndividually, setConfigureIndividually] = useState(false);
+  const [activeMultiFileId, setActiveMultiFileId] = useState<string | null>(
+    initialMultiFiles.length > 1 ? initialMultiFiles[0].cadFile.id : null
   );
   const [previewFile, setPreviewFile] = useState<MultiFileEntry | null>(null);
   const isMultiMode = multiFiles.length > 1;
@@ -104,6 +131,54 @@ const QuoteBuilder = () => {
     () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
     [useQuoteSpecificPricing, pricingOverrides]
   );
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    setCustomerName((prev) => prev || user.full_name);
+    setCustomerEmail((prev) => prev || user.email);
+    setCustomerCompany((prev) => prev || user.company_name);
+    setConfig((prev) => ({
+      ...prev,
+      customerName: prev.customerName || user.full_name,
+      customerEmail: prev.customerEmail || user.email,
+      customerCompany: prev.customerCompany || user.company_name,
+    }));
+  }, [user]);
+
+  const hasCompleteConfig = useCallback((cfg: EffectiveConfig) => {
+    return Boolean(cfg.materialId && cfg.surfaceFinishId && cfg.inspectionLevelId && cfg.quantity > 0);
+  }, []);
+
+  const getEffectiveConfig = useCallback((file: MultiFileEntry): EffectiveConfig => {
+    if (configureIndividually) {
+      return {
+        materialId: file.materialId,
+        surfaceFinishId: file.surfaceFinishId,
+        inspectionLevelId: file.inspectionLevelId,
+        quantity: file.quantity,
+      };
+    }
+
+    return {
+      materialId,
+      surfaceFinishId,
+      inspectionLevelId,
+      quantity,
+    };
+  }, [configureIndividually, materialId, surfaceFinishId, inspectionLevelId, quantity]);
+
+  const updateMultiFile = useCallback((cadFileId: string, updates: Partial<MultiFileEntry>) => {
+    setMultiFiles((prev) =>
+      prev.map((file) =>
+        file.cadFile.id === cadFileId
+          ? { ...file, ...updates }
+          : file
+      )
+    );
+  }, []);
 
   // Single-file pricing
   const calculateSinglePricing = useCallback(async () => {
@@ -148,50 +223,119 @@ const QuoteBuilder = () => {
     if (!isMultiMode) calculateSinglePricing();
   }, [calculateSinglePricing, isMultiMode]);
 
-  // Multi-file pricing: recalculate all when shared config changes
-  const multiFileIds = multiFiles.map((file) => file.cadFile.id).join(',');
+  // Multi-file pricing: recalculate selected files when effective config changes
+  const multiConfigSignature = useMemo(
+    () =>
+      multiFiles
+        .map(
+          (file) =>
+            `${file.cadFile.id}:${file.selected ? 1 : 0}:${file.materialId ?? ''}:${file.surfaceFinishId ?? ''}:${file.inspectionLevelId ?? ''}:${file.quantity}`
+        )
+        .join('|'),
+    [multiFiles]
+  );
 
   useEffect(() => {
     if (!isMultiMode || multiFiles.length === 0) return;
 
-    if (!materialId || !surfaceFinishId || !inspectionLevelId) {
-      setMultiFiles((prev) => prev.map((f) => ({ ...f, pricing: null, pricingLoading: false })));
-      return;
-    }
-
     let cancelled = false;
     const requestVersion = ++pricingRequestVersion.current;
 
-    const cadFileIds = multiFiles.map((entry) => entry.cadFile.id);
+    const selectedEntries = multiFiles.filter((file) => file.selected);
+    const readyEntries = selectedEntries
+      .map((file) => ({ file, config: getEffectiveConfig(file) }))
+      .filter(({ config }) => hasCompleteConfig(config));
 
-    setMultiFiles((prev) => prev.map((f) => ({ ...f, pricingLoading: true, pricing: null })));
+    setError(null);
+    setMultiFiles((prev) =>
+      prev.map((file) => {
+        if (!file.selected) {
+          return { ...file, pricing: null, pricingLoading: false };
+        }
+
+        const cfg = getEffectiveConfig(file);
+        if (!hasCompleteConfig(cfg)) {
+          return { ...file, pricing: null, pricingLoading: false };
+        }
+
+        return { ...file, pricing: null, pricingLoading: true };
+      })
+    );
+
+    if (readyEntries.length === 0) {
+      return;
+    }
 
     const fetchAllPricing = async () => {
-      const batchResult = await getBatchPricing({
-        cad_file_ids: cadFileIds,
-        material_id: materialId,
-        surface_finish_id: surfaceFinishId,
-        inspection_level_id: inspectionLevelId,
-        quantity,
-        pricing_overrides: pricingOverridesPayload,
-      });
+      let settled: PromiseSettledResult<PricingResponse>[] = [];
+
+      if (!configureIndividually) {
+        const sharedCfg = readyEntries[0].config;
+        try {
+          const batchResult = await getBatchPricing({
+            cad_file_ids: readyEntries.map(({ file }) => file.cadFile.id),
+            material_id: sharedCfg.materialId!,
+            surface_finish_id: sharedCfg.surfaceFinishId!,
+            inspection_level_id: sharedCfg.inspectionLevelId!,
+            quantity: sharedCfg.quantity,
+            pricing_overrides: pricingOverridesPayload,
+          });
+
+          settled = readyEntries.map(({ file }) => {
+            const found = batchResult.results.find((item) => item.cad_file_id === file.cadFile.id);
+            if (found) {
+              return { status: 'fulfilled', value: found } as PromiseFulfilledResult<PricingResponse>;
+            }
+            return {
+              status: 'rejected',
+              reason: new Error('Missing pricing result'),
+            } as PromiseRejectedResult;
+          });
+        } catch {
+          // Fallback for older backends where /pricing/batch is not available.
+        }
+      }
+
+      if (settled.length === 0) {
+        settled = await Promise.allSettled(
+          readyEntries.map(({ file, config }) =>
+            getInstantPricing({
+              cad_file_id: file.cadFile.id,
+              material_id: config.materialId!,
+              surface_finish_id: config.surfaceFinishId!,
+              inspection_level_id: config.inspectionLevelId!,
+              quantity: config.quantity,
+              pricing_overrides: pricingOverridesPayload,
+            })
+          )
+        );
+      }
 
       if (cancelled || pricingRequestVersion.current !== requestVersion) {
         return;
       }
 
       const pricingByCadFileId = new Map<string, PricingResponse>();
-      batchResult.results.forEach((item) => {
-        pricingByCadFileId.set(item.cad_file_id, item);
+      settled.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          pricingByCadFileId.set(readyEntries[index].file.cadFile.id, result.value);
+        }
       });
 
+      const successCount = pricingByCadFileId.size;
       setMultiFiles((prev) =>
         prev.map((file) => ({
           ...file,
-          pricing: pricingByCadFileId.get(file.cadFile.id) ?? null,
+          pricing: file.selected ? pricingByCadFileId.get(file.cadFile.id) ?? null : null,
           pricingLoading: false,
         }))
       );
+
+      if (successCount === 0) {
+        setError('Failed to calculate pricing');
+      } else if (successCount < readyEntries.length) {
+        setError('Some files could not be priced. Please review and retry.');
+      }
     };
 
     fetchAllPricing().catch(() => {
@@ -206,14 +350,27 @@ const QuoteBuilder = () => {
       cancelled = true;
     };
   }, [
-    materialId,
-    surfaceFinishId,
-    inspectionLevelId,
-    quantity,
     isMultiMode,
-    multiFileIds,
+    multiConfigSignature,
+    configureIndividually,
+    getEffectiveConfig,
+    hasCompleteConfig,
     pricingOverridesPayload,
   ]);
+
+  useEffect(() => {
+    if (!isMultiMode) return;
+
+    const selectedFiles = multiFiles.filter((file) => file.selected);
+    if (selectedFiles.length === 0) {
+      setActiveMultiFileId(null);
+      return;
+    }
+
+    if (!activeMultiFileId || !selectedFiles.some((file) => file.cadFile.id === activeMultiFileId)) {
+      setActiveMultiFileId(selectedFiles[0].cadFile.id);
+    }
+  }, [isMultiMode, multiConfigSignature, activeMultiFileId, multiFiles]);
 
   const handleFilesUploaded = (files: ProcessedCADUpload[]) => {
     setError(null);
@@ -224,10 +381,30 @@ const QuoteBuilder = () => {
     if (files.length === 1) {
       const [file] = files;
       setConfig((prev) => ({ ...prev, cadFile: file.cadFile, geometry: file.geometry }));
-      setMultiFiles([{ ...file, pricing: null, pricingLoading: false }]);
+      setMultiFiles([{
+        ...file,
+        selected: true,
+        materialId: null,
+        surfaceFinishId: null,
+        inspectionLevelId: null,
+        quantity: 1,
+        pricing: null,
+        pricingLoading: false,
+      }]);
+      setActiveMultiFileId(file.cadFile.id);
     } else {
       setConfig((prev) => ({ ...prev, cadFile: null, geometry: null }));
-      setMultiFiles(files.map((file) => ({ ...file, pricing: null, pricingLoading: false })));
+      setMultiFiles(files.map((file) => ({
+        ...file,
+        selected: true,
+        materialId: null,
+        surfaceFinishId: null,
+        inspectionLevelId: null,
+        quantity: 1,
+        pricing: null,
+        pricingLoading: false,
+      })));
+      setActiveMultiFileId(files[0]?.cadFile.id ?? null);
     }
 
     setStep('configure');
@@ -259,27 +436,42 @@ const QuoteBuilder = () => {
   };
 
   const handleCreateBatchQuotes = async () => {
-    if (!materialId || !surfaceFinishId || !inspectionLevelId) return;
+    const selectedFiles = multiFiles.filter((file) => file.selected);
+    if (selectedFiles.length === 0) {
+      setError('Select at least one file to generate quote');
+      return;
+    }
+
     setCreating(true);
     setError(null);
     try {
-      const result = await createBatchQuote({
-        cad_file_ids: multiFiles.map((f) => f.cadFile.id),
-        material_id: materialId,
-        surface_finish_id: surfaceFinishId,
-        inspection_level_id: inspectionLevelId,
-        quantity,
+      const items = selectedFiles.map((file) => {
+        const cfg = getEffectiveConfig(file);
+        if (!hasCompleteConfig(cfg)) {
+          throw new Error(`Incomplete configuration for ${file.cadFile.original_filename}`);
+        }
+
+        return {
+          cad_file_id: file.cadFile.id,
+          material_id: cfg.materialId!,
+          surface_finish_id: cfg.surfaceFinishId!,
+          inspection_level_id: cfg.inspectionLevelId!,
+          quantity: cfg.quantity,
+        };
+      });
+
+      const quote = await createCombinedQuote({
+        items,
         pricing_overrides: pricingOverridesPayload,
         customer_name: customerName || undefined,
         customer_email: customerEmail || undefined,
         customer_company: customerCompany || undefined,
         notes: notes || undefined,
       });
-      navigate('/quotes', {
-        state: { batchIds: result.quotes.map((q) => q.id), batchTotal: result.total_price },
-      });
+
+      navigate(`/quotes/${quote.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create quotes');
+      setError(err instanceof Error ? err.message : 'Failed to create quote');
     } finally {
       setCreating(false);
     }
@@ -301,6 +493,8 @@ const QuoteBuilder = () => {
       customerName: '', customerEmail: '', customerCompany: '', notes: '',
     });
     setPricing(null);
+    setConfigureIndividually(false);
+    setActiveMultiFileId(null);
     setUseQuoteSpecificPricing(false);
     setPricingOverrides({});
     setStep('upload');
@@ -353,17 +547,20 @@ const QuoteBuilder = () => {
     </div>
   );
 
-  const multiTotal = multiFiles.reduce((sum, f) => sum + Number(f.pricing?.price_breakdown.total_price ?? 0), 0);
-  const pricedFileCount = multiFiles.filter((f) => f.pricing !== null).length;
-  const pendingFileCount = Math.max(multiFiles.length - pricedFileCount, 0);
-  const allMultiPriced = multiFiles.length > 0 && multiFiles.every((f) => f.pricing !== null);
-  const anyMultiLoading = multiFiles.some((f) => f.pricingLoading);
+  const selectedMultiFiles = multiFiles.filter((f) => f.selected);
+  const activeMultiFile = multiFiles.find((file) => file.cadFile.id === activeMultiFileId) ?? null;
+  const multiTotal = selectedMultiFiles.reduce((sum, f) => sum + Number(f.pricing?.price_breakdown.total_price ?? 0), 0);
+  const pricedFileCount = selectedMultiFiles.filter((f) => f.pricing !== null).length;
+  const pendingFileCount = Math.max(selectedMultiFiles.length - pricedFileCount, 0);
+  const allMultiPriced = selectedMultiFiles.length > 0 && selectedMultiFiles.every((f) => f.pricing !== null);
+  const anyMultiLoading = selectedMultiFiles.some((f) => f.pricingLoading);
+  const allSelected = multiFiles.length > 0 && multiFiles.every((file) => file.selected);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-500">
-        <Link to="/" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+        <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
           <Home className="w-3.5 h-3.5" />
           Home
         </Link>
@@ -381,7 +578,7 @@ const QuoteBuilder = () => {
           </h1>
           <p className="text-gray-500 text-sm mt-0.5">
             {isMultiMode
-              ? `Configure shared options and generate quotes for all ${multiFiles.length} files at once.`
+              ? 'Choose files, configure shared or individual settings, and generate all quotes together.'
               : 'Upload your CAD file and configure options'}
           </p>
         </div>
@@ -538,12 +735,29 @@ const QuoteBuilder = () => {
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center gap-2">
                 <Package className="w-5 h-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-gray-900">Files ({multiFiles.length})</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Files ({selectedMultiFiles.length}/{multiFiles.length} selected)</h2>
               </div>
 
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 max-h-[60vh] overflow-y-auto">
                 {multiFiles.map((entry, i) => (
-                  <div key={entry.cadFile.id} className="px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                  <div
+                    key={entry.cadFile.id}
+                    className={`px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 ${
+                      configureIndividually && activeMultiFileId === entry.cadFile.id ? 'bg-primary-50/60' : ''
+                    }`}
+                  >
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={entry.selected}
+                        onChange={(e) => {
+                          const selected = e.target.checked;
+                          updateMultiFile(entry.cadFile.id, { selected, pricing: null, pricingLoading: false });
+                        }}
+                        className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                      />
+                    </label>
+
                     <span className="w-6 h-6 flex-shrink-0 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
@@ -556,6 +770,19 @@ const QuoteBuilder = () => {
                       </p>
                     </div>
                     <div className="flex w-full sm:w-auto items-center justify-between sm:justify-end gap-3">
+                      {configureIndividually && entry.selected && (
+                        <button
+                          onClick={() => setActiveMultiFileId(entry.cadFile.id)}
+                          className={`px-2.5 py-1.5 text-xs font-medium rounded border whitespace-nowrap ${
+                            activeMultiFileId === entry.cadFile.id
+                              ? 'text-primary-700 bg-primary-100 border-primary-300'
+                              : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          Configure
+                        </button>
+                      )}
+
                       <button
                         onClick={() => setPreviewFile(entry)}
                         className="px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200 flex items-center gap-1 whitespace-nowrap"
@@ -565,7 +792,9 @@ const QuoteBuilder = () => {
                       </button>
 
                       <div className="text-right flex-shrink-0 min-w-[110px]">
-                        {entry.pricingLoading ? (
+                        {!entry.selected ? (
+                          <span className="text-xs text-gray-400">Excluded</span>
+                        ) : entry.pricingLoading ? (
                           <Loader2 className="w-4 h-4 text-primary-500 animate-spin ml-auto" />
                         ) : entry.pricing ? (
                           <>
@@ -587,7 +816,7 @@ const QuoteBuilder = () => {
 
               <div className="px-4 sm:px-6 py-4 bg-primary-50 border-t border-primary-100 flex justify-between items-center gap-3">
                 <div>
-                  <p className="font-semibold text-primary-900">Grand Total ({pricedFileCount}/{multiFiles.length} priced)</p>
+                  <p className="font-semibold text-primary-900">Grand Total ({pricedFileCount}/{selectedMultiFiles.length} selected priced)</p>
                   {pendingFileCount > 0 && (
                     <p className="text-xs text-primary-700 mt-0.5">
                       Waiting for pricing for {pendingFileCount} file{pendingFileCount === 1 ? '' : 's'}.
@@ -608,21 +837,110 @@ const QuoteBuilder = () => {
 
           <div className="space-y-6 lg:sticky lg:top-6 self-start">
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Shared Configuration</h2>
-              <p className="text-sm text-gray-500 mb-4">Applies to all {multiFiles.length} files.</p>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                    <Settings2 className="w-4 h-4 text-gray-500" />
+                    {configureIndividually ? 'Individual Configuration' : 'Shared Configuration'}
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    {configureIndividually
+                      ? 'Configure each selected file separately.'
+                      : `Applies to all selected files (${selectedMultiFiles.length}).`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 rounded-lg border border-gray-200 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-800">Include files in this quote run</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextSelected = !allSelected;
+                      setMultiFiles((prev) =>
+                        prev.map((file) => ({
+                          ...file,
+                          selected: nextSelected,
+                          pricing: null,
+                          pricingLoading: false,
+                        }))
+                      );
+                    }}
+                    className="text-xs font-medium text-primary-700 hover:text-primary-800"
+                  >
+                    {allSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-800">Configure individually</p>
+                  <button
+                    type="button"
+                    onClick={() => setConfigureIndividually((prev) => !prev)}
+                    className={`inline-flex items-center rounded-full h-7 w-12 p-1 transition-colors ${
+                      configureIndividually ? 'bg-primary-600' : 'bg-gray-300'
+                    }`}
+                    aria-pressed={configureIndividually}
+                  >
+                    <span
+                      className={`h-5 w-5 rounded-full bg-white transition-transform ${
+                        configureIndividually ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {configureIndividually && activeMultiFile && (
+                <div className="mb-4 rounded-lg bg-primary-50 border border-primary-100 p-3">
+                  <p className="text-xs text-primary-700">Editing</p>
+                  <p className="text-sm font-semibold text-primary-900 truncate">{activeMultiFile.cadFile.original_filename}</p>
+                </div>
+              )}
+
               <ConfigurationPanel
-                materialId={materialId}
-                surfaceFinishId={surfaceFinishId}
-                inspectionLevelId={inspectionLevelId}
-                quantity={quantity}
+                materialId={configureIndividually ? (activeMultiFile?.materialId ?? null) : materialId}
+                surfaceFinishId={configureIndividually ? (activeMultiFile?.surfaceFinishId ?? null) : surfaceFinishId}
+                inspectionLevelId={configureIndividually ? (activeMultiFile?.inspectionLevelId ?? null) : inspectionLevelId}
+                quantity={configureIndividually ? (activeMultiFile?.quantity ?? 1) : quantity}
                 quoteSpecificPricingEnabled={useQuoteSpecificPricing}
                 onQuoteSpecificPricingEnabledChange={setUseQuoteSpecificPricing}
                 pricingOverrides={pricingOverrides}
                 onPricingOverridesChange={setPricingOverrides}
-                onMaterialChange={setMaterialId}
-                onSurfaceFinishChange={setSurfaceFinishId}
-                onInspectionLevelChange={setInspectionLevelId}
-                onQuantityChange={setQuantity}
+                onMaterialChange={(id) => {
+                  if (configureIndividually) {
+                    if (!activeMultiFileId) return;
+                    updateMultiFile(activeMultiFileId, { materialId: id });
+                    return;
+                  }
+                  setMaterialId(id);
+                }}
+                onSurfaceFinishChange={(id) => {
+                  if (configureIndividually) {
+                    if (!activeMultiFileId) return;
+                    updateMultiFile(activeMultiFileId, { surfaceFinishId: id });
+                    return;
+                  }
+                  setSurfaceFinishId(id);
+                }}
+                onInspectionLevelChange={(id) => {
+                  if (configureIndividually) {
+                    if (!activeMultiFileId) return;
+                    updateMultiFile(activeMultiFileId, { inspectionLevelId: id });
+                    return;
+                  }
+                  setInspectionLevelId(id);
+                }}
+                onQuantityChange={(qty) => {
+                  if (configureIndividually) {
+                    if (!activeMultiFileId) return;
+                    updateMultiFile(activeMultiFileId, { quantity: qty });
+                    return;
+                  }
+                  setQuantity(qty);
+                }}
+                disabled={configureIndividually && !activeMultiFile}
               />
             </div>
 
@@ -632,11 +950,11 @@ const QuoteBuilder = () => {
               className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? (
-                <><Loader2 className="w-5 h-5 animate-spin" />Creating {multiFiles.length} Quotes...</>
+                <><Loader2 className="w-5 h-5 animate-spin" />Generating Combined Quote...</>
               ) : anyMultiLoading ? (
                 <><Loader2 className="w-5 h-5 animate-spin" />Calculating Prices...</>
               ) : (
-                <><FileText className="w-5 h-5" />Generate {multiFiles.length} Quotes</>
+                <><FileText className="w-5 h-5" />Generate One Quote ({selectedMultiFiles.length} Files)</>
               )}
             </button>
           </div>

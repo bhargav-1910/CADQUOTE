@@ -4,7 +4,7 @@ import { OrbitControls, Environment, Center, Grid, PerspectiveCamera } from '@re
 import * as THREE from 'three';
 import { STLLoader, GLTFLoader } from 'three-stdlib';
 import type { GeometryAnalysis } from '@/types';
-import { getFilePreviewUrl } from '@/services/api';
+import { fetchFilePreviewBlob } from '@/services/api';
 import { ZoomIn, Move } from 'lucide-react';
 
 interface ModelViewerProps {
@@ -13,16 +13,30 @@ interface ModelViewerProps {
   geometry?: GeometryAnalysis;
 }
 
+interface SceneProps {
+  fileFormat: string;
+  geometry?: GeometryAnalysis;
+  previewUrl: string | null;
+}
+
 // STL Model Component
 const STLModel = ({ url }: { url: string }) => {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
     const loader = new STLLoader();
+    let mounted = true;
+
     loader.load(
       url,
       (geo) => {
+        if (!mounted) {
+          geo.dispose();
+          return;
+        }
+        setLoadFailed(false);
         geo.computeVertexNormals();
         geo.center();
         
@@ -40,10 +54,14 @@ const STLModel = ({ url }: { url: string }) => {
       undefined,
       (error) => {
         console.error('Error loading STL:', error);
+        if (mounted) {
+          setLoadFailed(true);
+        }
       }
     );
 
     return () => {
+      mounted = false;
       if (geometry) {
         geometry.dispose();
       }
@@ -58,6 +76,16 @@ const STLModel = ({ url }: { url: string }) => {
   });
 
   if (!geometry) {
+    if (loadFailed) {
+      return (
+        <Center>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[2.5, 1.6, 2]} />
+            <meshStandardMaterial color="#94a3b8" metalness={0.15} roughness={0.65} />
+          </mesh>
+        </Center>
+      );
+    }
     return null;
   }
 
@@ -77,13 +105,20 @@ const STLModel = ({ url }: { url: string }) => {
 // GLB Model Component (for STEP files converted to GLB)
 const GLBModel = ({ url }: { url: string }) => {
   const [scene, setScene] = useState<THREE.Group | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const groupRef = useRef<THREE.Group>(null);
 
   useEffect(() => {
     const loader = new GLTFLoader();
+    let mounted = true;
+
     loader.load(
       url,
       (gltf) => {
+        if (!mounted) {
+          return;
+        }
+        setLoadFailed(false);
         const loadedScene = gltf.scene.clone();
         
         // Center the model
@@ -117,10 +152,14 @@ const GLBModel = ({ url }: { url: string }) => {
       undefined,
       (error) => {
         console.error('Error loading GLB:', error);
+        if (mounted) {
+          setLoadFailed(true);
+        }
       }
     );
 
     return () => {
+      mounted = false;
       if (scene) {
         scene.traverse((child) => {
           if (child instanceof THREE.Mesh) {
@@ -144,6 +183,16 @@ const GLBModel = ({ url }: { url: string }) => {
   });
 
   if (!scene) {
+    if (loadFailed) {
+      return (
+        <Center>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[2.5, 1.6, 2]} />
+            <meshStandardMaterial color="#94a3b8" metalness={0.15} roughness={0.65} />
+          </mesh>
+        </Center>
+      );
+    }
     return null;
   }
 
@@ -188,10 +237,9 @@ const PlaceholderBox = ({ dimensions }: { dimensions?: { x: number; y: number; z
 };
 
 // Scene component
-const Scene = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
+const Scene = ({ fileFormat, geometry, previewUrl }: SceneProps) => {
   const isSTL = fileFormat.toLowerCase() === 'stl';
   const isSTEP = fileFormat.toLowerCase() === 'step';
-  const fileUrl = getFilePreviewUrl(fileId);
 
   return (
     <>
@@ -217,9 +265,29 @@ const Scene = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
       {/* Model */}
       <Suspense fallback={null}>
         {isSTL ? (
-          <STLModel url={fileUrl} />
+          previewUrl ? (
+            <STLModel url={previewUrl} />
+          ) : (
+            <PlaceholderBox
+              dimensions={geometry && {
+                x: geometry.bounding_box.x,
+                y: geometry.bounding_box.y,
+                z: geometry.bounding_box.z,
+              }}
+            />
+          )
         ) : isSTEP ? (
-          <GLBModel url={fileUrl} />
+          previewUrl ? (
+            <GLBModel url={previewUrl} />
+          ) : (
+            <PlaceholderBox
+              dimensions={geometry && {
+                x: geometry.bounding_box.x,
+                y: geometry.bounding_box.y,
+                z: geometry.bounding_box.z,
+              }}
+            />
+          )
         ) : (
           <PlaceholderBox
             dimensions={geometry && {
@@ -250,6 +318,39 @@ const Scene = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
 };
 
 const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let activeUrl: string | null = null;
+
+    const loadPreview = async () => {
+      try {
+        const blob = await fetchFilePreviewBlob(fileId);
+        if (cancelled) {
+          return;
+        }
+
+        activeUrl = URL.createObjectURL(blob);
+        setPreviewUrl(activeUrl);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load authenticated preview:', error);
+          setPreviewUrl(null);
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      cancelled = true;
+      if (activeUrl) {
+        URL.revokeObjectURL(activeUrl);
+      }
+    };
+  }, [fileId]);
+
   return (
     <div className="relative bg-gray-100 rounded-lg overflow-hidden h-[280px] sm:h-[400px]">
       {/* Controls hint */}
@@ -274,7 +375,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
       {/* 3D Canvas */}
       <Canvas shadows>
         <Suspense fallback={null}>
-          <Scene fileId={fileId} fileFormat={fileFormat} geometry={geometry} />
+          <Scene fileFormat={fileFormat} geometry={geometry} previewUrl={previewUrl} />
         </Suspense>
       </Canvas>
     </div>

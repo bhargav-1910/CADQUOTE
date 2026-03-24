@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/cncquote"
     DATABASE_POOL_SIZE: int = 10
+    AUTO_CREATE_TABLES: bool = False
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -60,6 +61,13 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = True
     SMTP_FROM_EMAIL: str = "quotes@cncplatform.com"
     SMTP_FROM_NAME: str = "CNC Quote Platform"
+    FRONTEND_BASE_URL: str = "http://localhost"
+
+    # Authentication
+    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]

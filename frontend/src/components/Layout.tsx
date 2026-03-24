@@ -1,13 +1,14 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Box, Upload, FolderOpen, Settings, User, Layers } from 'lucide-react';
+import { Box, Upload, FolderOpen, Settings, User, Layers, ChevronDown, LogOut, Building2, Mail } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 const NAV = [
-  { path: '/', icon: Upload, label: 'Upload Hub', exact: true },
+  { path: '/workspace', icon: Upload, label: 'Upload Hub', exact: true },
   { path: '/quote', icon: Layers, label: 'New Quote', exact: true },
   { path: '/quotes', icon: FolderOpen, label: 'My Quotes', exact: false },
   { path: '/admin/pricing', icon: Settings, label: 'Cost Master', exact: false },
@@ -15,6 +16,25 @@ const NAV = [
 
 const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
+  const { user, logout } = useAuth();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!profileMenuRef.current) {
+        return;
+      }
+
+      const target = event.target as Node | null;
+      if (target && !profileMenuRef.current.contains(target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const isActive = (path: string, exact: boolean) =>
     exact ? location.pathname === path : location.pathname.startsWith(path);
@@ -26,7 +46,7 @@ const Layout = ({ children }: LayoutProps) => {
       <header className="sticky top-0 z-40 border-b border-slate-200/70 surface-panel">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center justify-between gap-3">
-            <Link to="/" className="flex items-center gap-3 group">
+            <Link to="/workspace" className="flex items-center gap-3 group">
               <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm group-hover:bg-slate-800 transition-colors">
                 <Box className="w-5 h-5" />
               </div>
@@ -59,17 +79,51 @@ const Layout = ({ children }: LayoutProps) => {
 
             <div className="flex items-center gap-2">
               <div className="hidden sm:flex flex-col items-end px-3 py-1.5 rounded-lg bg-white/80 border border-slate-200">
-                <span className="text-[10px] font-semibold text-slate-700">Workspace</span>
-                <span className="text-[10px] text-slate-500">Production</span>
+                <span className="text-[10px] font-semibold text-slate-700">{user?.company_name || 'Workspace'}</span>
+                <span className="text-[10px] text-slate-500">{user?.email || 'Production'}</span>
               </div>
 
-              <Link
-                to="/"
-                title="Account"
-                className="flex items-center justify-center w-10 h-10 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
-              >
-                <User className="w-4 h-4" />
-              </Link>
+              <div className="relative" ref={profileMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setProfileMenuOpen((open) => !open)}
+                  className="flex items-center gap-2 px-3 h-10 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+                  aria-expanded={profileMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <User className="w-4 h-4" />
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+
+                {profileMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg p-2 z-50" role="menu">
+                    <div className="px-3 py-2 border-b border-slate-100">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{user?.full_name || 'User'}</p>
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
+                        <Mail className="w-3.5 h-3.5" />
+                        <span className="truncate">{user?.email || 'No email'}</span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
+                        <Building2 className="w-3.5 h-3.5" />
+                        <span className="truncate">{user?.company_name || 'No company'}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+                      role="menuitem"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

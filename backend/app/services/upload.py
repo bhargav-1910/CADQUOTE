@@ -51,10 +51,11 @@ def normalize_file_format(ext: str) -> str:
 
 async def check_duplicate_file(
     db: AsyncSession, 
-    file_hash: str
+    file_hash: str,
+    user_id: uuid.UUID,
 ) -> CADFile | None:
     """Check if file with same hash already exists."""
-    query = select(CADFile).where(CADFile.file_hash == file_hash)
+    query = select(CADFile).where(CADFile.file_hash == file_hash, CADFile.user_id == user_id)
     result = await db.execute(query)
     return result.scalar_one_or_none()
 
@@ -62,6 +63,7 @@ async def check_duplicate_file(
 async def upload_cad_file(
     db: AsyncSession,
     file: UploadFile,
+    user_id: uuid.UUID,
 ) -> Tuple[CADFile, bool]:
     """
     Upload and validate CAD file.
@@ -82,7 +84,7 @@ async def upload_cad_file(
     file_hash = compute_file_hash(content)
     
     # Check for duplicate
-    existing_file = await check_duplicate_file(db, file_hash)
+    existing_file = await check_duplicate_file(db, file_hash, user_id)
     if existing_file:
         return existing_file, True
     
@@ -100,6 +102,7 @@ async def upload_cad_file(
     # Create database record
     cad_file = CADFile(
         id=file_id,
+        user_id=user_id,
         original_filename=file.filename,
         stored_filename=stored_filename,
         file_path=file_path,
@@ -116,9 +119,9 @@ async def upload_cad_file(
     return cad_file, False
 
 
-async def get_cad_file(db: AsyncSession, file_id: uuid.UUID) -> CADFile | None:
+async def get_cad_file(db: AsyncSession, file_id: uuid.UUID, user_id: uuid.UUID) -> CADFile | None:
     """Get CAD file by ID."""
-    query = select(CADFile).where(CADFile.id == file_id)
+    query = select(CADFile).where(CADFile.id == file_id, CADFile.user_id == user_id)
     result = await db.execute(query)
     return result.scalar_one_or_none()
 

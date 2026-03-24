@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.cache import cache
-from app.api import files, config, quotes
+from app.api import files, config, quotes, auth
 
 # Configure logging
 logging.basicConfig(
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize database
     await init_db()
-    logger.info("Database initialized")
+    logger.info("Database connection verified")
     
     # Connect to Redis
     try:
@@ -86,9 +86,13 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
+
+# Serve user-uploaded assets such as company logos and generated PDFs
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
 @app.get("/")

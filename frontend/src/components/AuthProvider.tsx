@@ -1,0 +1,206 @@
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { LoginRequest, SignupRequest, UserProfile } from '@/types';
+import {
+  getAuthToken,
+  setAuthTokens,
+  clearAuthTokens,
+  loginUser,
+  signupUser,
+  getCurrentUser,
+  refreshAccessToken,
+  logoutUser,
+} from '@/services/api';
+
+const USER_PROFILE_KEY = 'forgequote.auth.user-profile';
+
+
+const readCachedProfile = (): UserProfile | null => {
+  try {
+    const raw = localStorage.getItem(USER_PROFILE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as UserProfile;
+  } catch {
+    return null;
+  }
+};
+
+
+const writeCachedProfile = (profile: UserProfile | null): void => {
+  if (!profile) {
+    localStorage.removeItem(USER_PROFILE_KEY);
+    return;
+  }
+
+  localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+};
+
+interface AuthContextValue {
+  user: UserProfile | null;
+  loading: boolean;
+  isAuthenticated: boolean;
+  login: (payload: LoginRequest) => Promise<void>;
+  signup: (payload: SignupRequest) => Promise<void>;
+  logout: () => void;
+  refreshProfile: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+const decodeJwtPayload = (token: string): { exp?: number } | null => {
+  const payloadPart = token.split('.')[1];
+  if (!payloadPart) {
+    return null;
+  }
+
+  try {
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(atob(padded)) as { exp?: number };
+  } catch {
+    return null;
+  }
+};
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<UserProfile | null>(() => readCachedProfile());
+  const [loading, setLoading] = useState(true);
+
+  const refreshProfile = async () => {
+    const profile = await getCurrentUser();
+    setUser(profile);
+    writeCachedProfile(profile);
+  };
+
+  useEffect(() => {
+    const boot = async () => {
+      const token = getAuthToken();
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const payload = decodeJwtPayload(token);
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (!payload?.exp || payload.exp <= nowSeconds) {
+          const refreshed = await refreshAccessToken();
+          setUser(refreshed.user);
+          setLoading(false);
+          return;
+        }
+
+        await refreshProfile();
+      } catch {
+        clearAuthTokens();
+        setUser(null);
+        writeCachedProfile(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    boot();
+  }, []);
+
+  const login = async (payload: LoginRequest) => {
+    const result = await loginUser(payload);
+    setAuthTokens(result.access_token, result.refresh_token);
+    setUser(result.user);
+    writeCachedProfile(result.user);
+  };
+
+  const signup = async (payload: SignupRequest) => {
+    await signupUser(payload);
+    clearAuthTokens();
+    setUser(null);
+    writeCachedProfile(null);
+  };
+
+  const logout = () => {
+    logoutUser().catch(() => {
+      clearAuthTokens();
+    });
+    setUser(null);
+    writeCachedProfile(null);
+  };
+
+  useEffect(() => {
+    const refreshIfExpiring = async () => {
+      if (!user) {
+        return;
+      }
+
+      const token = getAuthToken();
+      if (!token) {
+        return;
+      }
+
+      try {
+        const payload = decodeJwtPayload(token);
+        if (!payload?.exp) {
+          return;
+        }
+
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (payload.exp - nowSeconds < 120) {
+          const refreshed = await refreshAccessToken();
+          setUser(refreshed.user);
+          writeCachedProfile(refreshed.user);
+        }
+      } catch {
+        // Ignore parsing errors and let normal 401 handler drive logout.
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      refreshIfExpiring().catch(() => {
+        clearAuthTokens();
+        setUser(null);
+        writeCachedProfile(null);
+      });
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    const onForcedLogout = () => {
+      clearAuthTokens();
+      setUser(null);
+      writeCachedProfile(null);
+    };
+
+    window.addEventListener('auth:logout', onForcedLogout);
+    return () => {
+      window.removeEventListener('auth:logout', onForcedLogout);
+    };
+  }, []);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      loading,
+      isAuthenticated: Boolean(user),
+      login,
+      signup,
+      logout,
+      refreshProfile,
+    }),
+    [user, loading],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+export const useAuth = (): AuthContextValue => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
+};

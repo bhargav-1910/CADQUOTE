@@ -4,6 +4,8 @@ A full-stack web application for generating instant, transparent CNC machining q
 
 ## Features
 
+- **Authentication**: JWT access + refresh token flow with strong password policy
+- **Multi-Tenant Isolation**: Per-user ownership enforcement for files and quotes
 - **CAD File Upload**: Support for STEP (.stp, .step) and STL (.stl) files up to 50MB
 - **3D Preview**: Interactive Three.js-powered model viewer
 - **Automatic Geometry Analysis**: Extracts volume, surface area, bounding box, and complexity score
@@ -53,12 +55,17 @@ A full-stack web application for generating instant, transparent CNC machining q
    docker-compose up -d
    ```
 
-4. Seed the database:
+4. Run database migrations:
+   ```bash
+   docker-compose exec backend alembic upgrade head
+   ```
+
+5. Seed the database:
    ```bash
    docker-compose exec backend python -m app.seed
    ```
 
-5. Access the application:
+6. Access the application:
    - Frontend: http://localhost
    - API Docs: http://localhost:8000/docs
    - ReDoc: http://localhost:8000/redoc
@@ -89,12 +96,17 @@ A full-stack web application for generating instant, transparent CNC machining q
    DEBUG=true
    ```
 
-4. Initialize the database:
+4. Run migrations:
+   ```bash
+   alembic upgrade head
+   ```
+
+5. Initialize seed data:
    ```bash
    python -m app.seed
    ```
 
-5. Run the development server:
+6. Run the development server:
    ```bash
    uvicorn app.main:app --reload
    ```
@@ -170,6 +182,13 @@ The pricing engine uses transparent, rule-based logic:
 
 ## API Endpoints
 
+### Authentication
+- `POST /api/auth/register` - Register a user and issue access/refresh tokens
+- `POST /api/auth/login` - Login and issue access/refresh tokens
+- `POST /api/auth/refresh` - Rotate refresh token and issue a new access token
+- `POST /api/auth/logout` - Invalidate current refresh session
+- `GET /api/auth/me` - Get authenticated user profile
+
 ### Files
 - `POST /api/files/upload` - Upload CAD file
 - `GET /api/files/{file_id}` - Get file info
@@ -182,12 +201,33 @@ The pricing engine uses transparent, rule-based logic:
 - `GET /api/config/inspection-levels` - List inspection levels
 
 ### Quotes
-- `POST /api/quotes/calculate` - Calculate instant price
+- `POST /api/pricing` - Calculate instant price
+- `POST /api/pricing/batch` - Calculate instant prices for multiple files
 - `POST /api/quotes` - Create formal quote
+- `POST /api/quotes/batch` - Create multiple quotes with shared configuration
+- `POST /api/quotes/combined` - Create one combined quote for multiple files
 - `GET /api/quotes` - List quotes
 - `GET /api/quotes/{quote_id}` - Get quote details
-- `POST /api/quotes/{quote_id}/generate-pdf` - Generate PDF
-- `GET /api/quotes/{quote_id}/pdf` - Download PDF
+- `POST /api/quotes/{quote_id}/pdf` - Generate PDF
+- `GET /api/quotes/{quote_id}/pdf/download` - Download PDF
+
+## Database Migrations (Alembic)
+
+- Create a new migration after model changes:
+   ```bash
+   cd backend
+   alembic revision --autogenerate -m "describe change"
+   ```
+- Apply migrations:
+   ```bash
+   cd backend
+   alembic upgrade head
+   ```
+- Roll back one revision:
+   ```bash
+   cd backend
+   alembic downgrade -1
+   ```
 
 ## Project Structure
 
@@ -254,6 +294,7 @@ Quote/
 | `POSTGRES_PASSWORD` | PostgreSQL password | `quote_password` |
 | `POSTGRES_DB` | Database name | `quote_db` |
 | `SECRET_KEY` | App secret key | - |
+| `JWT_SECRET_KEY` | JWT signing key | - |
 | `DEBUG` | Debug mode | `false` |
 | `ENVIRONMENT` | Environment name | `production` |
 

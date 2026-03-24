@@ -15,10 +15,25 @@ import type {
   BatchPricingResponse,
   QuoteCreateRequest,
   BatchQuoteCreateRequest,
+  CombinedQuoteCreateRequest,
   BatchQuoteResponse,
   Quote,
   QuoteListItem,
+  LoginRequest,
+  SignupRequest,
+  SignupOtpRequest,
+  SignupOtpResponse,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  GenericMessageResponse,
+  AuthTokenResponse,
+  UserProfile,
+  QuoteEmailRequest,
+  QuoteEmailResponse,
 } from '@/types';
+
+const AUTH_TOKEN_KEY = 'forgequote.auth.token';
+const REFRESH_TOKEN_KEY = 'forgequote.auth.refresh-token';
 
 // Create axios instance
 const api: AxiosInstance = axios.create({
@@ -28,6 +43,52 @@ const api: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+let refreshPromise: Promise<AuthTokenResponse> | null = null;
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config as (typeof error.config & { _retry?: boolean });
+    const status = error.response?.status as number | undefined;
+    const url = originalRequest?.url ?? '';
+
+    const isAuthEndpoint =
+      url.includes('/auth/login') ||
+      url.includes('/auth/register') ||
+      url.includes('/auth/refresh') ||
+      url.includes('/auth/logout');
+
+    if (status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
+      try {
+        originalRequest._retry = true;
+        if (!refreshPromise) {
+          refreshPromise = refreshAccessToken();
+        }
+        await refreshPromise;
+        refreshPromise = null;
+        return api(originalRequest);
+      } catch {
+        refreshPromise = null;
+        clearAuthTokens();
+        window.dispatchEvent(new Event('auth:logout'));
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 // Error handler
 const handleError = (error: AxiosError): never => {
@@ -96,6 +157,158 @@ export const getFileDownloadUrl = (fileId: string): string => {
 
 export const getFilePreviewUrl = (fileId: string): string => {
   return `/api/files/${fileId}/preview`;
+};
+
+export const fetchFilePreviewBlob = async (fileId: string): Promise<Blob> => {
+  try {
+    const response = await api.get<Blob>(`/files/${fileId}/preview`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+const triggerBlobDownload = (blob: Blob, filename: string): void => {
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(objectUrl);
+};
+
+// ============================================================================
+// Authentication API
+// ============================================================================
+
+export const setAuthToken = (token: string | null): void => {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+};
+
+export const setRefreshToken = (token: string | null): void => {
+  if (token) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
+};
+
+export const setAuthTokens = (accessToken: string | null, refreshToken: string | null): void => {
+  setAuthToken(accessToken);
+  setRefreshToken(refreshToken);
+};
+
+export const clearAuthTokens = (): void => {
+  setAuthTokens(null, null);
+};
+
+export const getAuthToken = (): string | null => {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+export const getRefreshToken = (): string | null => {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+};
+
+export const refreshAccessToken = async (): Promise<AuthTokenResponse> => {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  try {
+    const response = await api.post<AuthTokenResponse>('/auth/refresh', {
+      refresh_token: refreshToken,
+    });
+    setAuthTokens(response.data.access_token, response.data.refresh_token);
+    return response.data;
+  } catch (error) {
+    clearAuthTokens();
+    return handleError(error as AxiosError);
+  }
+};
+
+export const logoutUser = async (): Promise<void> => {
+  try {
+    await api.post('/auth/logout');
+  } finally {
+    clearAuthTokens();
+  }
+};
+
+export const loginUser = async (payload: LoginRequest): Promise<AuthTokenResponse> => {
+  try {
+    const response = await api.post<AuthTokenResponse>('/auth/login', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const signupUser = async (payload: SignupRequest): Promise<AuthTokenResponse> => {
+  try {
+    const formData = new FormData();
+    formData.append('full_name', payload.full_name);
+    formData.append('email', payload.email);
+    formData.append('password', payload.password);
+    formData.append('company_name', payload.company_name);
+    formData.append('company_address', payload.company_address);
+    formData.append('otp', payload.otp);
+    if (payload.logo) {
+      formData.append('logo', payload.logo);
+    }
+
+    const response = await api.post<AuthTokenResponse>('/auth/register', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getCurrentUser = async (): Promise<UserProfile> => {
+  try {
+    const response = await api.get<UserProfile>('/auth/me');
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const requestSignupOtp = async (payload: SignupOtpRequest): Promise<SignupOtpResponse> => {
+  try {
+    const response = await api.post<SignupOtpResponse>('/auth/register/request-otp', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const requestPasswordReset = async (payload: ForgotPasswordRequest): Promise<GenericMessageResponse> => {
+  try {
+    const response = await api.post<GenericMessageResponse>('/auth/password/forgot', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const resetPassword = async (payload: ResetPasswordRequest): Promise<GenericMessageResponse> => {
+  try {
+    const response = await api.post<GenericMessageResponse>('/auth/password/reset', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
 };
 
 // ============================================================================
@@ -179,6 +392,15 @@ export const createBatchQuote = async (request: BatchQuoteCreateRequest): Promis
   }
 };
 
+export const createCombinedQuote = async (request: CombinedQuoteCreateRequest): Promise<Quote> => {
+  try {
+    const response = await api.post<Quote>('/quotes/combined', request);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
 export const getQuote = async (quoteId: string): Promise<Quote> => {
   try {
     const response = await api.get<Quote>(`/quotes/${quoteId}`);
@@ -217,8 +439,28 @@ export const generateQuotePDF = async (quoteId: string): Promise<{ pdf_path: str
   }
 };
 
-export const getQuotePDFUrl = (quoteId: string): string => {
-  return `/api/quotes/${quoteId}/pdf/download`;
+export const downloadQuotePDF = async (quoteId: string, quoteNumber?: string): Promise<void> => {
+  try {
+    const response = await api.get<Blob>(`/quotes/${quoteId}/pdf/download`, {
+      responseType: 'blob',
+    });
+    const filename = quoteNumber ? `${quoteNumber}.pdf` : `quote-${quoteId}.pdf`;
+    triggerBlobDownload(response.data, filename);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const sendQuoteEmail = async (
+  quoteId: string,
+  payload: QuoteEmailRequest,
+): Promise<QuoteEmailResponse> => {
+  try {
+    const response = await api.post<QuoteEmailResponse>(`/quotes/${quoteId}/email`, payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
 };
 
 // ============================================================================

@@ -9,7 +9,7 @@ import asyncio
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Quote, GeometryAnalysis
+from app.models.models import Quote, GeometryAnalysis, User
 from app.services.storage import storage
 from app.core.config import settings
 
@@ -56,6 +56,7 @@ class PDFGenerator:
         self,
         quote: Quote,
         geometry: GeometryAnalysis,
+        issuer_profile: Optional[dict] = None,
     ) -> str:
         """
         Generate PDF quotation document.
@@ -68,12 +69,14 @@ class PDFGenerator:
             self._generate_pdf_sync,
             quote,
             geometry,
+            issuer_profile,
         )
     
     def _generate_pdf_sync(
         self,
         quote: Quote,
         geometry: GeometryAnalysis,
+        issuer_profile: Optional[dict] = None,
     ) -> str:
         """Synchronous PDF generation."""
         # Output path
@@ -86,16 +89,16 @@ class PDFGenerator:
         # Try WeasyPrint first, fall back to reportlab on any error
         if WEASYPRINT_AVAILABLE:
             try:
-                html_content = self._render_quote_html(quote, geometry)
+                html_content = self._render_quote_html(quote, geometry, issuer_profile)
                 wp = self._get_weasyprint()
                 html = wp["HTML"](string=html_content)
                 html.write_pdf(str(output_path))
             except Exception:
                 # Fall back to reportlab on WeasyPrint error
-                self._generate_pdf_reportlab(quote, geometry, str(output_path))
+                self._generate_pdf_reportlab(quote, geometry, str(output_path), issuer_profile)
         else:
             # Use reportlab fallback
-            self._generate_pdf_reportlab(quote, geometry, str(output_path))
+            self._generate_pdf_reportlab(quote, geometry, str(output_path), issuer_profile)
         
         return str(output_path)
     
@@ -104,6 +107,7 @@ class PDFGenerator:
         quote: Quote,
         geometry: GeometryAnalysis,
         output_path: str,
+        issuer_profile: Optional[dict] = None,
     ) -> None:
         """Generate PDF using reportlab (fallback for Windows)."""
         from reportlab.lib.pagesizes import A4
@@ -162,10 +166,20 @@ class PDFGenerator:
         # Build content
         content = []
         
+        company_name = (issuer_profile or {}).get("company_name") or "CNC Quote Platform"
+        company_address = (issuer_profile or {}).get("company_address") or "123 Manufacturing Way, Industrial City, IC 12345"
+        company_email = (issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"
+        company_phone = (issuer_profile or {}).get("company_phone") or "N/A"
+        logo_path = (issuer_profile or {}).get("company_logo_abs_path")
+
         # Header
-        content.append(Paragraph("CNC Quote Platform", title_style))
-        content.append(Paragraph("123 Manufacturing Way, Industrial City, IC 12345", normal_style))
-        content.append(Paragraph("+1 (555) 123-4567 | quotes@cncplatform.com", normal_style))
+        if logo_path and os.path.exists(logo_path):
+            from reportlab.platypus import Image
+            content.append(Image(logo_path, width=4*cm, height=4*cm, kind='proportional'))
+            content.append(Spacer(1, 8))
+        content.append(Paragraph(company_name, title_style))
+        content.append(Paragraph(company_address.replace("\n", "<br/>"), normal_style))
+        content.append(Paragraph(f"{company_phone} | {company_email}", normal_style))
         content.append(Spacer(1, 20))
         
         # Quote info
@@ -186,10 +200,32 @@ class PDFGenerator:
             content.append(Paragraph(customer_email, normal_style))
         content.append(Spacer(1, 15))
         
+        combined_items = self._parse_combined_items(quote.notes)
+
         # Part specifications
         content.append(Paragraph("Part Specifications", heading_style))
+        if combined_items:
+            files_data = [["Part File", "Qty", "Line Total (INR)"]]
+            for item in combined_items:
+                files_data.append([
+                    item["file_name"],
+                    str(item["quantity"]),
+                    f"₹{float(item['line_total']):,.2f}",
+                ])
+
+            files_table = Table(files_data, colWidths=[9*cm, 2*cm, 4*cm])
+            files_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), light_gray),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e5e7eb')),
+                ('PADDING', (0, 0), (-1, -1), 8),
+                ('ALIGN', (1, 1), (2, -1), 'RIGHT'),
+            ]))
+            content.append(files_table)
+            content.append(Spacer(1, 10))
+
         part_data = [
-            ["Part File", quote.cad_file.original_filename],
+            ["Primary Part", quote.cad_file.original_filename],
             ["Dimensions (X × Y × Z)", f"{geometry.bbox_x:.2f} × {geometry.bbox_y:.2f} × {geometry.bbox_z:.2f} cm"],
             ["Volume", f"{geometry.volume:.2f} cm³"],
             ["Surface Area", f"{geometry.surface_area:.2f} cm²"],
@@ -225,10 +261,11 @@ class PDFGenerator:
         
         # Pricing - Show only total price in INR
         content.append(Paragraph("Pricing", heading_style))
+        quantity_label = "combined files" if combined_items else f"{quote.quantity} units"
         pricing_data = [
             ["Description", "Amount (INR)"],
             ["Unit Price", f"₹{float(quote.unit_price):,.2f}"],
-            [f"Total Price ({quote.quantity} units)", f"₹{float(quote.total_price):,.2f}"],
+            [f"Total Price ({quantity_label})", f"₹{float(quote.total_price):,.2f}"],
         ]
         pricing_table = Table(pricing_data, colWidths=[10*cm, 5*cm])
         pricing_table.setStyle(TableStyle([
@@ -282,7 +319,7 @@ class PDFGenerator:
             alignment=TA_CENTER,
         )
         content.append(Paragraph("Thank you for your inquiry. We look forward to working with you.", footer_style))
-        content.append(Paragraph("CNC Quote Platform | +1 (555) 123-4567 | quotes@cncplatform.com", footer_style))
+        content.append(Paragraph(f"{company_name} | {company_phone} | {company_email}", footer_style))
         
         # Build PDF
         doc.build(content)
@@ -291,18 +328,39 @@ class PDFGenerator:
         self,
         quote: Quote,
         geometry: GeometryAnalysis,
+        issuer_profile: Optional[dict] = None,
     ) -> str:
         """Render quote HTML template."""
         # Calculate weight
         weight_kg = (geometry.volume * quote.material.density) / 1000
+        combined_items = self._parse_combined_items(quote.notes)
+
+        combined_rows = ""
+        if combined_items:
+            combined_rows = "".join(
+                f"<tr><td>{item['file_name']}</td><td>{item['quantity']}</td><td>₹{float(item['line_total']):,.2f}</td></tr>"
+                for item in combined_items
+            )
+
+        combined_files_section = ""
+        if combined_items:
+            combined_files_section = (
+                "<div class=\"section\">"
+                "<div class=\"section-title\">Uploaded Files</div>"
+                "<table class=\"part-table\">"
+                "<tr><th>Part File</th><th>Qty</th><th>Line Total (INR)</th></tr>"
+                f"{combined_rows}"
+                "</table>"
+                "</div>"
+            )
         
         # Template context
         context = {
             # Company info
-            "company_name": "CNC Quote Platform",
-            "company_address": "123 Manufacturing Way\nIndustrial City, IC 12345",
-            "company_phone": "+1 (555) 123-4567",
-            "company_email": "quotes@cncplatform.com",
+            "company_name": (issuer_profile or {}).get("company_name") or "CNC Quote Platform",
+            "company_address": (issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345",
+            "company_phone": (issuer_profile or {}).get("company_phone") or "N/A",
+            "company_email": (issuer_profile or {}).get("company_email") or "quotes@cncplatform.com",
             
             # Quote info
             "quote_number": quote.quote_number,
@@ -323,6 +381,7 @@ class PDFGenerator:
             "bbox_y": round(geometry.bbox_y, 2),
             "bbox_z": round(geometry.bbox_z, 2),
             "weight_kg": round(weight_kg, 3),
+            "combined_files_section": combined_files_section,
             
             # Configuration
             "material_name": quote.material.name,
@@ -332,6 +391,7 @@ class PDFGenerator:
             
             # Pricing
             "quantity": quote.quantity,
+            "quantity_label": "combined files" if combined_items else f"{quote.quantity} units",
             "material_cost": float(quote.material_cost),
             "machining_cost": float(quote.machining_cost),
             "finish_cost": float(quote.finish_cost),
@@ -358,6 +418,44 @@ class PDFGenerator:
         
         # Use inline template since we're just creating the system
         return self._get_inline_template().format(**context)
+
+    def _parse_combined_items(self, notes: Optional[str]) -> list[dict]:
+        """Parse embedded combined quote metadata from notes."""
+        if not notes:
+            return []
+
+        start_tag = "[COMBINED_FILES]"
+        end_tag = "[/COMBINED_FILES]"
+        start_idx = notes.find(start_tag)
+        end_idx = notes.find(end_tag)
+
+        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+            return []
+
+        block = notes[start_idx + len(start_tag):end_idx].strip()
+        if not block:
+            return []
+
+        items: list[dict] = []
+        for line in block.splitlines():
+            parts = line.strip().split("|")
+            if len(parts) != 3:
+                continue
+
+            file_name = parts[0].strip()
+            try:
+                quantity = int(parts[1].strip())
+                line_total = float(parts[2].strip())
+            except ValueError:
+                continue
+
+            items.append({
+                "file_name": file_name,
+                "quantity": quantity,
+                "line_total": line_total,
+            })
+
+        return items
     
     def _get_inline_template(self) -> str:
         """Get inline HTML template for PDF generation."""
@@ -590,6 +688,8 @@ class PDFGenerator:
             </tr>
         </table>
     </div>
+
+    {combined_files_section}
     
     <div class="section">
         <div class="section-title">Configuration</div>
@@ -625,7 +725,7 @@ class PDFGenerator:
                 <td><strong>₹{unit_price:,.2f}</strong></td>
             </tr>
             <tr class="total-row">
-                <td>Total Price ({quantity} units)</td>
+                <td>Total Price ({quantity_label})</td>
                 <td>₹{total_price:,.2f}</td>
             </tr>
         </table>
@@ -676,6 +776,7 @@ pdf_generator = PDFGenerator()
 async def generate_quote_document(
     db: AsyncSession,
     quote: Quote,
+    issuer: Optional[User] = None,
 ) -> str:
     """
     Generate PDF document for a quote.
@@ -695,8 +796,22 @@ async def generate_quote_document(
     if not geometry:
         raise ValueError("Geometry analysis not found for quote")
     
+    issuer_profile = None
+    if issuer is not None:
+        logo_abs = None
+        if issuer.company_logo_path:
+            logo_abs = str(Path(settings.UPLOAD_DIR) / issuer.company_logo_path)
+
+        issuer_profile = {
+            "company_name": issuer.company_name,
+            "company_address": issuer.company_address,
+            "company_email": issuer.email,
+            "company_phone": "N/A",
+            "company_logo_abs_path": logo_abs,
+        }
+
     # Generate PDF
-    pdf_path = await pdf_generator.generate_quote_pdf(quote, geometry)
+    pdf_path = await pdf_generator.generate_quote_pdf(quote, geometry, issuer_profile)
     
     # Update quote with PDF path
     from app.services.quote import update_quote_pdf_path

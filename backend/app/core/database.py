@@ -1,5 +1,6 @@
 """Database connection and session management."""
 from contextlib import asynccontextmanager
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -61,7 +62,14 @@ async def get_db_session():
 
 
 async def init_db():
-    """Initialize database tables."""
+    """Initialize database connection and optional dev schema bootstrap."""
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT 1"))
+
+    # Keep automatic table creation as an explicit opt-in for local/dev workflows.
+    if not settings.AUTO_CREATE_TABLES:
+        return
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
