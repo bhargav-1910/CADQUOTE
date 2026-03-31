@@ -36,14 +36,20 @@ def _build_default_subject(quote: Quote) -> str:
 
 def _build_default_body(quote: Quote, sender: User) -> str:
     recipient_name = quote.customer_name or "Customer"
+    sender_phone = getattr(sender, "phone_number", None) or ""
+    sender_company = sender.company_name or settings.APP_NAME
     return (
-        f"Hello {recipient_name},\n\n"
-        f"Please find attached quotation {quote.quote_number}.\n"
-        f"Total price: INR {float(quote.total_price):,.2f}\n"
-        f"Estimated lead time: {quote.estimated_lead_time_days} business days\n"
-        f"Valid until: {quote.valid_until.strftime('%Y-%m-%d')}\n\n"
-        "Please reply to this email if you need any changes.\n\n"
-        f"Regards,\n{sender.full_name}\n{sender.company_name}"
+        f"Dear {recipient_name},\n\n"
+        "Thank you for your enquiry. Please find attached our quotation for your CNC machining requirement.\n\n"
+        f"Quotation Number: {quote.quote_number}\n"
+        f"Quoted Amount: INR {float(quote.total_price):,.2f}\n"
+        f"Estimated Lead Time: {quote.estimated_lead_time_days} business days\n"
+        f"Valid Until: {quote.valid_until.strftime('%Y-%m-%d')}\n\n"
+        "If you need any revisions in quantity, material, finish, or delivery timeline, please reply to this email and we will update the quote promptly.\n\n"
+        "Best regards,\n"
+        f"{sender.full_name}\n"
+        f"{sender_company}\n"
+        f"{sender_phone}"
     )
 
 
@@ -63,10 +69,15 @@ def _send_quote_email_sync(
         raise ValueError("Quote PDF file is missing. Generate the PDF before sending email.")
 
     email = EmailMessage()
-    from_email = _resolve_from_email()
-    email["From"] = formataddr((settings.SMTP_FROM_NAME, from_email))
+    smtp_identity_email = _resolve_from_email()
+    sender_email = (sender.email or "").strip() or smtp_identity_email
+    sender_name = (sender.full_name or "").strip() or settings.SMTP_FROM_NAME
+    email["From"] = formataddr((sender_name, sender_email))
     email["To"] = recipient_email
     email["Reply-To"] = sender.email
+    if sender_email.lower() != smtp_identity_email.lower():
+        # Keep authenticated SMTP identity explicit for providers that validate sender headers.
+        email["Sender"] = formataddr((settings.SMTP_FROM_NAME, smtp_identity_email))
     email["Subject"] = subject or _build_default_subject(quote)
     email.set_content(message or _build_default_body(quote, sender))
 
@@ -86,7 +97,7 @@ def _send_quote_email_sync(
             if settings.SMTP_USERNAME:
                 smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD or "")
 
-            smtp.send_message(email)
+            smtp.send_message(email, from_addr=smtp_identity_email)
     except smtplib.SMTPAuthenticationError as exc:
         raise ValueError(
             "SMTP authentication failed. If you are using Gmail, enable 2-Step Verification and use a 16-character App Password in SMTP_PASSWORD."

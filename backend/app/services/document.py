@@ -2,6 +2,7 @@
 import os
 import uuid
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Optional
 import asyncio
@@ -111,217 +112,194 @@ class PDFGenerator:
     ) -> None:
         """Generate PDF using reportlab (fallback for Windows)."""
         from reportlab.lib.pagesizes import A4
-        from reportlab.lib.units import cm
-        from reportlab.lib.colors import HexColor
+        from reportlab.lib.units import mm
+        from reportlab.lib.colors import black, HexColor
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
-        
-        # Calculate weight
-        weight_kg = (geometry.volume * quote.material.density) / 1000
-        
-        # Create PDF document
+
+        styles = getSampleStyleSheet()
+        base_style = ParagraphStyle(
+            "Base",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=9,
+            leading=11,
+        )
+        bold_style = ParagraphStyle(
+            "Bold",
+            parent=base_style,
+            fontName="Helvetica-Bold",
+        )
+
         doc = SimpleDocTemplate(
             output_path,
             pagesize=A4,
-            leftMargin=2*cm,
-            rightMargin=2*cm,
-            topMargin=2*cm,
-            bottomMargin=2*cm,
+            leftMargin=10 * mm,
+            rightMargin=10 * mm,
+            topMargin=10 * mm,
+            bottomMargin=10 * mm,
         )
-        
-        # Colors
-        primary_color = HexColor('#2563eb')
-        gray_color = HexColor('#666666')
-        light_gray = HexColor('#f3f4f6')
-        green_color = HexColor('#22c55e')
-        
-        # Styles
-        styles = getSampleStyleSheet()
-        
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=20,
-            textColor=primary_color,
-            spaceAfter=20,
-        )
-        
-        heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=12,
-            textColor=primary_color,
-            spaceAfter=10,
-            spaceBefore=15,
-        )
-        
-        normal_style = ParagraphStyle(
-            'CustomNormal',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=HexColor('#333333'),
-        )
-        
-        # Build content
+
         content = []
-        
+        total_width = 190 * mm
+        light_gray = HexColor("#efefef")
+
         company_name = (issuer_profile or {}).get("company_name") or "CNC Quote Platform"
-        company_address = (issuer_profile or {}).get("company_address") or "123 Manufacturing Way, Industrial City, IC 12345"
-        company_email = (issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"
+        company_address = (issuer_profile or {}).get("company_address") or "123 Manufacturing Way, Industrial City"
         company_phone = (issuer_profile or {}).get("company_phone") or "N/A"
-        logo_path = (issuer_profile or {}).get("company_logo_abs_path")
+        company_email = (issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"
 
-        # Header
-        if logo_path and os.path.exists(logo_path):
-            from reportlab.platypus import Image
-            content.append(Image(logo_path, width=4*cm, height=4*cm, kind='proportional'))
-            content.append(Spacer(1, 8))
-        content.append(Paragraph(company_name, title_style))
-        content.append(Paragraph(company_address.replace("\n", "<br/>"), normal_style))
-        content.append(Paragraph(f"{company_phone} | {company_email}", normal_style))
-        content.append(Spacer(1, 20))
-        
-        # Quote info
-        content.append(Paragraph(f"<b>QUOTATION #{quote.quote_number}</b>", heading_style))
-        content.append(Paragraph(f"Date: {quote.created_at.strftime('%B %d, %Y')}", normal_style))
-        content.append(Paragraph(f"Valid Until: {quote.valid_until.strftime('%B %d, %Y')}", normal_style))
-        content.append(Spacer(1, 15))
-        
-        # Customer info
-        content.append(Paragraph("Customer Information", heading_style))
-        customer_name = quote.customer_name or "Valued Customer"
-        customer_company = quote.customer_company or ""
-        customer_email = quote.customer_email or ""
-        content.append(Paragraph(f"<b>{customer_name}</b>", normal_style))
-        if customer_company:
-            content.append(Paragraph(customer_company, normal_style))
-        if customer_email:
-            content.append(Paragraph(customer_email, normal_style))
-        content.append(Spacer(1, 15))
-        
-        combined_items = self._parse_combined_items(quote.notes)
+        cleaned_notes = self._strip_combined_notes(quote.notes)
+        subject = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quote for CNC machining"
 
-        # Part specifications
-        content.append(Paragraph("Part Specifications", heading_style))
-        if combined_items:
-            files_data = [["Part File", "Qty", "Line Total (INR)"]]
-            for item in combined_items:
-                files_data.append([
-                    item["file_name"],
-                    str(item["quantity"]),
-                    f"₹{float(item['line_total']):,.2f}",
-                ])
-
-            files_table = Table(files_data, colWidths=[9*cm, 2*cm, 4*cm])
-            files_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), light_gray),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e5e7eb')),
-                ('PADDING', (0, 0), (-1, -1), 8),
-                ('ALIGN', (1, 1), (2, -1), 'RIGHT'),
-            ]))
-            content.append(files_table)
-            content.append(Spacer(1, 10))
-
-        part_data = [
-            ["Primary Part", quote.cad_file.original_filename],
-            ["Dimensions (X × Y × Z)", f"{geometry.bbox_x:.2f} × {geometry.bbox_y:.2f} × {geometry.bbox_z:.2f} cm"],
-            ["Volume", f"{geometry.volume:.2f} cm³"],
-            ["Surface Area", f"{geometry.surface_area:.2f} cm²"],
-            ["Estimated Weight", f"{weight_kg:.3f} kg"],
+        left_header = [
+            Paragraph(f"<font color='#cc1f1f' size='22'><b>{company_name}</b></font>", base_style),
+            Paragraph("<font color='#1f8a34'><b><i>Business Growth Platform</i></b></font>", base_style),
+            Paragraph(f"<b>{company_name}</b>", base_style),
+            Paragraph(company_address.replace("\n", "<br/>"), base_style),
+            Paragraph(f"Contact: {company_phone}", base_style),
+            Paragraph(f"Email: {company_email}", base_style),
         ]
-        part_table = Table(part_data, colWidths=[5*cm, 10*cm])
-        part_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), light_gray),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e5e7eb')),
-            ('PADDING', (0, 0), (-1, -1), 8),
+
+        meta_rows = [
+            [Paragraph("<b>Quotation No.</b>", base_style), Paragraph(f"<b>{quote.quote_number}</b>", base_style)],
+            [Paragraph("<b>Date</b>", base_style), Paragraph(f"<b>{quote.created_at.strftime('%d-%m-%Y')}</b>", base_style)],
+            [Paragraph("<b>Terms of Payment</b>", base_style), Paragraph("<b>30 days Credit</b>", base_style)],
+            [Paragraph("<b>Client ID</b>", base_style), Paragraph(f"<b>{str(quote.id).split('-')[0].upper()}</b>", base_style)],
+        ]
+        right_meta = Table([[Paragraph("<b>QUOTATION</b>", ParagraphStyle("MetaTitle", parent=base_style, alignment=1, fontSize=13))], [Table(meta_rows, colWidths=[30 * mm, 55 * mm])]], colWidths=[85 * mm])
+        right_meta.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("BACKGROUND", (0, 0), (0, 0), light_gray),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ]))
-        content.append(part_table)
-        content.append(Spacer(1, 15))
-        
-        # Configuration
-        content.append(Paragraph("Configuration", heading_style))
-        config_data = [
-            ["Material", f"{quote.material.name} ({quote.material.category})"],
-            ["Surface Finish", quote.surface_finish.name],
-            ["Inspection Level", quote.inspection_level.name],
-            ["Quantity", f"{quote.quantity} unit(s)"],
-        ]
-        config_table = Table(config_data, colWidths=[5*cm, 10*cm])
-        config_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), light_gray),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e5e7eb')),
-            ('PADDING', (0, 0), (-1, -1), 8),
+
+        header = Table([[left_header, right_meta]], colWidths=[105 * mm, 85 * mm])
+        header.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ]))
-        content.append(config_table)
-        content.append(Spacer(1, 15))
-        
-        # Pricing - Show only total price in INR
-        content.append(Paragraph("Pricing", heading_style))
-        quantity_label = "combined files" if combined_items else f"{quote.quantity} units"
-        pricing_data = [
-            ["Description", "Amount (INR)"],
-            ["Unit Price", f"₹{float(quote.unit_price):,.2f}"],
-            [f"Total Price ({quantity_label})", f"₹{float(quote.total_price):,.2f}"],
-        ]
-        pricing_table = Table(pricing_data, colWidths=[10*cm, 5*cm])
-        pricing_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), light_gray),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, -1), (-1, -1), primary_color),
-            ('TEXTCOLOR', (0, -1), (-1, -1), HexColor('#ffffff')),
-            ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e5e7eb')),
-            ('PADDING', (0, 0), (-1, -1), 8),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ]))
-        content.append(pricing_table)
-        content.append(Spacer(1, 15))
-        
-        # Lead time
-        content.append(Paragraph(
-            f"<b>Estimated Lead Time:</b> {quote.estimated_lead_time_days} business days",
-            normal_style
-        ))
-        content.append(Spacer(1, 10))
-        
-        # Validity
-        content.append(Paragraph(
-            f"<b>Quote Validity:</b> This quotation is valid for {settings.QUOTE_VALIDITY_DAYS} days from the date of issue.",
-            normal_style
-        ))
-        content.append(Spacer(1, 20))
-        
-        # Terms
-        content.append(Paragraph("Terms & Conditions", heading_style))
-        terms = [
-            "Prices are valid for the quantity specified.",
-            "Lead time begins upon order confirmation and material availability.",
-            "Payment terms: Net 30 days from invoice date.",
-            "Shipping costs are not included unless otherwise specified.",
-            "First article inspection available upon request.",
-            "Tolerances per ISO 2768-mK unless otherwise specified.",
-        ]
-        for term in terms:
-            content.append(Paragraph(f"• {term}", normal_style))
-        
-        content.append(Spacer(1, 30))
-        
-        # Footer
-        footer_style = ParagraphStyle(
-            'Footer',
-            parent=styles['Normal'],
-            fontSize=9,
-            textColor=gray_color,
-            alignment=TA_CENTER,
+        content.append(header)
+
+        to_lines = [quote.customer_name or "Valued Customer", quote.customer_company or "", quote.customer_email or ""]
+        to_block = "<br/>".join([line for line in to_lines if line])
+        recipient = Table(
+            [[Paragraph("<b>To:</b><br/>" + to_block + f"<br/><br/><b>Subject:- {subject}</b>", base_style)]],
+            colWidths=[total_width],
         )
-        content.append(Paragraph("Thank you for your inquiry. We look forward to working with you.", footer_style))
-        content.append(Paragraph(f"{company_name} | {company_phone} | {company_email}", footer_style))
-        
-        # Build PDF
+        recipient.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        content.append(recipient)
+
+        combined_items = self._parse_combined_items(quote.notes)
+        if combined_items:
+            line_rows = []
+            for idx, item in enumerate(combined_items, start=1):
+                qty = max(int(item["quantity"]), 1)
+                line_total = float(item["line_total"])
+                line_rows.append([
+                    str(idx),
+                    "CAD",
+                    Paragraph(f"{item['file_name']}<br/><font size='8'>Bulk quote item</font>", base_style),
+                    "NA",
+                    f"{qty:.1f}",
+                    "Pcs",
+                    f"{(line_total / qty):,.2f}",
+                    f"{line_total:,.2f}",
+                ])
+        else:
+            line_rows = [[
+                "1",
+                "CAD",
+                Paragraph(
+                    f"{quote.cad_file.original_filename}<br/><font size='8'>"
+                    f"Material: {quote.material.name} | Finish: {quote.surface_finish.name} | Inspection: {quote.inspection_level.name}"
+                    f"</font>",
+                    base_style,
+                ),
+                "NA",
+                f"{max(int(quote.quantity), 1):.1f}",
+                "Pcs",
+                f"{float(quote.unit_price):,.2f}",
+                f"{float(quote.total_price):,.2f}",
+            ]]
+
+        items = Table(
+            [["SN", "Image", "Description", "HSN Code", "Qty", "UOM", "Price", "Total"]] + line_rows,
+            colWidths=[8 * mm, 20 * mm, 55 * mm, 20 * mm, 14 * mm, 14 * mm, 24 * mm, 35 * mm],
+        )
+        items.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("BACKGROUND", (0, 0), (-1, 0), light_gray),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("ALIGN", (0, 1), (1, -1), "CENTER"),
+            ("ALIGN", (3, 1), (5, -1), "CENTER"),
+            ("ALIGN", (6, 1), (7, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        content.append(items)
+
+        subtotal = float(quote.total_price)
+        sgst = subtotal * 0.09
+        cgst = subtotal * 0.09
+        round_off = round(round(subtotal + sgst + cgst, 2) - (subtotal + sgst + cgst), 2)
+        grand_total = subtotal + sgst + cgst + round_off
+
+        lower_left = Paragraph(f"<b>Amount in Words</b><br/>INR {grand_total:,.2f} only.", base_style)
+        totals_rows = [
+            ["Sub Total", ":", f"{subtotal:,.2f}"],
+            ["SGST 9 Tax (9.0%)", ":", f"{sgst:,.2f}"],
+            ["CGST 9 Tax (9.0%)", ":", f"{cgst:,.2f}"],
+            ["Round Off", ":", f"{round_off:,.2f}"],
+            ["Total Amount", ":", f"{grand_total:,.2f}"],
+        ]
+        totals_table = Table(totals_rows, colWidths=[42 * mm, 5 * mm, 28 * mm])
+        totals_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+            ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+            ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ]))
+
+        summary = Table([[lower_left, totals_table]], colWidths=[115 * mm, 75 * mm])
+        summary.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        content.append(summary)
+
+        terms_and_sign = Table(
+            [[
+                Paragraph("<b>Terms and Conditions:</b><br/>1. GST rates apply as per prevailing tax slabs.<br/>2. Delivery timeline starts after order and payment confirmation.", base_style),
+                Paragraph(f"For <b>{company_name}</b><br/><br/><br/><b>Authorized Signatory</b>", ParagraphStyle("RightSign", parent=base_style, alignment=1)),
+            ]],
+            colWidths=[120 * mm, 70 * mm],
+        )
+        terms_and_sign.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        content.append(terms_and_sign)
+
+        footer = Table([[Paragraph("This is a software generated quotation.", ParagraphStyle("Footer", parent=base_style, alignment=1))]], colWidths=[total_width])
+        footer.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        content.append(footer)
+        content.append(Spacer(1, 2))
+
         doc.build(content)
     
     def _render_quote_html(
@@ -331,92 +309,90 @@ class PDFGenerator:
         issuer_profile: Optional[dict] = None,
     ) -> str:
         """Render quote HTML template."""
-        # Calculate weight
         weight_kg = (geometry.volume * quote.material.density) / 1000
         combined_items = self._parse_combined_items(quote.notes)
+        cleaned_notes = self._strip_combined_notes(quote.notes)
 
-        combined_rows = ""
         if combined_items:
-            combined_rows = "".join(
-                f"<tr><td>{item['file_name']}</td><td>{item['quantity']}</td><td>₹{float(item['line_total']):,.2f}</td></tr>"
-                for item in combined_items
+            line_items = []
+            for item in combined_items:
+                qty = max(int(item["quantity"]), 1)
+                line_total = float(item["line_total"])
+                line_items.append({
+                    "description": f"{escape(item['file_name'])}<br><span class=\"desc-meta\">Bulk quote item</span>",
+                    "hsn_code": "NA",
+                    "qty": qty,
+                    "uom": "Pcs",
+                    "unit_price": line_total / qty,
+                    "line_total": line_total,
+                })
+        else:
+            line_items = [{
+                "description": (
+                    f"{quote.cad_file.original_filename}<br>"
+                    f"<span class=\"desc-meta\">Material: {escape(quote.material.name)} | "
+                    f"Finish: {escape(quote.surface_finish.name)} | "
+                    f"Inspection: {escape(quote.inspection_level.name)}</span><br>"
+                    f"<span class=\"desc-meta\">Volume: {geometry.volume:.2f} cm3 | "
+                    f"Weight: {weight_kg:.3f} kg</span>"
+                ),
+                "hsn_code": "NA",
+                "qty": max(int(quote.quantity), 1),
+                "uom": "Pcs",
+                "unit_price": float(quote.unit_price),
+                "line_total": float(quote.total_price),
+            }]
+
+        line_items_html = ""
+        for idx, item in enumerate(line_items, start=1):
+            line_items_html += (
+                "<tr>"
+                f"<td class=\"center\">{idx}</td>"
+                "<td class=\"image-cell\"><div class=\"img-ph\">CAD</div></td>"
+                f"<td>{item['description']}</td>"
+                f"<td class=\"center\">{item['hsn_code']}</td>"
+                f"<td class=\"right\">{item['qty']:.1f}</td>"
+                f"<td class=\"center\">{item['uom']}</td>"
+                f"<td class=\"right\">{item['unit_price']:,.2f}</td>"
+                f"<td class=\"right\">{item['line_total']:,.2f}</td>"
+                "</tr>"
             )
 
-        combined_files_section = ""
-        if combined_items:
-            combined_files_section = (
-                "<div class=\"section\">"
-                "<div class=\"section-title\">Uploaded Files</div>"
-                "<table class=\"part-table\">"
-                "<tr><th>Part File</th><th>Qty</th><th>Line Total (INR)</th></tr>"
-                f"{combined_rows}"
-                "</table>"
-                "</div>"
-            )
-        
-        # Template context
+        subtotal = float(quote.total_price)
+        tax_rate = 0.09
+        sgst = subtotal * tax_rate
+        cgst = subtotal * tax_rate
+        round_off = round(round(subtotal + sgst + cgst, 2) - (subtotal + sgst + cgst), 2)
+        grand_total = subtotal + sgst + cgst + round_off
+
+        subject_line = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quote for CNC machining"
+        client_lines = [
+            quote.customer_name or "Valued Customer",
+            quote.customer_company or "",
+            quote.customer_email or "",
+        ]
+        client_block = "<br>".join(escape(line) for line in client_lines if line)
+
         context = {
-            # Company info
-            "company_name": (issuer_profile or {}).get("company_name") or "CNC Quote Platform",
-            "company_address": (issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345",
-            "company_phone": (issuer_profile or {}).get("company_phone") or "N/A",
-            "company_email": (issuer_profile or {}).get("company_email") or "quotes@cncplatform.com",
-            
-            # Quote info
+            "company_name": escape((issuer_profile or {}).get("company_name") or "CNC Quote Platform"),
+            "company_address": escape((issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345").replace("\n", "<br>"),
+            "company_phone": escape((issuer_profile or {}).get("company_phone") or "N/A"),
+            "company_email": escape((issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"),
             "quote_number": quote.quote_number,
-            "quote_date": quote.created_at.strftime("%B %d, %Y"),
-            "valid_until": quote.valid_until.strftime("%B %d, %Y"),
-            "validity_days": settings.QUOTE_VALIDITY_DAYS,
-            
-            # Customer info
-            "customer_name": quote.customer_name or "Valued Customer",
-            "customer_company": quote.customer_company or "",
-            "customer_email": quote.customer_email or "",
-            
-            # Part info
-            "part_name": quote.cad_file.original_filename,
-            "volume_cm3": round(geometry.volume, 2),
-            "surface_area_cm2": round(geometry.surface_area, 2),
-            "bbox_x": round(geometry.bbox_x, 2),
-            "bbox_y": round(geometry.bbox_y, 2),
-            "bbox_z": round(geometry.bbox_z, 2),
-            "weight_kg": round(weight_kg, 3),
-            "combined_files_section": combined_files_section,
-            
-            # Configuration
-            "material_name": quote.material.name,
-            "material_category": quote.material.category,
-            "surface_finish_name": quote.surface_finish.name,
-            "inspection_level_name": quote.inspection_level.name,
-            
-            # Pricing
-            "quantity": quote.quantity,
-            "quantity_label": "combined files" if combined_items else f"{quote.quantity} units",
-            "material_cost": float(quote.material_cost),
-            "machining_cost": float(quote.machining_cost),
-            "finish_cost": float(quote.finish_cost),
-            "inspection_cost": float(quote.inspection_cost),
-            "unit_price": float(quote.unit_price),
-            "total_price": float(quote.total_price),
-            
-            # Lead time
-            "lead_time_days": quote.estimated_lead_time_days,
-            
-            # Notes
-            "notes": quote.notes or "",
-            
-            # Terms
-            "terms_and_conditions": [
-                "Prices are valid for the quantity specified.",
-                "Lead time begins upon order confirmation and material availability.",
-                "Payment terms: Net 30 days from invoice date.",
-                "Shipping costs are not included unless otherwise specified.",
-                "First article inspection available upon request.",
-                "Tolerances per ISO 2768-mK unless otherwise specified.",
-            ],
+            "quote_date": quote.created_at.strftime("%d-%m-%Y"),
+            "terms_of_payment": "30 days Credit",
+            "client_id": str(quote.id).split("-")[0].upper(),
+            "client_block": client_block,
+            "subject": escape(subject_line),
+            "line_items_html": line_items_html,
+            "subtotal": subtotal,
+            "sgst": sgst,
+            "cgst": cgst,
+            "round_off": round_off,
+            "grand_total": grand_total,
+            "signature_name": escape((issuer_profile or {}).get("company_name") or "Authorized Signatory"),
         }
         
-        # Use inline template since we're just creating the system
         return self._get_inline_template().format(**context)
 
     def _parse_combined_items(self, notes: Optional[str]) -> list[dict]:
@@ -456,6 +432,24 @@ class PDFGenerator:
             })
 
         return items
+
+    def _strip_combined_notes(self, notes: Optional[str]) -> str:
+        """Strip combined file metadata block and return user notes."""
+        if not notes:
+            return ""
+
+        start_tag = "[COMBINED_FILES]"
+        end_tag = "[/COMBINED_FILES]"
+        start_idx = notes.find(start_tag)
+        end_idx = notes.find(end_tag)
+
+        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+            return notes.strip()
+
+        prefix = notes[:start_idx].strip()
+        suffix = notes[end_idx + len(end_tag):].strip()
+        combined = "\n".join([part for part in [prefix, suffix] if part])
+        return combined.strip()
     
     def _get_inline_template(self) -> str:
         """Get inline HTML template for PDF generation."""
@@ -465,305 +459,134 @@ class PDFGenerator:
     <meta charset="UTF-8">
     <title>Quotation {quote_number}</title>
     <style>
-        @page {{
-            size: A4;
-            margin: 2cm;
-        }}
-        
+        @page {{ size: A4; margin: 10mm; }}
         body {{
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            font-size: 10pt;
-            line-height: 1.5;
-            color: #333;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #111;
             margin: 0;
-            padding: 0;
         }}
-        
-        .header {{
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #2563eb;
-        }}
-        
-        .company-info {{
-            text-align: left;
-        }}
-        
-        .company-name {{
-            font-size: 20pt;
-            font-weight: bold;
-            color: #2563eb;
-            margin-bottom: 5px;
-        }}
-        
-        .quote-info {{
-            text-align: right;
-        }}
-        
-        .quote-number {{
-            font-size: 14pt;
-            font-weight: bold;
-            color: #333;
-        }}
-        
-        .section {{
-            margin-bottom: 25px;
-        }}
-        
-        .section-title {{
-            font-size: 12pt;
-            font-weight: bold;
-            color: #2563eb;
-            border-bottom: 1px solid #e5e7eb;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-        }}
-        
-        .customer-details {{
-            background: #f9fafb;
-            padding: 15px;
-            border-radius: 5px;
-        }}
-        
-        .part-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }}
-        
-        .part-table th,
-        .part-table td {{
-            padding: 10px;
-            text-align: left;
-            border: 1px solid #e5e7eb;
-        }}
-        
-        .part-table th {{
-            background: #f3f4f6;
-            font-weight: bold;
-        }}
-        
-        .pricing-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }}
-        
-        .pricing-table th,
-        .pricing-table td {{
-            padding: 10px;
-            border: 1px solid #e5e7eb;
-        }}
-        
-        .pricing-table th {{
-            background: #f3f4f6;
-            text-align: left;
-        }}
-        
-        .pricing-table td {{
-            text-align: right;
-        }}
-        
-        .pricing-table td:first-child {{
-            text-align: left;
-        }}
-        
-        .total-row {{
-            font-weight: bold;
-            background: #2563eb;
-            color: white;
-        }}
-        
-        .total-row td {{
-            font-size: 12pt;
-        }}
-        
-        .lead-time {{
-            background: #ecfdf5;
-            padding: 15px;
-            border-radius: 5px;
-            border-left: 4px solid #22c55e;
-            margin-top: 15px;
-        }}
-        
-        .lead-time-value {{
-            font-size: 14pt;
-            font-weight: bold;
-            color: #22c55e;
-        }}
-        
-        .validity {{
-            background: #fef3c7;
-            padding: 15px;
-            border-radius: 5px;
-            border-left: 4px solid #f59e0b;
-            margin-top: 15px;
-        }}
-        
-        .terms {{
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
-        }}
-        
-        .terms ul {{
-            margin: 0;
-            padding-left: 20px;
-        }}
-        
-        .terms li {{
-            margin-bottom: 5px;
-            font-size: 9pt;
+        .quote {{ border: 1px solid #2a2a2a; }}
+        table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+        td, th {{ border: 1px solid #2a2a2a; vertical-align: top; padding: 6px; }}
+        .no-border td {{ border: none; padding: 0; }}
+        .header-title {{ font-size: 34px; color: #cb1e1e; font-weight: 700; line-height: 1; margin-bottom: 4px; }}
+        .header-sub {{ font-size: 19px; color: #1f8a34; font-style: italic; font-weight: 700; margin-bottom: 8px; }}
+        .company-name {{ font-size: 38px; font-weight: 700; color: #cb1e1e; }}
+        .quote-heading {{ text-align: center; font-size: 34px; font-weight: 700; background: #ececec; }}
+        .meta-label {{ width: 44%; font-weight: 600; background: #f2f2f2; }}
+        .meta-val {{ text-align: right; font-weight: 700; }}
+        .section-label {{ font-size: 35px; font-weight: 700; margin-bottom: 8px; }}
+        .subject-row {{ font-size: 13px; font-weight: 700; padding: 8px 6px; }}
+        .item-head th {{ background: #efefef; text-align: center; font-size: 12px; }}
+        .center {{ text-align: center; }}
+        .right {{ text-align: right; }}
+        .image-cell {{ text-align: center; }}
+        .img-ph {{
+            margin: 0 auto;
+            width: 64px;
+            height: 64px;
+            border: 1px dashed #777;
             color: #666;
+            font-size: 11px;
+            line-height: 64px;
         }}
-        
-        .footer {{
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #2563eb;
-            text-align: center;
-            font-size: 9pt;
-            color: #666;
-        }}
-        
-        .signature-line {{
-            margin-top: 50px;
-            display: flex;
-            justify-content: space-between;
-        }}
-        
-        .signature {{
-            width: 45%;
-            border-top: 1px solid #333;
-            padding-top: 10px;
-            text-align: center;
-        }}
+        .desc-meta {{ color: #4a4a4a; font-size: 11px; }}
+        .amount-label {{ font-size: 16px; font-weight: 700; margin-bottom: 4px; }}
+        .terms-title {{ font-size: 16px; font-weight: 700; margin-bottom: 4px; }}
+        .totals-table td {{ border: none; padding: 3px 0; }}
+        .totals-table .key {{ width: 70%; font-weight: 700; }}
+        .totals-table .sep {{ width: 6%; text-align: center; }}
+        .totals-table .val {{ width: 24%; text-align: right; font-weight: 700; }}
+        .sign-wrap {{ text-align: center; padding-top: 8px; }}
+        .sign-line {{ margin-top: 20px; font-weight: 700; }}
+        .footer-note {{ text-align: center; font-size: 12px; padding: 6px 0; border-top: 1px solid #2a2a2a; }}
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="company-info">
-            <div class="company-name">{company_name}</div>
-            <div>{company_address}</div>
-            <div>{company_phone}</div>
-            <div>{company_email}</div>
-        </div>
-        <div class="quote-info">
-            <div class="quote-number">QUOTATION</div>
-            <div><strong>Quote #:</strong> {quote_number}</div>
-            <div><strong>Date:</strong> {quote_date}</div>
-            <div><strong>Valid Until:</strong> {valid_until}</div>
-        </div>
-    </div>
-    
-    <div class="section">
-        <div class="section-title">Customer Information</div>
-        <div class="customer-details">
-            <div><strong>{customer_name}</strong></div>
-            <div>{customer_company}</div>
-            <div>{customer_email}</div>
-        </div>
-    </div>
-    
-    <div class="section">
-        <div class="section-title">Part Specifications</div>
-        <table class="part-table">
+    <div class="quote">
+        <table>
             <tr>
-                <th>Part File</th>
-                <td colspan="3">{part_name}</td>
+                <td style="width:50%;">
+                    <div class="header-title">{company_name}</div>
+                    <div class="header-sub">Business Growth Platform</div>
+                    <div><strong>{company_name}</strong></div>
+                    <div>{company_address}</div>
+                    <div>Contact: {company_phone}</div>
+                    <div>Email: {company_email}</div>
+                </td>
+                <td style="width:50%; padding:0;">
+                    <table>
+                        <tr><td class="quote-heading" colspan="2">QUOTATION</td></tr>
+                        <tr><td class="meta-label">Quotation No.</td><td class="meta-val">{quote_number}</td></tr>
+                        <tr><td class="meta-label">Date</td><td class="meta-val">{quote_date}</td></tr>
+                        <tr><td class="meta-label">Terms of Payment</td><td class="meta-val">{terms_of_payment}</td></tr>
+                        <tr><td class="meta-label">Client ID</td><td class="meta-val">{client_id}</td></tr>
+                    </table>
+                </td>
             </tr>
             <tr>
-                <th>Dimensions (X × Y × Z)</th>
-                <td>{bbox_x} × {bbox_y} × {bbox_z} cm</td>
-                <th>Volume</th>
-                <td>{volume_cm3} cm³</td>
-            </tr>
-            <tr>
-                <th>Surface Area</th>
-                <td>{surface_area_cm2} cm²</td>
-                <th>Estimated Weight</th>
-                <td>{weight_kg} kg</td>
+                <td colspan="2">
+                    <div class="section-label">To:</div>
+                    <div>{client_block}</div>
+                    <div class="subject-row">Subject:- {subject}</div>
+                </td>
             </tr>
         </table>
-    </div>
 
-    {combined_files_section}
-    
-    <div class="section">
-        <div class="section-title">Configuration</div>
-        <table class="part-table">
-            <tr>
-                <th>Material</th>
-                <td>{material_name} ({material_category})</td>
-            </tr>
-            <tr>
-                <th>Surface Finish</th>
-                <td>{surface_finish_name}</td>
-            </tr>
-            <tr>
-                <th>Inspection Level</th>
-                <td>{inspection_level_name}</td>
-            </tr>
-            <tr>
-                <th>Quantity</th>
-                <td>{quantity} unit(s)</td>
-            </tr>
-        </table>
-    </div>
-    
-    <div class="section">
-        <div class="section-title">Pricing</div>
-        <table class="pricing-table">
-            <tr>
+        <table>
+            <colgroup>
+                <col style="width:4%;"><col style="width:12%;"><col style="width:24%;"><col style="width:10%;">
+                <col style="width:8%;"><col style="width:7%;"><col style="width:12%;"><col style="width:13%;">
+            </colgroup>
+            <tr class="item-head">
+                <th>SN</th>
+                <th>Image</th>
                 <th>Description</th>
-                <th>Amount (INR)</th>
+                <th>HSN Code</th>
+                <th>Qty</th>
+                <th>UOM</th>
+                <th>Price</th>
+                <th>Total</th>
             </tr>
+            {line_items_html}
+        </table>
+
+        <table>
             <tr>
-                <td><strong>Unit Price</strong></td>
-                <td><strong>₹{unit_price:,.2f}</strong></td>
-            </tr>
-            <tr class="total-row">
-                <td>Total Price ({quantity_label})</td>
-                <td>₹{total_price:,.2f}</td>
+                <td style="width:60%;">
+                    <div class="amount-label">Amount in Words</div>
+                    <div>INR {grand_total:,.2f} only.</div>
+                </td>
+                <td style="width:40%;">
+                    <table class="totals-table">
+                        <tr><td class="key">Sub Total</td><td class="sep">:</td><td class="val">{subtotal:,.2f}</td></tr>
+                        <tr><td class="key">SGST 9 Tax (9.0%)</td><td class="sep">:</td><td class="val">{sgst:,.2f}</td></tr>
+                        <tr><td class="key">CGST 9 Tax (9.0%)</td><td class="sep">:</td><td class="val">{cgst:,.2f}</td></tr>
+                        <tr><td class="key">Round Off</td><td class="sep">:</td><td class="val">{round_off:,.2f}</td></tr>
+                        <tr><td class="key">Total Amount</td><td class="sep">:</td><td class="val">{grand_total:,.2f}</td></tr>
+                    </table>
+                </td>
             </tr>
         </table>
-        
-        <div class="lead-time">
-            <strong>Estimated Lead Time:</strong> 
-            <span class="lead-time-value">{lead_time_days:.1f} business days</span>
-        </div>
-        
-        <div class="validity">
-            <strong>Quote Validity:</strong> This quotation is valid for {validity_days} days from the date of issue.
-        </div>
-    </div>
-    
-    <div class="terms">
-        <div class="section-title">Terms & Conditions</div>
-        <ul>
-            <li>Prices are valid for the quantity specified.</li>
-            <li>Lead time begins upon order confirmation and material availability.</li>
-            <li>Payment terms: Net 30 days from invoice date.</li>
-            <li>Shipping costs are not included unless otherwise specified.</li>
-            <li>First article inspection available upon request.</li>
-            <li>Tolerances per ISO 2768-mK unless otherwise specified.</li>
-        </ul>
-    </div>
-    
-    <div class="signature-line">
-        <div class="signature">
-            Authorized Signature
-        </div>
-        <div class="signature">
-            Customer Acceptance
-        </div>
-    </div>
-    
-    <div class="footer">
-        <p>Thank you for your inquiry. We look forward to working with you.</p>
-        <p>{company_name} | {company_phone} | {company_email}</p>
+
+        <table>
+            <tr>
+                <td style="width:65%;">
+                    <div class="terms-title">Terms and Conditions:</div>
+                    <div>1. GST rates apply as per prevailing tax slabs.</div>
+                    <div>2. Delivery timeline starts after order and payment confirmation.</div>
+                </td>
+                <td style="width:35%;">
+                    <div class="sign-wrap">
+                        <div>For {signature_name}</div>
+                        <div class="sign-line">Authorized Signatory</div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="footer-note">This is a software generated quotation.</div>
     </div>
 </body>
 </html>"""

@@ -440,6 +440,63 @@ class QuoteEmailResponse(BaseModel):
 
 
 # ============================================================================
+# Billing Schemas
+# ============================================================================
+
+class PointsPackageResponse(BaseModel):
+    id: str
+    name: str
+    points: int
+    price_minor: int
+    currency: str
+    is_active: bool = True
+    display_order: int = 0
+
+
+class PointsPackageCreateRequest(BaseModel):
+    package_code: str = Field(..., min_length=2, max_length=100)
+    name: str = Field(..., min_length=2, max_length=120)
+    points: int = Field(..., gt=0)
+    price_minor: int = Field(..., gt=0)
+    currency: str = Field(default="inr", min_length=3, max_length=10)
+    is_active: bool = True
+    display_order: int = 0
+
+
+class PointsPackageUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=120)
+    points: Optional[int] = Field(None, gt=0)
+    price_minor: Optional[int] = Field(None, gt=0)
+    currency: Optional[str] = Field(None, min_length=3, max_length=10)
+    is_active: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
+class PointsWalletResponse(BaseModel):
+    balance_points: int
+
+
+class PointsLedgerEntryResponse(BaseModel):
+    id: UUID
+    delta_points: int
+    balance_after: int
+    action: str
+    description: Optional[str] = None
+    created_at: datetime
+
+
+class CreateCheckoutSessionRequest(BaseModel):
+    package_id: str
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+class CreateCheckoutSessionResponse(BaseModel):
+    checkout_url: str
+    session_id: str
+
+
+# ============================================================================
 # Auth Schemas
 # ============================================================================
 
@@ -450,6 +507,7 @@ class UserProfileResponse(BaseSchema):
     email: str
     company_name: str
     company_address: str
+    phone_number: Optional[str] = None
     company_logo_url: Optional[str] = None
     created_at: datetime
 

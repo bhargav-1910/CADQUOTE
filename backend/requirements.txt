@@ -38,6 +38,7 @@ python-magic==0.4.27;sys_platform!='win32'
 # Background tasks
 celery==5.3.4
 httpx==0.26.0
+stripe==11.6.0
 
 # Development
 pytest==7.4.4

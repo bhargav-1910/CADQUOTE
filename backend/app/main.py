@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.cache import cache
-from app.api import files, config, quotes, auth
+from app.api import files, config, quotes, auth, billing
 
 # Configure logging
 logging.basicConfig(
@@ -87,6 +87,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")

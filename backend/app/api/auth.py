@@ -23,6 +23,7 @@ from app.core.security import (
 )
 from app.models.models import User, SignupOTP, PasswordResetToken
 from app.services.email import send_plain_email
+from app.services.billing import add_points
 from app.schemas.schemas import (
     AuthTokenResponse,
     ForgotPasswordRequest,
@@ -63,9 +64,47 @@ def _profile_from_user(user: User) -> UserProfileResponse:
         email=user.email,
         company_name=user.company_name,
         company_address=user.company_address,
+        phone_number=user.phone_number,
         company_logo_url=_build_logo_url(user.company_logo_path),
         created_at=user.created_at,
     )
+
+
+def _normalize_phone(phone_number: str | None) -> str | None:
+    if phone_number is None:
+        return None
+    value = phone_number.strip()
+    if not value:
+        return None
+    allowed = set("+0123456789 -()")
+    if any(ch not in allowed for ch in value):
+        raise HTTPException(status_code=400, detail="Phone number contains invalid characters")
+    digits = [ch for ch in value if ch.isdigit()]
+    if len(digits) < 7 or len(digits) > 15:
+        raise HTTPException(status_code=400, detail="Phone number must contain 7 to 15 digits")
+    return value
+
+
+async def _store_logo_file(logo: UploadFile | None) -> str | None:
+    if logo is None or not logo.filename:
+        return None
+
+    ext = Path(logo.filename).suffix.lower()
+    allowed = {".png", ".jpg", ".jpeg", ".svg", ".webp"}
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported logo format")
+
+    logo_dir = Path(settings.UPLOAD_DIR) / "company_logos"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    generated_name = f"{uuid.uuid4().hex}{ext}"
+    target = logo_dir / generated_name
+
+    content = await logo.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Logo exceeds 5MB limit")
+
+    target.write_bytes(content)
+    return str(Path("company_logos") / generated_name)
 
 
 async def _issue_tokens_for_user(db: AsyncSession, user: User) -> tuple[str, str]:
@@ -87,6 +126,7 @@ async def register(
     password: str = Form(...),
     company_name: str = Form(...),
     company_address: str = Form(...),
+    phone_number: str | None = Form(None),
     otp: str = Form(...),
     logo: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
@@ -127,24 +167,8 @@ async def register(
 
     otp_entry.used = True
 
-    logo_relative_path: str | None = None
-    if logo is not None and logo.filename:
-        ext = Path(logo.filename).suffix.lower()
-        allowed = {".png", ".jpg", ".jpeg", ".svg", ".webp"}
-        if ext not in allowed:
-            raise HTTPException(status_code=400, detail="Unsupported logo format")
-
-        logo_dir = Path(settings.UPLOAD_DIR) / "company_logos"
-        logo_dir.mkdir(parents=True, exist_ok=True)
-        generated_name = f"{uuid.uuid4().hex}{ext}"
-        target = logo_dir / generated_name
-
-        content = await logo.read()
-        if len(content) > 5 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="Logo exceeds 5MB limit")
-
-        target.write_bytes(content)
-        logo_relative_path = str(Path("company_logos") / generated_name)
+    logo_relative_path = await _store_logo_file(logo)
+    normalized_phone_number = _normalize_phone(phone_number)
 
     user = User(
         full_name=full_name.strip(),
@@ -152,6 +176,7 @@ async def register(
         hashed_password="",
         company_name=company_name.strip(),
         company_address=company_address.strip(),
+        phone_number=normalized_phone_number,
         company_logo_path=logo_relative_path,
     )
     try:
@@ -160,6 +185,16 @@ async def register(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     db.add(user)
+    await db.flush()
+    await add_points(
+        db,
+        user_id=user.id,
+        points=settings.POINTS_STARTING_BONUS,
+        action="starting_bonus",
+        description="Welcome bonus points",
+        reference_type="user",
+        reference_id=str(user.id),
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -372,4 +407,45 @@ async def logout(
 @router.get("/me", response_model=UserProfileResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Return the authenticated user's profile."""
+    return _profile_from_user(current_user)
+
+
+@router.patch("/me", response_model=UserProfileResponse)
+async def update_me(
+    full_name: str | None = Form(None),
+    company_name: str | None = Form(None),
+    company_address: str | None = Form(None),
+    phone_number: str | None = Form(None),
+    logo: UploadFile | None = File(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update authenticated user's profile details and logo."""
+    if full_name is not None:
+        value = full_name.strip()
+        if not value:
+            raise HTTPException(status_code=400, detail="Full name cannot be empty")
+        current_user.full_name = value
+
+    if company_name is not None:
+        value = company_name.strip()
+        if not value:
+            raise HTTPException(status_code=400, detail="Company name cannot be empty")
+        current_user.company_name = value
+
+    if company_address is not None:
+        value = company_address.strip()
+        if not value:
+            raise HTTPException(status_code=400, detail="Company address cannot be empty")
+        current_user.company_address = value
+
+    if phone_number is not None:
+        current_user.phone_number = _normalize_phone(phone_number)
+
+    logo_relative_path = await _store_logo_file(logo)
+    if logo_relative_path is not None:
+        current_user.company_logo_path = logo_relative_path
+
+    await db.commit()
+    await db.refresh(current_user)
     return _profile_from_user(current_user)

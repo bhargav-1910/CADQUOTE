@@ -14,6 +14,7 @@ import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteList from './pages/QuoteList';
 import QuoteDetail from './pages/QuoteDetail';
 import AdminPricing from './pages/AdminPricing';
+import BillingPage from './pages/BillingPage';
 
 function App() {
   return (
@@ -100,6 +101,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <AdminPricing />
+                </Layout>
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/billing"
+            element={(
+              <ProtectedRoute>
+                <Layout>
+                  <BillingPage />
                 </Layout>
               </ProtectedRoute>
             )}

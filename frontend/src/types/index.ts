@@ -218,6 +218,59 @@ export interface QuoteEmailResponse {
   quote_id: string;
 }
 
+export interface PointsPackage {
+  id: string;
+  name: string;
+  points: number;
+  price_minor: number;
+  currency: string;
+  is_active: boolean;
+  display_order: number;
+}
+
+export interface CreatePointsPackageRequest {
+  package_code: string;
+  name: string;
+  points: number;
+  price_minor: number;
+  currency: string;
+  is_active: boolean;
+  display_order: number;
+}
+
+export interface UpdatePointsPackageRequest {
+  name?: string;
+  points?: number;
+  price_minor?: number;
+  currency?: string;
+  is_active?: boolean;
+  display_order?: number;
+}
+
+export interface PointsWallet {
+  balance_points: number;
+}
+
+export interface PointsLedgerEntry {
+  id: string;
+  delta_points: number;
+  balance_after: number;
+  action: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface CreateCheckoutSessionRequest {
+  package_id: string;
+  success_url?: string;
+  cancel_url?: string;
+}
+
+export interface CreateCheckoutSessionResponse {
+  checkout_url: string;
+  session_id: string;
+}
+
 export interface Quote {
   id: string;
   quote_number: string;
@@ -277,8 +330,17 @@ export interface UserProfile {
   email: string;
   company_name: string;
   company_address: string;
+  phone_number: string | null;
   company_logo_url: string | null;
   created_at: string;
+}
+
+export interface UpdateProfileRequest {
+  full_name: string;
+  company_name: string;
+  company_address: string;
+  phone_number?: string;
+  logo?: File;
 }
 
 export interface LoginRequest {

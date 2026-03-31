@@ -11,6 +11,7 @@ A full-stack web application for generating instant, transparent CNC machining q
 - **Automatic Geometry Analysis**: Extracts volume, surface area, bounding box, and complexity score
 - **Rule-Based Pricing**: Transparent, explainable pricing with detailed breakdown
 - **PDF Quotes**: Professional, client-ready quotation documents
+- **Points Billing**: Wallet-based usage billing with Stripe top-ups
 - **Material Library**: Pre-configured materials with density and cost data
 - **Surface Finishes**: Multiple finish options with associated costs
 - **Inspection Levels**: Basic to CMM inspection tiers
@@ -189,6 +190,15 @@ The pricing engine uses transparent, rule-based logic:
 - `POST /api/auth/logout` - Invalidate current refresh session
 - `GET /api/auth/me` - Get authenticated user profile
 
+### Billing
+- `GET /api/billing/packages` - List active points packages
+- `POST /api/billing/packages` - Create points package (admin workflow)
+- `PATCH /api/billing/packages/{package_code}` - Update points package (admin workflow)
+- `GET /api/billing/wallet` - Get current points wallet balance
+- `GET /api/billing/ledger` - Get points transaction history
+- `POST /api/billing/checkout-session` - Create Stripe checkout session for top-up
+- `POST /api/billing/webhook` - Stripe webhook handler
+
 ### Files
 - `POST /api/files/upload` - Upload CAD file
 - `GET /api/files/{file_id}` - Get file info
@@ -228,6 +238,43 @@ The pricing engine uses transparent, rule-based logic:
    cd backend
    alembic downgrade -1
    ```
+
+## Stripe Setup
+
+1. Add Stripe keys in [backend/.env](backend/.env):
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_...
+   STRIPE_WEBHOOK_SECRET=whsec_...
+   FRONTEND_BASE_URL=http://localhost:5173
+   BILLING_CURRENCY=inr
+   ```
+
+2. Install backend dependencies:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
+
+3. Apply migrations:
+   ```bash
+   cd backend
+   alembic upgrade head
+   ```
+
+4. Start Stripe webhook forwarding (local):
+   ```bash
+   stripe listen --forward-to http://localhost:8000/api/billing/webhook
+   ```
+
+5. Copy the printed webhook signing secret from Stripe CLI to `STRIPE_WEBHOOK_SECRET`.
+
+6. Open Billing page in app and buy points via Stripe Checkout.
+
+## Admin Points Package Configuration
+
+- Go to Cost Master screen and manage "Points Packages (Stripe Billing)".
+- You can add new packages and edit points, price, order, and active status.
+- Stripe checkout always uses active packages from the database.
 
 ## Project Structure
 

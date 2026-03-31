@@ -37,6 +37,7 @@ from app.services.quote import (
 from app.services.document import generate_quote_document
 from app.services.email import send_quote_email
 from app.core.config import settings
+from app.services.billing import consume_points, InsufficientPointsError
 
 router = APIRouter(tags=["Pricing & Quotes"], dependencies=[Depends(get_current_user)])
 
@@ -59,6 +60,19 @@ async def _auto_send_quote_email_if_requested(
         pdf_path = await generate_quote_document(db, quote, issuer=current_user)
     else:
         pdf_path = quote.pdf_path
+
+    try:
+        await consume_points(
+            db,
+            user_id=current_user.id,
+            points=settings.POINTS_COST_SEND_QUOTE_EMAIL,
+            action="send_quote_email",
+            description=f"Sent quote {quote.quote_number} to customer",
+            reference_type="quote",
+            reference_id=str(quote.id),
+        )
+    except InsufficientPointsError:
+        raise HTTPException(status_code=402, detail="Insufficient points to send quote email")
 
     await send_quote_email(
         quote=quote,
@@ -283,6 +297,19 @@ async def create_batch_quotation(
     created = []
     for cad_file_id in request.cad_file_ids:
         try:
+            try:
+                await consume_points(
+                    db,
+                    user_id=current_user.id,
+                    points=settings.POINTS_COST_CREATE_QUOTE,
+                    action="create_quote",
+                    description="Created quote from batch quote flow",
+                    reference_type="cad_file",
+                    reference_id=str(cad_file_id),
+                )
+            except InsufficientPointsError:
+                raise HTTPException(status_code=402, detail="Insufficient points to create quote")
+
             quote = await create_quote(
                 db=db,
                 user_id=current_user.id,
@@ -337,6 +364,19 @@ async def create_combined_quotation(
     first_item = request.items[0]
     combined_lines: List[str] = []
     serialized_overrides = _serialize_pricing_overrides(request.pricing_overrides)
+
+    combined_quote_points = settings.POINTS_COST_CREATE_QUOTE * len(request.items)
+    try:
+        await consume_points(
+            db,
+            user_id=current_user.id,
+            points=combined_quote_points,
+            action="create_combined_quote",
+            description=f"Created combined quote with {len(request.items)} line items",
+            reference_type="combined_quote",
+        )
+    except InsufficientPointsError:
+        raise HTTPException(status_code=402, detail="Insufficient points to create combined quote")
 
     for item in request.items:
         cad_file = await db.get(CADFile, item.cad_file_id)
@@ -457,6 +497,19 @@ async def create_quotation(
     This generates a quote with a unique ID and creates a PDF document.
     """
     try:
+        await consume_points(
+            db,
+            user_id=current_user.id,
+            points=settings.POINTS_COST_CREATE_QUOTE,
+            action="create_quote",
+            description="Created quote",
+            reference_type="cad_file",
+            reference_id=str(request.cad_file_id),
+        )
+    except InsufficientPointsError:
+        raise HTTPException(status_code=402, detail="Insufficient points to create quote")
+
+    try:
         quote = await create_quote(
             db=db,
             user_id=current_user.id,
@@ -572,18 +625,15 @@ async def download_quote_pdf(
     quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
-    
-    if not quote.pdf_path:
-        # Generate PDF if not exists
-        try:
-            pdf_path = await generate_quote_document(db, quote, issuer=current_user)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"PDF generation failed: {str(e)}"
-            )
-    else:
-        pdf_path = quote.pdf_path
+
+    # Always regenerate to ensure latest template updates are reflected.
+    try:
+        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF generation failed: {str(e)}"
+        )
     
     return FileResponse(
         path=pdf_path,
@@ -604,7 +654,7 @@ async def email_quote_to_customer(
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
 
-    recipient_email = (request.recipient_email or quote.customer_email or "").strip()
+    recipient_email = (quote.customer_email or request.recipient_email or "").strip()
     if not recipient_email:
         raise HTTPException(status_code=400, detail="Customer email is required to send quote")
 
@@ -620,6 +670,19 @@ async def email_quote_to_customer(
         pdf_path = quote.pdf_path
 
     try:
+        try:
+            await consume_points(
+                db,
+                user_id=current_user.id,
+                points=settings.POINTS_COST_SEND_QUOTE_EMAIL,
+                action="send_quote_email",
+                description=f"Sent quote {quote.quote_number} to customer",
+                reference_type="quote",
+                reference_id=str(quote.id),
+            )
+        except InsufficientPointsError:
+            raise HTTPException(status_code=402, detail="Insufficient points to send quote email")
+
         await send_quote_email(
             quote=quote,
             sender=current_user,

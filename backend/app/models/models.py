@@ -75,6 +75,7 @@ class User(Base):
 
     company_name = Column(String(200), nullable=False)
     company_address = Column(Text, nullable=False)
+    phone_number = Column(String(30), nullable=True)
     company_logo_path = Column(String(500), nullable=True)
     refresh_token_hash = Column(String(128), nullable=True)
     refresh_token_expires_at = Column(DateTime, nullable=True)
@@ -88,6 +89,8 @@ class User(Base):
     quotes = relationship("Quote", back_populates="user")
     signup_otps = relationship("SignupOTP", back_populates="user")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user")
+    points_wallet = relationship("PointsWallet", back_populates="user", uselist=False)
+    points_ledger_entries = relationship("PointsLedgerEntry", back_populates="user")
 
 
 class SignupOTP(Base):
@@ -118,6 +121,67 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="password_reset_tokens")
+
+
+class PointsWallet(Base):
+    """Per-user points balance."""
+    __tablename__ = "points_wallets"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    balance_points = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="points_wallet")
+
+
+class PointsLedgerEntry(Base):
+    """Immutable points transaction history."""
+    __tablename__ = "points_ledger_entries"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    delta_points = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    action = Column(String(100), nullable=False)
+    description = Column(String(255), nullable=True)
+    reference_type = Column(String(100), nullable=True)
+    reference_id = Column(String(100), nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User", back_populates="points_ledger_entries")
+
+
+class StripeCheckoutCredit(Base):
+    """Tracks Stripe checkout sessions credited to a wallet for idempotency."""
+    __tablename__ = "stripe_checkout_credits"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    stripe_session_id = Column(String(255), nullable=False, unique=True, index=True)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    package_id = Column(String(100), nullable=False)
+    points_credited = Column(Integer, nullable=False)
+    amount_paid_minor = Column(Integer, nullable=True)
+    currency = Column(String(10), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PointsPackage(Base):
+    """Admin-configurable points package catalog used by Stripe checkout."""
+    __tablename__ = "points_packages"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    package_code = Column(String(100), nullable=False, unique=True, index=True)
+    name = Column(String(120), nullable=False)
+    points = Column(Integer, nullable=False)
+    price_minor = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default="inr")
+    is_active = Column(Boolean, nullable=False, default=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 # ============================================================================

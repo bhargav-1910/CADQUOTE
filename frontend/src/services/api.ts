@@ -28,8 +28,16 @@ import type {
   GenericMessageResponse,
   AuthTokenResponse,
   UserProfile,
+  UpdateProfileRequest,
   QuoteEmailRequest,
   QuoteEmailResponse,
+  PointsPackage,
+  PointsWallet,
+  PointsLedgerEntry,
+  CreatePointsPackageRequest,
+  UpdatePointsPackageRequest,
+  CreateCheckoutSessionRequest,
+  CreateCheckoutSessionResponse,
 } from '@/types';
 
 const AUTH_TOKEN_KEY = 'forgequote.auth.token';
@@ -284,6 +292,26 @@ export const getCurrentUser = async (): Promise<UserProfile> => {
   }
 };
 
+export const updateCurrentUser = async (payload: UpdateProfileRequest): Promise<UserProfile> => {
+  try {
+    const formData = new FormData();
+    formData.append('full_name', payload.full_name);
+    formData.append('company_name', payload.company_name);
+    formData.append('company_address', payload.company_address);
+    formData.append('phone_number', payload.phone_number ?? '');
+    if (payload.logo) {
+      formData.append('logo', payload.logo);
+    }
+
+    const response = await api.patch<UserProfile>('/auth/me', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
 export const requestSignupOtp = async (payload: SignupOtpRequest): Promise<SignupOtpResponse> => {
   try {
     const response = await api.post<SignupOtpResponse>('/auth/register/request-otp', payload);
@@ -457,6 +485,73 @@ export const sendQuoteEmail = async (
 ): Promise<QuoteEmailResponse> => {
   try {
     const response = await api.post<QuoteEmailResponse>(`/quotes/${quoteId}/email`, payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+// ============================================================================
+// Billing API
+// ============================================================================
+
+export const getPointsPackages = async (includeInactive = false): Promise<PointsPackage[]> => {
+  try {
+    const response = await api.get<PointsPackage[]>('/billing/packages', {
+      params: { include_inactive: includeInactive },
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const createPointsPackage = async (payload: CreatePointsPackageRequest): Promise<PointsPackage> => {
+  try {
+    const response = await api.post<PointsPackage>('/billing/packages', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const updatePointsPackage = async (
+  packageCode: string,
+  payload: UpdatePointsPackageRequest,
+): Promise<PointsPackage> => {
+  try {
+    const response = await api.patch<PointsPackage>(`/billing/packages/${packageCode}`, payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getPointsWallet = async (): Promise<PointsWallet> => {
+  try {
+    const response = await api.get<PointsWallet>('/billing/wallet');
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getPointsLedger = async (limit = 50): Promise<PointsLedgerEntry[]> => {
+  try {
+    const response = await api.get<PointsLedgerEntry[]>('/billing/ledger', {
+      params: { limit },
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const createStripeCheckoutSession = async (
+  payload: CreateCheckoutSessionRequest,
+): Promise<CreateCheckoutSessionResponse> => {
+  try {
+    const response = await api.post<CreateCheckoutSessionResponse>('/billing/checkout-session', payload);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

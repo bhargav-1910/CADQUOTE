@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { LoginRequest, SignupRequest, UserProfile } from '@/types';
+import type { LoginRequest, SignupRequest, UpdateProfileRequest, UserProfile } from '@/types';
 import {
   getAuthToken,
   setAuthTokens,
@@ -8,6 +8,7 @@ import {
   loginUser,
   signupUser,
   getCurrentUser,
+  updateCurrentUser,
   refreshAccessToken,
   logoutUser,
 } from '@/services/api';
@@ -45,6 +46,7 @@ interface AuthContextValue {
   signup: (payload: SignupRequest) => Promise<void>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
+  updateProfile: (payload: UpdateProfileRequest) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -127,6 +129,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     writeCachedProfile(null);
   };
 
+  const updateProfile = async (payload: UpdateProfileRequest) => {
+    const profile = await updateCurrentUser(payload);
+    setUser(profile);
+    writeCachedProfile(profile);
+  };
+
   useEffect(() => {
     const refreshIfExpiring = async () => {
       if (!user) {
@@ -190,8 +198,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signup,
       logout,
       refreshProfile,
+      updateProfile,
     }),
-    [user, loading],
+    [user, loading, updateProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

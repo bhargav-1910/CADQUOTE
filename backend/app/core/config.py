@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "CNC Quote Platform"
     FRONTEND_BASE_URL: str = "http://localhost"
 
+    # Billing and points
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    BILLING_CURRENCY: str = "inr"
+    POINTS_COST_UPLOAD_FILE: int = 2
+    POINTS_COST_TRIGGER_PROCESSING: int = 3
+    POINTS_COST_CREATE_QUOTE: int = 8
+    POINTS_COST_SEND_QUOTE_EMAIL: int = 2
+    POINTS_STARTING_BONUS: int = 200
+
     # Authentication
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

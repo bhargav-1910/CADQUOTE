@@ -17,6 +17,8 @@ from app.schemas.schemas import (
 )
 from app.services.upload import upload_cad_file, get_cad_file, get_cad_file_content
 from app.services.geometry import process_cad_file, get_geometry_analysis
+from app.services.billing import consume_points, InsufficientPointsError
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -52,6 +54,19 @@ async def upload_file(
             processing_status=cad_file.processing_status.value,
             message="File already exists. Using cached version.",
         )
+
+    try:
+        await consume_points(
+            db,
+            user_id=current_user.id,
+            points=settings.POINTS_COST_UPLOAD_FILE,
+            action="file_upload",
+            description=f"Uploaded CAD file {cad_file.original_filename}",
+            reference_type="cad_file",
+            reference_id=str(cad_file.id),
+        )
+    except InsufficientPointsError:
+        raise HTTPException(status_code=402, detail="Insufficient points. Please top up to upload new files.")
     
     # Commit the file upload before starting background task
     await db.commit()
@@ -193,6 +208,19 @@ async def trigger_processing(
         )
     
     try:
+        try:
+            await consume_points(
+                db,
+                user_id=current_user.id,
+                points=settings.POINTS_COST_TRIGGER_PROCESSING,
+                action="manual_geometry_processing",
+                description=f"Manual processing for {cad_file.original_filename}",
+                reference_type="cad_file",
+                reference_id=str(cad_file.id),
+            )
+        except InsufficientPointsError:
+            raise HTTPException(status_code=402, detail="Insufficient points. Please top up to process files.")
+
         geometry = await process_cad_file(db, cad_file)
         return {
             "status": "completed",
