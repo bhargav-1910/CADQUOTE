@@ -127,59 +127,20 @@ A full-stack web application for generating instant, transparent CNC machining q
 
 3. Access at http://localhost:5173
 
-## Pricing Model
+## Pricing and DFM Documentation
 
-The pricing engine uses transparent, rule-based logic:
+Pricing and DFM logic is documented in detail in:
 
-### Cost Components
+- `docs/PRICING_AND_DFM.md`
 
-1. **Material Cost**
-   ```
-   Material Cost = Volume (cm³) × Density (g/cm³) × (Cost per kg / 1000)
-   ```
+That document includes:
 
-2. **Machining Cost**
-   ```
-   Estimated Time = Volume × Time/Volume Factor × Complexity Multiplier
-   Machining Cost = Estimated Time × Hourly Rate
-   ```
-
-3. **Surface Finish Cost**
-   ```
-   Finish Cost = (Machining Cost × Multiplier) + Fixed Cost
-   ```
-
-4. **Inspection Cost**
-   ```
-   Inspection Cost = Fixed Cost + (Subtotal × Percentage)
-   ```
-
-5. **Total Price**
-   ```
-   Subtotal = Material + Machining + Finish + Inspection
-   Total = (Subtotal × Profit Margin) - Quantity Discount
-   ```
-
-### Complexity Factors
-
-| Complexity Score | Multiplier |
-|-----------------|------------|
-| < 5 | 0.8x |
-| 5-10 | 1.0x |
-| 10-20 | 1.3x |
-| 20-35 | 1.6x |
-| > 35 | 2.0x |
-
-### Quantity Discounts
-
-| Quantity | Discount |
-|----------|----------|
-| 1 | 0% |
-| 2-5 | 5% |
-| 6-10 | 10% |
-| 11-25 | 15% |
-| 26-50 | 20% |
-| 50+ | 25% |
+- Current material, machine, finish, and inspection values
+- Full pricing formulas and quantity behavior
+- Marketplace logic (overheads, risk, load, urgency, MOQ)
+- Quote override parameters and validation limits
+- Backend canonical DFM rules, weighted scoring, and issue model
+- How DFM affects pricing penalties, lead-time adjustments, API responses, and PDF output
 
 ## API Endpoints
 

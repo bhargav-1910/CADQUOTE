@@ -17,6 +17,7 @@ from app.schemas.schemas import (
 )
 from app.services.upload import upload_cad_file, get_cad_file, get_cad_file_content
 from app.services.geometry import process_cad_file, get_geometry_analysis
+from app.services.dfm import analyze_dfm_from_geometry
 from app.services.billing import consume_points, InsufficientPointsError
 from app.core.config import settings
 
@@ -186,6 +187,7 @@ async def get_file_geometry(
         triangle_count=geometry.triangle_count,
         vertex_count=geometry.vertex_count,
         analysis_time_seconds=geometry.analysis_time_seconds,
+        dfm_analysis=analyze_dfm_from_geometry(geometry),
         created_at=geometry.created_at,
     )
 

@@ -14,6 +14,27 @@ export interface BoundingBox {
   volume: number;
 }
 
+export type DFMSeverity = 'error' | 'warning' | 'info';
+
+export interface DFMIssue {
+  severity: DFMSeverity;
+  code: string;
+  title: string;
+  description: string;
+  recommendation: string;
+  penalty: number;
+  confidence: number;
+}
+
+export interface DFMAnalysisResult {
+  score: number;
+  label: 'Excellent' | 'Good' | 'Moderate' | 'High Risk';
+  issues: DFMIssue[];
+  has_blocking_issue: boolean;
+  total_penalty: number;
+  confidence_score: number;
+}
+
 // Material
 export interface Material {
   id: string;
@@ -89,6 +110,7 @@ export interface GeometryAnalysis {
   triangle_count: number | null;
   vertex_count: number | null;
   analysis_time_seconds: number | null;
+  dfm_analysis?: DFMAnalysisResult | null;
   created_at: string;
 }
 
@@ -146,6 +168,7 @@ export interface PricingResponse {
   weight_kg: number;
   bounding_box: BoundingBox;
   complexity_score: number;
+  dfm_analysis?: DFMAnalysisResult | null;
   price_breakdown: PriceBreakdown;
   estimated_lead_time_days: number;
   pricing_explanation: Record<string, unknown>;
@@ -168,6 +191,7 @@ export interface QuoteCreateRequest {
   customer_email?: string;
   customer_company?: string;
   notes?: string;
+  auto_send_email?: boolean;
 }
 
 export interface BatchQuoteCreateRequest {
@@ -181,6 +205,7 @@ export interface BatchQuoteCreateRequest {
   customer_email?: string;
   customer_company?: string;
   notes?: string;
+  auto_send_email?: boolean;
 }
 
 export interface CombinedQuoteLineItemRequest {
@@ -198,6 +223,7 @@ export interface CombinedQuoteCreateRequest {
   customer_email?: string;
   customer_company?: string;
   notes?: string;
+  auto_send_email?: boolean;
 }
 
 export interface BatchQuoteResponse {
@@ -210,6 +236,8 @@ export interface QuoteEmailRequest {
   recipient_email?: string;
   subject?: string;
   message?: string;
+  mailbox_access_consent?: boolean;
+  send_as_logged_in_user?: boolean;
 }
 
 export interface QuoteEmailResponse {

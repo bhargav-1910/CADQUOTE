@@ -1,88 +1,19 @@
 import { AlertCircle, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react';
 import type { GeometryAnalysis } from '@/types';
+import { analyzeDFM } from '@/services/dfm';
 
 interface DFXAnalysisProps {
   geometry: GeometryAnalysis;
   complexity?: 'low' | 'medium' | 'high';
 }
 
-interface DFXIssue {
-  severity: 'warning' | 'error' | 'info';
-  title: string;
-  description: string;
-  recommendation: string;
-}
-
 const DFXAnalysis = ({ geometry }: DFXAnalysisProps) => {
-  // Analyze geometry for manufacturability issues
-  const issues: DFXIssue[] = [];
-
-  // Check wall thickness
-  if (geometry.min_wall_thickness && geometry.min_wall_thickness < 1.5) {
-    issues.push({
-      severity: 'error',
-      title: 'Thin Walls',
-      description: `Minimum wall thickness is ${geometry.min_wall_thickness}mm, which may be too thin for CNC machining.`,
-      recommendation: 'Increase minimum wall thickness to 1.5mm or greater for better structural integrity.',
-    });
-  } else if (geometry.min_wall_thickness && geometry.min_wall_thickness < 2.0) {
-    issues.push({
-      severity: 'warning',
-      title: 'Thin Walls',
-      description: `Minimum wall thickness is ${geometry.min_wall_thickness}mm. Consider thicker walls for better results.`,
-      recommendation: 'For optimal results, target minimum wall thickness of 2mm or more.',
-    });
-  }
-
-  // Check complexity score
-  if (geometry.complexity_score > 5) {
-    issues.push({
-      severity: 'warning',
-      title: 'High Complexity',
-      description: `Complexity score of ${geometry.complexity_score.toFixed(2)} indicates a complex geometry with many features.`,
-      recommendation: 'High complexity may increase machining time and cost. Consider simplifying non-critical features.',
-    });
-  }
-
-  // Check hole count
-  if (geometry.hole_count > 10) {
-    issues.push({
-      severity: 'info',
-      title: 'Multiple Holes',
-      description: `Model contains ${geometry.hole_count} holes. Multiple features may impact lead time.`,
-      recommendation: 'Consider consolidating holes or simplifying hole patterns if possible.',
-    });
-  }
-
-  // Check removal ratio (material waste)
-  if (geometry.removal_ratio < 0.3) {
-    issues.push({
-      severity: 'warning',
-      title: 'High Material Waste',
-      description: `Only ${(geometry.removal_ratio * 100).toFixed(1)}% of bounding box is used material. High waste ratio.`,
-      recommendation: 'Consider redesigning to use material more efficiently or choosing a smaller stock size.',
-    });
-  }
-
-  // Check aspect ratio (extreme dimensions)
-  const aspectRatio = Math.max(geometry.bounding_box.x, geometry.bounding_box.y, geometry.bounding_box.z) /
-    Math.min(geometry.bounding_box.x, geometry.bounding_box.y, geometry.bounding_box.z);
-
-  if (aspectRatio > 8) {
-    issues.push({
-      severity: 'info',
-      title: 'Extreme Aspect Ratio',
-      description: `Aspect ratio of ${aspectRatio.toFixed(1)}:1 indicates very elongated geometry.`,
-      recommendation: 'Setup and tooling may be specialized. Discuss production approach with manufacturing engineer.',
-    });
-  }
-
-  // Manufacturability score
-  const manufactScore = 100 - (issues.length * 25);
+  const analysis = analyzeDFM(geometry);
+  const issues = analysis.issues;
+  const manufactScore = analysis.score;
   const scoreColor =
     manufactScore >= 80 ? 'green' : manufactScore >= 60 ? 'yellow' : 'red';
-  const scoreLabel =
-    manufactScore >= 80 ? 'Excellent' : manufactScore >= 60 ? 'Good' : 'Fair';
+  const scoreLabel = analysis.label;
 
   return (
     <div className="space-y-4">
@@ -113,6 +44,9 @@ const DFXAnalysis = ({ geometry }: DFXAnalysisProps) => {
                 : 'text-red-700'
             }`}>
               {scoreLabel} design for CNC manufacturing
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              Analysis confidence: {(analysis.confidence_score * 100).toFixed(0)}%
             </p>
           </div>
           {scoreColor === 'green' ? (
@@ -197,6 +131,9 @@ const DFXAnalysis = ({ geometry }: DFXAnalysisProps) => {
                       : 'text-blue-800'
                   }`}>
                     💡 {issue.recommendation}
+                  </p>
+                  <p className="text-xs mt-1 text-gray-600">
+                    Confidence: {(issue.confidence * 100).toFixed(0)}%
                   </p>
                 </div>
               </div>

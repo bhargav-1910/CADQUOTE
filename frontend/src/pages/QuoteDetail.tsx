@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { Quote } from '@/types';
 import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail } from '@/services/api';
+import { useAuth } from '@/components/AuthProvider';
 
 interface CombinedFileLine {
   fileName: string;
@@ -54,6 +55,7 @@ const parseCombinedNotes = (rawNotes: string | null): { files: CombinedFileLine[
 
 const QuoteDetail = () => {
   const { quoteId } = useParams<{ quoteId: string }>();
+  const { user } = useAuth();
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +119,21 @@ const QuoteDetail = () => {
       return;
     }
 
+    const consentMessage = [
+      'Allow this app to use your logged-in email identity for this one email?',
+      '',
+      `Logged-in email: ${user?.email || 'Unavailable'}`,
+      `Recipient: ${quote.customer_email}`,
+      '',
+      'Note: Actual delivery is still performed by server SMTP. Your email identity is used in sender headers when provider policy allows.',
+    ].join('\n');
+
+    const permissionGranted = window.confirm(consentMessage);
+    if (!permissionGranted) {
+      setError('Email sending cancelled. Permission was not granted.');
+      return;
+    }
+
     setError(null);
     setEmailSuccess(null);
     setEmailing(true);
@@ -124,6 +141,8 @@ const QuoteDetail = () => {
     try {
       const response = await sendQuoteEmail(quote.id, {
         recipient_email: quote.customer_email,
+        mailbox_access_consent: true,
+        send_as_logged_in_user: true,
       });
       setEmailSuccess(`Email sent to ${response.recipient_email}`);
       setQuote((prev) => (prev ? { ...prev, status: 'sent' } : prev));

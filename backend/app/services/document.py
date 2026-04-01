@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Quote, GeometryAnalysis, User
 from app.services.storage import storage
+from app.services.dfm import DFMAnalysis, analyze_dfm_from_geometry, summarize_dfm
 from app.core.config import settings
 
 # Template directory
@@ -57,6 +58,7 @@ class PDFGenerator:
         self,
         quote: Quote,
         geometry: GeometryAnalysis,
+        dfm_analysis: Optional[DFMAnalysis] = None,
         issuer_profile: Optional[dict] = None,
     ) -> str:
         """
@@ -70,6 +72,7 @@ class PDFGenerator:
             self._generate_pdf_sync,
             quote,
             geometry,
+            dfm_analysis,
             issuer_profile,
         )
     
@@ -77,6 +80,7 @@ class PDFGenerator:
         self,
         quote: Quote,
         geometry: GeometryAnalysis,
+        dfm_analysis: Optional[DFMAnalysis] = None,
         issuer_profile: Optional[dict] = None,
     ) -> str:
         """Synchronous PDF generation."""
@@ -90,16 +94,16 @@ class PDFGenerator:
         # Try WeasyPrint first, fall back to reportlab on any error
         if WEASYPRINT_AVAILABLE:
             try:
-                html_content = self._render_quote_html(quote, geometry, issuer_profile)
+                html_content = self._render_quote_html(quote, geometry, dfm_analysis, issuer_profile)
                 wp = self._get_weasyprint()
                 html = wp["HTML"](string=html_content)
                 html.write_pdf(str(output_path))
             except Exception:
                 # Fall back to reportlab on WeasyPrint error
-                self._generate_pdf_reportlab(quote, geometry, str(output_path), issuer_profile)
+                self._generate_pdf_reportlab(quote, geometry, str(output_path), dfm_analysis, issuer_profile)
         else:
             # Use reportlab fallback
-            self._generate_pdf_reportlab(quote, geometry, str(output_path), issuer_profile)
+            self._generate_pdf_reportlab(quote, geometry, str(output_path), dfm_analysis, issuer_profile)
         
         return str(output_path)
     
@@ -108,6 +112,7 @@ class PDFGenerator:
         quote: Quote,
         geometry: GeometryAnalysis,
         output_path: str,
+        dfm_analysis: Optional[DFMAnalysis] = None,
         issuer_profile: Optional[dict] = None,
     ) -> None:
         """Generate PDF using reportlab (fallback for Windows)."""
@@ -291,6 +296,32 @@ class PDFGenerator:
         ]))
         content.append(terms_and_sign)
 
+        if dfm_analysis:
+            dfm_summary = summarize_dfm(dfm_analysis)
+            issues = dfm_summary["top_issues"]
+            issue_lines = "<br/>".join(
+                f"- {item['severity'].upper()}: {item['title']}" for item in issues
+            ) or "No critical DFM findings"
+            dfm_block = Table(
+                [[
+                    Paragraph(
+                        (
+                            f"<b>DFM Summary</b><br/>"
+                            f"Score: {dfm_summary['score']}/100 ({dfm_summary['label']})<br/>"
+                            f"Issue Count: {dfm_summary['issue_count']}<br/>"
+                            f"{issue_lines}"
+                        ),
+                        base_style,
+                    )
+                ]],
+                colWidths=[total_width],
+            )
+            dfm_block.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 1, black),
+                ("BACKGROUND", (0, 0), (-1, -1), HexColor("#f8fbff")),
+            ]))
+            content.append(dfm_block)
+
         footer = Table([[Paragraph("This is a software generated quotation.", ParagraphStyle("Footer", parent=base_style, alignment=1))]], colWidths=[total_width])
         footer.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 1, black),
@@ -306,6 +337,7 @@ class PDFGenerator:
         self,
         quote: Quote,
         geometry: GeometryAnalysis,
+        dfm_analysis: Optional[DFMAnalysis] = None,
         issuer_profile: Optional[dict] = None,
     ) -> str:
         """Render quote HTML template."""
@@ -391,9 +423,37 @@ class PDFGenerator:
             "round_off": round_off,
             "grand_total": grand_total,
             "signature_name": escape((issuer_profile or {}).get("company_name") or "Authorized Signatory"),
+            "dfm_summary_html": self._build_dfm_summary_html(dfm_analysis),
         }
         
         return self._get_inline_template().format(**context)
+
+    def _build_dfm_summary_html(self, dfm_analysis: Optional[DFMAnalysis]) -> str:
+        if not dfm_analysis:
+            return ""
+
+        summary = summarize_dfm(dfm_analysis)
+        top_issues = summary["top_issues"]
+        issue_html = "".join(
+            (
+                f"<li><strong>{escape(item['severity'].upper())}</strong> - "
+                f"{escape(item['title'])}: {escape(item['recommendation'])}</li>"
+            )
+            for item in top_issues
+        )
+        if not issue_html:
+            issue_html = "<li>No notable DFM issues.</li>"
+
+        return (
+            "<table><tr><td>"
+            "<div class=\"terms-title\">DFM Summary</div>"
+            f"<div>Score: <strong>{summary['score']}/100 ({escape(summary['label'])})</strong></div>"
+            f"<div>Total Findings: {summary['issue_count']}</div>"
+            "<ul style=\"margin:6px 0 0 18px; padding:0;\">"
+            f"{issue_html}"
+            "</ul>"
+            "</td></tr></table>"
+        )
 
     def _parse_combined_items(self, notes: Optional[str]) -> list[dict]:
         """Parse embedded combined quote metadata from notes."""
@@ -586,6 +646,8 @@ class PDFGenerator:
             </tr>
         </table>
 
+        {dfm_summary_html}
+
         <div class="footer-note">This is a software generated quotation.</div>
     </div>
 </body>
@@ -633,8 +695,15 @@ async def generate_quote_document(
             "company_logo_abs_path": logo_abs,
         }
 
+    dfm_analysis = analyze_dfm_from_geometry(geometry)
+
     # Generate PDF
-    pdf_path = await pdf_generator.generate_quote_pdf(quote, geometry, issuer_profile)
+    pdf_path = await pdf_generator.generate_quote_pdf(
+        quote,
+        geometry,
+        dfm_analysis,
+        issuer_profile,
+    )
     
     # Update quote with PDF path
     from app.services.quote import update_quote_pdf_path

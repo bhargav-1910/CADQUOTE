@@ -208,6 +208,27 @@ class BoundingBox(BaseModel):
     volume: float = Field(..., description="Bounding box volume in cm³")
 
 
+class DFMIssueResponse(BaseModel):
+    """Single DFM issue entry."""
+    severity: str
+    code: str
+    title: str
+    description: str
+    recommendation: str
+    penalty: int
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class DFMAnalysisResponse(BaseModel):
+    """Weighted DFM analysis result."""
+    score: int
+    label: str
+    issues: List[DFMIssueResponse]
+    has_blocking_issue: bool
+    total_penalty: int
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+
+
 class GeometryAnalysisResponse(BaseSchema):
     """Geometry analysis response schema."""
     id: UUID
@@ -222,6 +243,7 @@ class GeometryAnalysisResponse(BaseSchema):
     triangle_count: Optional[int] = None
     vertex_count: Optional[int] = None
     analysis_time_seconds: Optional[float] = None
+    dfm_analysis: Optional[DFMAnalysisResponse] = None
     created_at: datetime
 
 
@@ -240,7 +262,17 @@ class PricingOverrides(BaseModel):
     machine_hourly_rate: Optional[Decimal] = Field(None, gt=0)
     machine_efficiency_rate: Optional[float] = Field(None, ge=0.1, le=1.0)
     machine_setup_time_hours: Optional[float] = Field(None, ge=0)
+    machine_name: Optional[str] = Field(None, max_length=100)
     margin_factor: Optional[float] = Field(None, ge=1.0, le=5.0)
+    vendor_margin_pct: Optional[float] = Field(None, ge=0, le=100)
+    platform_commission_pct: Optional[float] = Field(None, ge=0, le=100)
+    vendor_overhead_pct: Optional[float] = Field(None, ge=0, le=100)
+    platform_overhead_pct: Optional[float] = Field(None, ge=0, le=100)
+    risk_factor_pct: Optional[float] = Field(None, ge=0, le=20)
+    vendor_load_pct: Optional[float] = Field(None, ge=0, le=100)
+    urgent_factor_pct: Optional[float] = Field(None, ge=0, le=40)
+    min_order_value: Optional[Decimal] = Field(None, ge=0)
+    negotiation_buffer_pct: Optional[float] = Field(None, ge=0, le=100)
 
 class PricingRequest(BaseModel):
     """Request for instant pricing."""
@@ -290,6 +322,7 @@ class PricingResponse(BaseModel):
     weight_kg: float
     bounding_box: BoundingBox
     complexity_score: float
+    dfm_analysis: Optional[DFMAnalysisResponse] = None
     
     # Pricing
     price_breakdown: PriceBreakdown
@@ -326,7 +359,7 @@ class QuoteCreateRequest(BaseModel):
     
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
-    auto_send_email: bool = True
+    auto_send_email: bool = False
 
 
 class BatchQuoteCreateRequest(BaseModel):
@@ -342,7 +375,7 @@ class BatchQuoteCreateRequest(BaseModel):
     customer_company: Optional[str] = Field(None, max_length=200)
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
-    auto_send_email: bool = True
+    auto_send_email: bool = False
 
 
 class CombinedQuoteLineItemRequest(BaseModel):
@@ -363,7 +396,7 @@ class CombinedQuoteCreateRequest(BaseModel):
     customer_company: Optional[str] = Field(None, max_length=200)
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
-    auto_send_email: bool = True
+    auto_send_email: bool = False
 
 
 class QuoteResponse(BaseSchema):
@@ -430,6 +463,14 @@ class QuoteEmailRequest(BaseModel):
     recipient_email: Optional[str] = Field(None, max_length=200)
     subject: Optional[str] = Field(None, max_length=200)
     message: Optional[str] = None
+    mailbox_access_consent: bool = Field(
+        default=False,
+        description="Explicit consent from logged-in user to use their email identity for this send action.",
+    )
+    send_as_logged_in_user: bool = Field(
+        default=True,
+        description="When true, use logged-in user email in sender identity headers when provider allows.",
+    )
 
 
 class QuoteEmailResponse(BaseModel):

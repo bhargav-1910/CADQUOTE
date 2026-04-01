@@ -61,6 +61,7 @@ def _send_quote_email_sync(
     pdf_path: str,
     subject: Optional[str],
     message: Optional[str],
+    use_logged_in_sender_identity: bool,
 ) -> None:
     _ensure_smtp_configured()
 
@@ -70,11 +71,13 @@ def _send_quote_email_sync(
 
     email = EmailMessage()
     smtp_identity_email = _resolve_from_email()
-    sender_email = (sender.email or "").strip() or smtp_identity_email
+    user_email = (sender.email or "").strip()
+    sender_email = user_email if (use_logged_in_sender_identity and user_email) else smtp_identity_email
     sender_name = (sender.full_name or "").strip() or settings.SMTP_FROM_NAME
     email["From"] = formataddr((sender_name, sender_email))
     email["To"] = recipient_email
-    email["Reply-To"] = sender.email
+    if use_logged_in_sender_identity and user_email:
+        email["Reply-To"] = user_email
     if sender_email.lower() != smtp_identity_email.lower():
         # Keep authenticated SMTP identity explicit for providers that validate sender headers.
         email["Sender"] = formataddr((settings.SMTP_FROM_NAME, smtp_identity_email))
@@ -139,6 +142,7 @@ async def send_quote_email(
     pdf_path: str,
     subject: Optional[str] = None,
     message: Optional[str] = None,
+    use_logged_in_sender_identity: bool = True,
 ) -> None:
     """Send quote PDF via SMTP in a worker thread."""
     loop = asyncio.get_event_loop()
@@ -150,6 +154,7 @@ async def send_quote_email(
         pdf_path=pdf_path,
         subject=subject,
         message=message,
+        use_logged_in_sender_identity=use_logged_in_sender_identity,
     )
     await loop.run_in_executor(
         None,

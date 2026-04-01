@@ -119,6 +119,7 @@ def _pricing_result_to_response(
             volume=geometry.bounding_box_volume,
         ),
         complexity_score=geometry.complexity_score,
+        dfm_analysis=(pricing_result.details.get("dfm") or {}).get("analysis"),
         price_breakdown=PriceBreakdown(
             material_cost=pricing_result.material_cost,
             machining_cost=pricing_result.machining_cost,
@@ -654,6 +655,12 @@ async def email_quote_to_customer(
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
 
+    if not request.mailbox_access_consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Email permission required. Please confirm mailbox access permission before sending.",
+        )
+
     recipient_email = (quote.customer_email or request.recipient_email or "").strip()
     if not recipient_email:
         raise HTTPException(status_code=400, detail="Customer email is required to send quote")
@@ -690,6 +697,7 @@ async def email_quote_to_customer(
             pdf_path=pdf_path,
             subject=request.subject,
             message=request.message,
+            use_logged_in_sender_identity=request.send_as_logged_in_user,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

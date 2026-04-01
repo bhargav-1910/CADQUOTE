@@ -5,6 +5,7 @@ import logging
 from typing import Optional, Dict, Any
 from pathlib import Path
 import tempfile
+from datetime import datetime
 import numpy as np
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -88,8 +89,13 @@ class GeometryProcessor:
             bbox_x, bbox_y, bbox_z = bbox_dimensions
             bounding_box_volume = float(np.prod(bbox_dimensions))
             
-            # Complexity score
-            complexity_score = surface_area_cm2 / volume_cm3 if volume_cm3 > 0 else 0
+            # Scale-robust complexity score (dimensionless): A^(3/2) / V
+            # This is less sensitive to absolute part size than A/V.
+            complexity_score = (
+                (surface_area_cm2 ** 1.5) / volume_cm3
+                if volume_cm3 > 0 and surface_area_cm2 > 0
+                else 0
+            )
             
             # Removal ratio (how much material needs to be removed)
             removal_ratio = volume_cm3 / bounding_box_volume if bounding_box_volume > 0 else 0

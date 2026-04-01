@@ -11,6 +11,7 @@ import { useAuth } from '@/components/AuthProvider';
 import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides, QuoteConfiguration } from '@/types';
 import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote } from '@/services/api';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
+import { analyzeDFM } from '@/services/dfm';
 
 interface MultiFileEntry {
   cadFile: CADFile;
@@ -37,10 +38,9 @@ const formatINR = (v: number) =>
 const getDFXSeverity = (geometry: GeometryAnalysis | null): 'error' | 'warning' | 'ok' => {
   if (!geometry) return 'ok';
 
-  if (geometry.min_wall_thickness && geometry.min_wall_thickness < 1.5) return 'error';
-  if (geometry.min_wall_thickness && geometry.min_wall_thickness < 2.0) return 'warning';
-  if (geometry.complexity_score > 5) return 'warning';
-  if (geometry.removal_ratio < 0.3) return 'warning';
+  const analysis = analyzeDFM(geometry);
+  if (analysis.has_blocking_issue) return 'error';
+  if (analysis.score < 80 || analysis.issues.length > 0) return 'warning';
   return 'ok';
 };
 
@@ -426,6 +426,7 @@ const QuoteBuilder = () => {
         customer_email: config.customerEmail || undefined,
         customer_company: config.customerCompany || undefined,
         notes: config.notes || undefined,
+        auto_send_email: false,
       });
       navigate(`/quotes/${quote.id}`);
     } catch (err) {
@@ -467,6 +468,7 @@ const QuoteBuilder = () => {
         customer_email: customerEmail || undefined,
         customer_company: customerCompany || undefined,
         notes: notes || undefined,
+        auto_send_email: false,
       });
 
       navigate(`/quotes/${quote.id}`);
