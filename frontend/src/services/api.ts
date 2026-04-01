@@ -38,6 +38,7 @@ import type {
   UpdatePointsPackageRequest,
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
+  VendorMatchSummary,
 } from '@/types';
 
 const AUTH_TOKEN_KEY = 'forgequote.auth.token';
@@ -602,6 +603,50 @@ export interface MachineRate {
   updated_at: string;
 }
 
+export interface VendorMachineCapability {
+  id: string;
+  vendor_id: string;
+  machine_type: string;
+  envelope_x_mm: number;
+  envelope_y_mm: number;
+  envelope_z_mm: number;
+  machine_rate_override?: number | null;
+  is_active: boolean;
+}
+
+export interface VendorMaterialExpertise {
+  id: string;
+  vendor_id: string;
+  material_category: string;
+  is_active: boolean;
+}
+
+export interface VendorCertification {
+  id: string;
+  vendor_id: string;
+  certification_code: string;
+  is_active: boolean;
+}
+
+export interface Vendor {
+  id: string;
+  name: string;
+  quality_rating: number;
+  on_time_rating: number;
+  current_load_pct: number;
+  notes?: string | null;
+  is_active: boolean;
+  machine_capabilities: VendorMachineCapability[];
+  material_expertise: VendorMaterialExpertise[];
+  certifications: VendorCertification[];
+}
+
+export interface VendorMatchPreviewResponse {
+  matched: boolean;
+  selected_vendor: VendorMatchSummary | null;
+  details: Record<string, unknown>;
+}
+
 export const getMachineRates = async (): Promise<MachineRate[]> => {
   try {
     const response = await api.get<MachineRate[]>('/config/machine-rates');
@@ -614,6 +659,33 @@ export const getMachineRates = async (): Promise<MachineRate[]> => {
 export const updateMachineRate = async (rateId: string, data: Partial<MachineRate>): Promise<MachineRate> => {
   try {
     const response = await api.patch<MachineRate>(`/config/machine-rates/${rateId}`, data);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getVendors = async (activeOnly = true): Promise<Vendor[]> => {
+  try {
+    const response = await api.get<Vendor[]>('/config/vendors', {
+      params: { active_only: activeOnly },
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const previewVendorMatch = async (
+  payload: {
+    cad_file_id: string;
+    material_id: string;
+    required_certifications?: string[];
+    machine_name?: string;
+  },
+): Promise<VendorMatchPreviewResponse> => {
+  try {
+    const response = await api.post<VendorMatchPreviewResponse>('/quotes/match-vendors', payload);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

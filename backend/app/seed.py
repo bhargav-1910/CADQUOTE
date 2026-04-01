@@ -7,7 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import async_session_maker, init_db
-from app.models.models import Material, SurfaceFinish, InspectionLevel, MachineRate
+from app.models.models import (
+    Material,
+    SurfaceFinish,
+    InspectionLevel,
+    MachineRate,
+    Vendor,
+    VendorMachineCapability,
+    VendorMaterialExpertise,
+    VendorCertification,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -251,6 +260,33 @@ MACHINE_RATES = [
     },
 ]
 
+VENDORS = [
+    {
+        "name": "PrecisionWorks India",
+        "quality_rating": 4.6,
+        "on_time_rating": 4.4,
+        "current_load_pct": 62.0,
+        "machines": [
+            {"machine_type": "3-axis", "envelope_x_mm": 600, "envelope_y_mm": 400, "envelope_z_mm": 350, "machine_rate_override": Decimal("720.00")},
+            {"machine_type": "5-axis", "envelope_x_mm": 500, "envelope_y_mm": 400, "envelope_z_mm": 300, "machine_rate_override": Decimal("2400.00")},
+        ],
+        "materials": ["aluminum", "steel", "stainless", "brass"],
+        "certifications": ["ISO9001", "AS9100"],
+    },
+    {
+        "name": "RapidTurn Components",
+        "quality_rating": 4.2,
+        "on_time_rating": 4.1,
+        "current_load_pct": 48.0,
+        "machines": [
+            {"machine_type": "lathe", "envelope_x_mm": 300, "envelope_y_mm": 300, "envelope_z_mm": 800, "machine_rate_override": Decimal("520.00")},
+            {"machine_type": "3-axis", "envelope_x_mm": 450, "envelope_y_mm": 350, "envelope_z_mm": 280, "machine_rate_override": Decimal("680.00")},
+        ],
+        "materials": ["steel", "stainless", "brass"],
+        "certifications": ["ISO9001"],
+    },
+]
+
 
 async def seed_materials(session: AsyncSession):
     """Seed materials if not exist."""
@@ -328,6 +364,70 @@ async def seed_machine_rates(session: AsyncSession):
     await session.commit()
 
 
+async def seed_vendors(session: AsyncSession):
+    """Seed vendor matching catalog."""
+    for vendor_data in VENDORS:
+        query = select(Vendor).where(Vendor.name == vendor_data["name"])
+        result = await session.execute(query)
+        vendor = result.scalar_one_or_none()
+
+        if not vendor:
+            vendor = Vendor(
+                name=vendor_data["name"],
+                quality_rating=vendor_data["quality_rating"],
+                on_time_rating=vendor_data["on_time_rating"],
+                current_load_pct=vendor_data["current_load_pct"],
+            )
+            session.add(vendor)
+            await session.flush()
+            logger.info(f"Added vendor: {vendor_data['name']}")
+        else:
+            vendor.quality_rating = vendor_data["quality_rating"]
+            vendor.on_time_rating = vendor_data["on_time_rating"]
+            vendor.current_load_pct = vendor_data["current_load_pct"]
+            logger.info(f"Updated vendor: {vendor_data['name']}")
+
+        for machine in vendor_data["machines"]:
+            existing_machine_query = select(VendorMachineCapability).where(
+                VendorMachineCapability.vendor_id == vendor.id,
+                VendorMachineCapability.machine_type == machine["machine_type"],
+            )
+            existing_machine_result = await session.execute(existing_machine_query)
+            existing_machine = existing_machine_result.scalar_one_or_none()
+            if not existing_machine:
+                session.add(VendorMachineCapability(vendor_id=vendor.id, **machine))
+
+        for material_category in vendor_data["materials"]:
+            existing_material_query = select(VendorMaterialExpertise).where(
+                VendorMaterialExpertise.vendor_id == vendor.id,
+                VendorMaterialExpertise.material_category == material_category,
+            )
+            existing_material_result = await session.execute(existing_material_query)
+            if not existing_material_result.scalar_one_or_none():
+                session.add(
+                    VendorMaterialExpertise(
+                        vendor_id=vendor.id,
+                        material_category=material_category,
+                    )
+                )
+
+        for cert in vendor_data["certifications"]:
+            existing_cert_query = select(VendorCertification).where(
+                VendorCertification.vendor_id == vendor.id,
+                VendorCertification.certification_code == cert,
+            )
+            existing_cert_result = await session.execute(existing_cert_query)
+            if not existing_cert_result.scalar_one_or_none():
+                session.add(
+                    VendorCertification(
+                        vendor_id=vendor.id,
+                        certification_code=cert,
+                    )
+                )
+
+    await session.commit()
+
+
 async def seed_all():
     """Seed all configuration data."""
     logger.info("Starting database seeding...")
@@ -340,6 +440,7 @@ async def seed_all():
         await seed_surface_finishes(session)
         await seed_inspection_levels(session)
         await seed_machine_rates(session)
+        await seed_vendors(session)
     
     logger.info("Database seeding completed!")
 

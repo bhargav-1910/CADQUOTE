@@ -5,15 +5,31 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.models import Material, SurfaceFinish, InspectionLevel, MachineRate
+from app.models.models import (
+    Material,
+    SurfaceFinish,
+    InspectionLevel,
+    MachineRate,
+    Vendor,
+    VendorMachineCapability,
+    VendorMaterialExpertise,
+    VendorCertification,
+)
 from app.schemas.schemas import (
     MaterialResponse, MaterialCreate, MaterialUpdate,
     SurfaceFinishResponse, SurfaceFinishCreate, SurfaceFinishUpdate,
     InspectionLevelResponse, InspectionLevelCreate, InspectionLevelUpdate,
     MachineRateResponse, MachineRateCreate, MachineRateUpdate,
+    VendorResponse,
+    VendorCreate,
+    VendorUpdate,
+    VendorMachineCapabilityCreate,
+    VendorMaterialExpertiseCreate,
+    VendorCertificationCreate,
 )
 
 router = APIRouter(
@@ -21,6 +37,23 @@ router = APIRouter(
     tags=["Configuration"],
     dependencies=[Depends(get_current_user)],
 )
+
+
+async def _get_vendor_with_relations(db: AsyncSession, vendor_id: uuid.UUID) -> Vendor:
+    query = (
+        select(Vendor)
+        .options(
+            selectinload(Vendor.machine_capabilities),
+            selectinload(Vendor.material_expertise),
+            selectinload(Vendor.certifications),
+        )
+        .where(Vendor.id == vendor_id)
+    )
+    result = await db.execute(query)
+    vendor = result.scalar_one_or_none()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    return vendor
 
 
 # ============================================================================
@@ -242,3 +275,104 @@ async def update_machine_rate(
     await db.commit()
     await db.refresh(rate)
     return rate
+
+
+# ============================================================================
+# Vendors
+# ============================================================================
+
+@router.get("/vendors", response_model=List[VendorResponse])
+async def list_vendors(
+    active_only: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(Vendor)
+        .options(
+            selectinload(Vendor.machine_capabilities),
+            selectinload(Vendor.material_expertise),
+            selectinload(Vendor.certifications),
+        )
+        .order_by(Vendor.name)
+    )
+    if active_only:
+        query = query.where(Vendor.is_active == True)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+@router.post("/vendors", response_model=VendorResponse, status_code=201)
+async def create_vendor(
+    data: VendorCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    vendor = Vendor(**data.model_dump())
+    db.add(vendor)
+    await db.commit()
+    return await _get_vendor_with_relations(db, vendor.id)
+
+
+@router.patch("/vendors/{vendor_id}", response_model=VendorResponse)
+async def update_vendor(
+    vendor_id: uuid.UUID,
+    data: VendorUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    vendor = await db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(vendor, field, value)
+    await db.commit()
+    return await _get_vendor_with_relations(db, vendor.id)
+
+
+@router.post("/vendors/{vendor_id}/machines", status_code=201)
+async def add_vendor_machine_capability(
+    vendor_id: uuid.UUID,
+    data: VendorMachineCapabilityCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    vendor = await db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    capability = VendorMachineCapability(vendor_id=vendor_id, **data.model_dump())
+    db.add(capability)
+    await db.commit()
+    return {"message": "Machine capability added"}
+
+
+@router.post("/vendors/{vendor_id}/materials", status_code=201)
+async def add_vendor_material_expertise(
+    vendor_id: uuid.UUID,
+    data: VendorMaterialExpertiseCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    vendor = await db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    expertise = VendorMaterialExpertise(
+        vendor_id=vendor_id,
+        material_category=data.material_category.lower(),
+    )
+    db.add(expertise)
+    await db.commit()
+    return {"message": "Material expertise added"}
+
+
+@router.post("/vendors/{vendor_id}/certifications", status_code=201)
+async def add_vendor_certification(
+    vendor_id: uuid.UUID,
+    data: VendorCertificationCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    vendor = await db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    cert = VendorCertification(
+        vendor_id=vendor_id,
+        certification_code=data.certification_code.upper(),
+    )
+    db.add(cert)
+    await db.commit()
+    return {"message": "Certification added"}

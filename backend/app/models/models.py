@@ -287,6 +287,76 @@ class MachineRate(Base):
 
 
 # ============================================================================
+# Vendor Matching Models
+# ============================================================================
+
+class Vendor(Base):
+    """Manufacturing vendor profile used by matching engine."""
+    __tablename__ = "vendors"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    quality_rating = Column(Float, nullable=False, default=4.0)
+    on_time_rating = Column(Float, nullable=False, default=4.0)
+    current_load_pct = Column(Float, nullable=False, default=50.0)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    machine_capabilities = relationship("VendorMachineCapability", back_populates="vendor", cascade="all, delete-orphan")
+    material_expertise = relationship("VendorMaterialExpertise", back_populates="vendor", cascade="all, delete-orphan")
+    certifications = relationship("VendorCertification", back_populates="vendor", cascade="all, delete-orphan")
+    quotes = relationship("Quote", back_populates="matched_vendor")
+
+
+class VendorMachineCapability(Base):
+    """Machine capability and work envelope for a vendor."""
+    __tablename__ = "vendor_machine_capabilities"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    vendor_id = Column(UUID(), ForeignKey("vendors.id"), nullable=False, index=True)
+    machine_type = Column(String(50), nullable=False)  # 3-axis, 5-axis, lathe
+    envelope_x_mm = Column(Float, nullable=False)
+    envelope_y_mm = Column(Float, nullable=False)
+    envelope_z_mm = Column(Float, nullable=False)
+    machine_rate_override = Column(Numeric(10, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    vendor = relationship("Vendor", back_populates="machine_capabilities")
+
+
+class VendorMaterialExpertise(Base):
+    """Material categories a vendor can confidently manufacture."""
+    __tablename__ = "vendor_material_expertise"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    vendor_id = Column(UUID(), ForeignKey("vendors.id"), nullable=False, index=True)
+    material_category = Column(String(50), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    vendor = relationship("Vendor", back_populates="material_expertise")
+
+
+class VendorCertification(Base):
+    """Certification evidence used as hard gate for matching."""
+    __tablename__ = "vendor_certifications"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    vendor_id = Column(UUID(), ForeignKey("vendors.id"), nullable=False, index=True)
+    certification_code = Column(String(50), nullable=False)  # ISO9001, AS9100
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    vendor = relationship("Vendor", back_populates="certifications")
+
+
+# ============================================================================
 # CAD File Model
 # ============================================================================
 
@@ -374,12 +444,41 @@ class Quote(Base):
     customer_name = Column(String(200), nullable=True)
     customer_email = Column(String(200), nullable=True)
     customer_company = Column(String(200), nullable=True)
+
+    # RFQ details
+    rfq_number = Column(String(100), nullable=True)
+    part_name = Column(String(200), nullable=True)
+    part_number = Column(String(100), nullable=True)
+    revision = Column(String(50), nullable=True)
+    rfq_date = Column(DateTime, nullable=True)
+    quote_due_date = Column(DateTime, nullable=True)
+    annual_volume = Column(Integer, nullable=True)
+    batch_size = Column(Integer, nullable=True)
+    target_price = Column(Numeric(12, 2), nullable=True)
+    application = Column(Text, nullable=True)
+
+    # Part and material details
+    raw_form = Column(String(100), nullable=True)
+    raw_size = Column(String(100), nullable=True)
+    net_weight_kg = Column(Float, nullable=True)
+    raw_weight_kg = Column(Float, nullable=True)
+    buy_to_fly_ratio = Column(Float, nullable=True)
+    requested_surface_finish = Column(String(100), nullable=True)
+    tolerance_notes = Column(String(100), nullable=True)
+    complexity_level = Column(String(50), nullable=True)
+
+    # Process routing matrix snapshot
+    process_routing = Column(JSON, nullable=True)
     
     # References
     cad_file_id = Column(UUID(), ForeignKey("cad_files.id"), nullable=False)
     material_id = Column(UUID(), ForeignKey("materials.id"), nullable=False)
     surface_finish_id = Column(UUID(), ForeignKey("surface_finishes.id"), nullable=False)
     inspection_level_id = Column(UUID(), ForeignKey("inspection_levels.id"), nullable=False)
+
+    # Vendor matching
+    matched_vendor_id = Column(UUID(), ForeignKey("vendors.id"), nullable=True)
+    vendor_match_details = Column(JSON, nullable=True)
     
     # Quantity
     quantity = Column(Integer, default=1)
@@ -400,6 +499,17 @@ class Quote(Base):
     # Status and validity
     status = Column(SQLEnum(QuoteStatus), default=QuoteStatus.DRAFT)
     valid_until = Column(DateTime, nullable=False)
+
+    # Commercial terms
+    price_validity = Column(String(100), nullable=True)
+    gst = Column(String(50), nullable=True)
+    delivery = Column(String(200), nullable=True)
+    payment_terms = Column(String(200), nullable=True)
+    incoterms = Column(String(50), nullable=True)
+    tooling_ownership = Column(String(200), nullable=True)
+    packaging = Column(String(200), nullable=True)
+    terms_and_conditions = Column(Text, nullable=True)
+    dfm_exceptions = Column(Text, nullable=True)
     
     # Document
     pdf_path = Column(String(500), nullable=True)
@@ -415,3 +525,4 @@ class Quote(Base):
     material = relationship("Material", back_populates="quotes")
     surface_finish = relationship("SurfaceFinish", back_populates="quotes")
     inspection_level = relationship("InspectionLevel", back_populates="quotes")
+    matched_vendor = relationship("Vendor", back_populates="quotes")

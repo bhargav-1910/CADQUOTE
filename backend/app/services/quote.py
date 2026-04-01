@@ -13,6 +13,7 @@ from app.models.models import (
     Material, SurfaceFinish, InspectionLevel
 )
 from app.services.pricing import calculate_pricing, PricingResult
+from app.services.vendor_matching import match_vendor_for_quote, vendor_match_to_pricing_overrides
 from app.core.config import settings
 
 
@@ -34,6 +35,35 @@ async def create_quote(
     customer_name: Optional[str] = None,
     customer_email: Optional[str] = None,
     customer_company: Optional[str] = None,
+    rfq_number: Optional[str] = None,
+    part_name: Optional[str] = None,
+    part_number: Optional[str] = None,
+    revision: Optional[str] = None,
+    rfq_date: Optional[datetime] = None,
+    quote_due_date: Optional[datetime] = None,
+    annual_volume: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    target_price: Optional[Decimal] = None,
+    application: Optional[str] = None,
+    raw_form: Optional[str] = None,
+    raw_size: Optional[str] = None,
+    net_weight_kg: Optional[float] = None,
+    raw_weight_kg: Optional[float] = None,
+    buy_to_fly_ratio: Optional[float] = None,
+    requested_surface_finish: Optional[str] = None,
+    tolerance_notes: Optional[str] = None,
+    complexity_level: Optional[str] = None,
+    process_routing: Optional[List[Dict[str, Any]]] = None,
+    required_certifications: Optional[List[str]] = None,
+    price_validity: Optional[str] = None,
+    gst: Optional[str] = None,
+    delivery: Optional[str] = None,
+    payment_terms: Optional[str] = None,
+    incoterms: Optional[str] = None,
+    tooling_ownership: Optional[str] = None,
+    packaging: Optional[str] = None,
+    terms_and_conditions: Optional[str] = None,
+    dfm_exceptions: Optional[str] = None,
     pricing_overrides: Optional[Dict[str, Any]] = None,
     notes: Optional[str] = None,
 ) -> Quote:
@@ -69,6 +99,17 @@ async def create_quote(
     if not inspection_level:
         raise ValueError("Inspection level not found")
     
+    vendor_match = await match_vendor_for_quote(
+        db=db,
+        geometry=geometry,
+        material=material,
+        pricing_overrides=pricing_overrides,
+        required_certifications=required_certifications,
+    )
+
+    effective_overrides = dict(pricing_overrides or {})
+    effective_overrides.update(vendor_match_to_pricing_overrides(vendor_match))
+
     # Calculate pricing
     pricing_result = await calculate_pricing(
         db=db,
@@ -77,7 +118,7 @@ async def create_quote(
         surface_finish=surface_finish,
         inspection_level=inspection_level,
         quantity=quantity,
-        pricing_overrides=pricing_overrides,
+        pricing_overrides=effective_overrides,
     )
     
     # Create quote
@@ -89,10 +130,31 @@ async def create_quote(
         customer_name=customer_name,
         customer_email=customer_email,
         customer_company=customer_company,
+        rfq_number=rfq_number,
+        part_name=part_name,
+        part_number=part_number,
+        revision=revision,
+        rfq_date=rfq_date,
+        quote_due_date=quote_due_date,
+        annual_volume=annual_volume,
+        batch_size=batch_size,
+        target_price=target_price,
+        application=application,
+        raw_form=raw_form,
+        raw_size=raw_size,
+        net_weight_kg=net_weight_kg,
+        raw_weight_kg=raw_weight_kg,
+        buy_to_fly_ratio=buy_to_fly_ratio,
+        requested_surface_finish=requested_surface_finish,
+        tolerance_notes=tolerance_notes,
+        complexity_level=complexity_level,
+        process_routing=process_routing,
         cad_file_id=cad_file_id,
         material_id=material_id,
         surface_finish_id=surface_finish_id,
         inspection_level_id=inspection_level_id,
+        matched_vendor_id=(vendor_match.vendor.id if vendor_match.vendor else None),
+        vendor_match_details=vendor_match.details,
         quantity=quantity,
         material_cost=pricing_result.material_cost,
         machining_cost=pricing_result.machining_cost,
@@ -105,6 +167,15 @@ async def create_quote(
         estimated_lead_time_days=pricing_result.estimated_lead_time_days,
         status=QuoteStatus.GENERATED,
         valid_until=valid_until,
+        price_validity=price_validity,
+        gst=gst,
+        delivery=delivery,
+        payment_terms=payment_terms,
+        incoterms=incoterms,
+        tooling_ownership=tooling_ownership,
+        packaging=packaging,
+        terms_and_conditions=terms_and_conditions,
+        dfm_exceptions=dfm_exceptions,
         notes=notes,
     )
     
@@ -128,6 +199,7 @@ async def get_quote(
             selectinload(Quote.material),
             selectinload(Quote.surface_finish),
             selectinload(Quote.inspection_level),
+            selectinload(Quote.matched_vendor),
         )
         .where(Quote.id == quote_id, Quote.user_id == user_id)
     )
@@ -148,6 +220,7 @@ async def get_quote_by_number(
             selectinload(Quote.material),
             selectinload(Quote.surface_finish),
             selectinload(Quote.inspection_level),
+            selectinload(Quote.matched_vendor),
         )
         .where(Quote.quote_number == quote_number, Quote.user_id == user_id)
     )

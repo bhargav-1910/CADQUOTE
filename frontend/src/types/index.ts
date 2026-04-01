@@ -136,7 +136,24 @@ export interface PricingOverrides {
   machine_hourly_rate?: number;
   machine_efficiency_rate?: number;
   machine_setup_time_hours?: number;
+  machine_name?: string;
   margin_factor?: number;
+}
+
+export interface ProcessRoutingOperation {
+  operation: string;
+  process: string;
+  machine_type: string;
+  setup_time_minutes: number;
+  cycle_time_minutes: number;
+  remarks?: string;
+}
+
+export interface VendorMatchSummary {
+  vendor_id: string;
+  vendor_name: string;
+  score: number;
+  details: Record<string, unknown>;
 }
 
 export interface PricingRequest {
@@ -190,6 +207,35 @@ export interface QuoteCreateRequest {
   customer_name?: string;
   customer_email?: string;
   customer_company?: string;
+  rfq_number?: string;
+  part_name?: string;
+  part_number?: string;
+  revision?: string;
+  rfq_date?: string;
+  quote_due_date?: string;
+  annual_volume?: number;
+  batch_size?: number;
+  target_price?: number;
+  application?: string;
+  raw_form?: string;
+  raw_size?: string;
+  net_weight_kg?: number;
+  raw_weight_kg?: number;
+  buy_to_fly_ratio?: number;
+  requested_surface_finish?: string;
+  tolerance_notes?: string;
+  complexity_level?: string;
+  process_routing?: ProcessRoutingOperation[];
+  required_certifications?: string[];
+  price_validity?: string;
+  gst?: string;
+  delivery?: string;
+  payment_terms?: string;
+  incoterms?: string;
+  tooling_ownership?: string;
+  packaging?: string;
+  terms_and_conditions?: string;
+  dfm_exceptions?: string;
   notes?: string;
   auto_send_email?: boolean;
 }
@@ -204,6 +250,35 @@ export interface BatchQuoteCreateRequest {
   customer_name?: string;
   customer_email?: string;
   customer_company?: string;
+  rfq_number?: string;
+  part_name?: string;
+  part_number?: string;
+  revision?: string;
+  rfq_date?: string;
+  quote_due_date?: string;
+  annual_volume?: number;
+  batch_size?: number;
+  target_price?: number;
+  application?: string;
+  raw_form?: string;
+  raw_size?: string;
+  net_weight_kg?: number;
+  raw_weight_kg?: number;
+  buy_to_fly_ratio?: number;
+  requested_surface_finish?: string;
+  tolerance_notes?: string;
+  complexity_level?: string;
+  process_routing?: ProcessRoutingOperation[];
+  required_certifications?: string[];
+  price_validity?: string;
+  gst?: string;
+  delivery?: string;
+  payment_terms?: string;
+  incoterms?: string;
+  tooling_ownership?: string;
+  packaging?: string;
+  terms_and_conditions?: string;
+  dfm_exceptions?: string;
   notes?: string;
   auto_send_email?: boolean;
 }
@@ -305,6 +380,27 @@ export interface Quote {
   customer_name: string | null;
   customer_email: string | null;
   customer_company: string | null;
+  rfq_number?: string | null;
+  part_name?: string | null;
+  part_number?: string | null;
+  revision?: string | null;
+  rfq_date?: string | null;
+  quote_due_date?: string | null;
+  annual_volume?: number | null;
+  batch_size?: number | null;
+  target_price?: number | null;
+  application?: string | null;
+  raw_form?: string | null;
+  raw_size?: string | null;
+  net_weight_kg?: number | null;
+  raw_weight_kg?: number | null;
+  buy_to_fly_ratio?: number | null;
+  requested_surface_finish?: string | null;
+  tolerance_notes?: string | null;
+  complexity_level?: string | null;
+  process_routing?: ProcessRoutingOperation[] | null;
+  matched_vendor?: VendorMatchSummary | null;
+  vendor_match_details?: Record<string, unknown> | null;
   cad_file: CADFile;
   material: Material;
   surface_finish: SurfaceFinish;
@@ -322,6 +418,15 @@ export interface Quote {
   status: QuoteStatus;
   valid_until: string;
   pdf_path: string | null;
+  price_validity?: string | null;
+  gst?: string | null;
+  delivery?: string | null;
+  payment_terms?: string | null;
+  incoterms?: string | null;
+  tooling_ownership?: string | null;
+  packaging?: string | null;
+  terms_and_conditions?: string | null;
+  dfm_exceptions?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

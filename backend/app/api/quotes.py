@@ -20,12 +20,14 @@ from app.schemas.schemas import (
     PricingRequest, PricingResponse, BatchPricingRequest, BatchPricingResponse,
     PriceBreakdown, BoundingBox,
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse, CombinedQuoteCreateRequest,
-    QuoteResponse, QuoteListResponse,
+    QuoteResponse, QuoteListResponse, VendorMatchSummary,
+    VendorMatchPreviewRequest, VendorMatchPreviewResponse,
     QuoteEmailRequest, QuoteEmailResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
 from app.services.pricing import calculate_pricing
+from app.services.vendor_matching import match_vendor_for_quote
 from app.services.quote import (
     create_quote,
     get_quote,
@@ -40,6 +42,56 @@ from app.core.config import settings
 from app.services.billing import consume_points, InsufficientPointsError
 
 router = APIRouter(tags=["Pricing & Quotes"], dependencies=[Depends(get_current_user)])
+
+
+@router.post("/quotes/match-vendors", response_model=VendorMatchPreviewResponse)
+async def preview_vendor_match(
+    request: VendorMatchPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cad_file = await db.get(CADFile, request.cad_file_id)
+    if not cad_file or cad_file.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="CAD file not found")
+    if cad_file.processing_status != ProcessingStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="CAD file has not been processed yet")
+
+    geometry_query = select(GeometryAnalysis).where(GeometryAnalysis.cad_file_id == request.cad_file_id)
+    geometry_result = await db.execute(geometry_query)
+    geometry = geometry_result.scalar_one_or_none()
+    if not geometry:
+        raise HTTPException(status_code=404, detail="Geometry analysis not found")
+
+    material = await db.get(Material, request.material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    pricing_overrides: Dict[str, Any] = {}
+    if request.machine_name:
+        pricing_overrides["machine_name"] = request.machine_name
+
+    match_result = await match_vendor_for_quote(
+        db=db,
+        geometry=geometry,
+        material=material,
+        pricing_overrides=pricing_overrides,
+        required_certifications=request.required_certifications,
+    )
+
+    selected_vendor = None
+    if match_result.vendor:
+        selected_vendor = VendorMatchSummary(
+            vendor_id=match_result.vendor.id,
+            vendor_name=match_result.vendor.name,
+            score=match_result.score,
+            details=match_result.details,
+        )
+
+    return VendorMatchPreviewResponse(
+        matched=match_result.vendor is not None,
+        selected_vendor=selected_vendor,
+        details=match_result.details,
+    )
 
 
 async def _auto_send_quote_email_if_requested(
@@ -322,6 +374,39 @@ async def create_batch_quotation(
                 customer_name=request.customer_name,
                 customer_email=request.customer_email,
                 customer_company=request.customer_company,
+                rfq_number=request.rfq_number,
+                part_name=request.part_name,
+                part_number=request.part_number,
+                revision=request.revision,
+                rfq_date=request.rfq_date,
+                quote_due_date=request.quote_due_date,
+                annual_volume=request.annual_volume,
+                batch_size=request.batch_size,
+                target_price=request.target_price,
+                application=request.application,
+                raw_form=request.raw_form,
+                raw_size=request.raw_size,
+                net_weight_kg=request.net_weight_kg,
+                raw_weight_kg=request.raw_weight_kg,
+                buy_to_fly_ratio=request.buy_to_fly_ratio,
+                requested_surface_finish=request.requested_surface_finish,
+                tolerance_notes=request.tolerance_notes,
+                complexity_level=request.complexity_level,
+                process_routing=(
+                    [item.model_dump() for item in request.process_routing]
+                    if request.process_routing
+                    else None
+                ),
+                required_certifications=request.required_certifications,
+                price_validity=request.price_validity,
+                gst=request.gst,
+                delivery=request.delivery,
+                payment_terms=request.payment_terms,
+                incoterms=request.incoterms,
+                tooling_ownership=request.tooling_ownership,
+                packaging=request.packaging,
+                terms_and_conditions=request.terms_and_conditions,
+                dfm_exceptions=request.dfm_exceptions,
                 pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
                 notes=request.notes,
             )
@@ -522,6 +607,39 @@ async def create_quotation(
             customer_name=request.customer_name or current_user.full_name,
             customer_email=request.customer_email,
             customer_company=request.customer_company or current_user.company_name,
+            rfq_number=request.rfq_number,
+            part_name=request.part_name,
+            part_number=request.part_number,
+            revision=request.revision,
+            rfq_date=request.rfq_date,
+            quote_due_date=request.quote_due_date,
+            annual_volume=request.annual_volume,
+            batch_size=request.batch_size,
+            target_price=request.target_price,
+            application=request.application,
+            raw_form=request.raw_form,
+            raw_size=request.raw_size,
+            net_weight_kg=request.net_weight_kg,
+            raw_weight_kg=request.raw_weight_kg,
+            buy_to_fly_ratio=request.buy_to_fly_ratio,
+            requested_surface_finish=request.requested_surface_finish,
+            tolerance_notes=request.tolerance_notes,
+            complexity_level=request.complexity_level,
+            process_routing=(
+                [item.model_dump() for item in request.process_routing]
+                if request.process_routing
+                else None
+            ),
+            required_certifications=request.required_certifications,
+            price_validity=request.price_validity,
+            gst=request.gst,
+            delivery=request.delivery,
+            payment_terms=request.payment_terms,
+            incoterms=request.incoterms,
+            tooling_ownership=request.tooling_ownership,
+            packaging=request.packaging,
+            terms_and_conditions=request.terms_and_conditions,
+            dfm_exceptions=request.dfm_exceptions,
             pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
             notes=request.notes,
         )
@@ -715,12 +833,47 @@ async def email_quote_to_customer(
 
 def _quote_to_response(quote: Quote) -> QuoteResponse:
     """Convert Quote model to response schema."""
+    matched_vendor = None
+    if quote.matched_vendor:
+        score = 0.0
+        details = quote.vendor_match_details or {}
+        selected = details.get("selected") if isinstance(details, dict) else None
+        if isinstance(selected, dict):
+            score = float((selected.get("score") or {}).get("total", 0.0))
+        matched_vendor = VendorMatchSummary(
+            vendor_id=quote.matched_vendor.id,
+            vendor_name=quote.matched_vendor.name,
+            score=score,
+            details=details,
+        )
+
     return QuoteResponse(
         id=quote.id,
         quote_number=quote.quote_number,
         customer_name=quote.customer_name,
         customer_email=quote.customer_email,
         customer_company=quote.customer_company,
+        rfq_number=quote.rfq_number,
+        part_name=quote.part_name,
+        part_number=quote.part_number,
+        revision=quote.revision,
+        rfq_date=quote.rfq_date,
+        quote_due_date=quote.quote_due_date,
+        annual_volume=quote.annual_volume,
+        batch_size=quote.batch_size,
+        target_price=quote.target_price,
+        application=quote.application,
+        raw_form=quote.raw_form,
+        raw_size=quote.raw_size,
+        net_weight_kg=quote.net_weight_kg,
+        raw_weight_kg=quote.raw_weight_kg,
+        buy_to_fly_ratio=quote.buy_to_fly_ratio,
+        requested_surface_finish=quote.requested_surface_finish,
+        tolerance_notes=quote.tolerance_notes,
+        complexity_level=quote.complexity_level,
+        process_routing=quote.process_routing,
+        matched_vendor=matched_vendor,
+        vendor_match_details=quote.vendor_match_details,
         cad_file=CADFileResponse(
             id=quote.cad_file.id,
             original_filename=quote.cad_file.original_filename,
@@ -748,6 +901,15 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
         status=quote.status.value,
         valid_until=quote.valid_until,
         pdf_path=quote.pdf_path,
+        price_validity=quote.price_validity,
+        gst=quote.gst,
+        delivery=quote.delivery,
+        payment_terms=quote.payment_terms,
+        incoterms=quote.incoterms,
+        tooling_ownership=quote.tooling_ownership,
+        packaging=quote.packaging,
+        terms_and_conditions=quote.terms_and_conditions,
+        dfm_exceptions=quote.dfm_exceptions,
         notes=quote.notes,
         created_at=quote.created_at,
         updated_at=quote.updated_at,

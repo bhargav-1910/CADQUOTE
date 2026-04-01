@@ -169,6 +169,87 @@ class MachineRateResponse(MachineRateBase, BaseSchema):
 
 
 # ============================================================================
+# Vendor Matching Schemas
+# ============================================================================
+
+class VendorMachineCapabilityBase(BaseModel):
+    machine_type: str = Field(..., max_length=50)
+    envelope_x_mm: float = Field(..., gt=0)
+    envelope_y_mm: float = Field(..., gt=0)
+    envelope_z_mm: float = Field(..., gt=0)
+    machine_rate_override: Optional[Decimal] = Field(None, gt=0)
+
+
+class VendorMachineCapabilityCreate(VendorMachineCapabilityBase):
+    pass
+
+
+class VendorMachineCapabilityResponse(VendorMachineCapabilityBase, BaseSchema):
+    id: UUID
+    vendor_id: UUID
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorMaterialExpertiseCreate(BaseModel):
+    material_category: str = Field(..., max_length=50)
+
+
+class VendorMaterialExpertiseResponse(BaseSchema):
+    id: UUID
+    vendor_id: UUID
+    material_category: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorCertificationCreate(BaseModel):
+    certification_code: str = Field(..., max_length=50)
+
+
+class VendorCertificationResponse(BaseSchema):
+    id: UUID
+    vendor_id: UUID
+    certification_code: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorBase(BaseModel):
+    name: str = Field(..., max_length=200)
+    quality_rating: float = Field(default=4.0, ge=0, le=5)
+    on_time_rating: float = Field(default=4.0, ge=0, le=5)
+    current_load_pct: float = Field(default=50.0, ge=0, le=100)
+    notes: Optional[str] = None
+
+
+class VendorCreate(VendorBase):
+    pass
+
+
+class VendorUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    quality_rating: Optional[float] = Field(None, ge=0, le=5)
+    on_time_rating: Optional[float] = Field(None, ge=0, le=5)
+    current_load_pct: Optional[float] = Field(None, ge=0, le=100)
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class VendorResponse(VendorBase, BaseSchema):
+    id: UUID
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    machine_capabilities: List[VendorMachineCapabilityResponse] = Field(default_factory=list)
+    material_expertise: List[VendorMaterialExpertiseResponse] = Field(default_factory=list)
+    certifications: List[VendorCertificationResponse] = Field(default_factory=list)
+
+
+# ============================================================================
 # CAD File Schemas
 # ============================================================================
 
@@ -344,6 +425,34 @@ class BatchPricingResponse(BaseModel):
 # Quote Schemas
 # ============================================================================
 
+class ProcessRoutingOperation(BaseModel):
+    operation: str = Field(..., max_length=100)
+    process: str = Field(..., max_length=100)
+    machine_type: str = Field(..., max_length=50)
+    setup_time_minutes: float = Field(..., ge=0)
+    cycle_time_minutes: float = Field(..., ge=0)
+    remarks: Optional[str] = None
+
+
+class VendorMatchSummary(BaseModel):
+    vendor_id: UUID
+    vendor_name: str
+    score: float
+    details: dict
+
+
+class VendorMatchPreviewRequest(BaseModel):
+    cad_file_id: UUID
+    material_id: UUID
+    required_certifications: Optional[List[str]] = None
+    machine_name: Optional[str] = None
+
+
+class VendorMatchPreviewResponse(BaseModel):
+    matched: bool
+    selected_vendor: Optional[VendorMatchSummary]
+    details: dict
+
 class QuoteCreateRequest(BaseModel):
     """Request to create a formal quote."""
     cad_file_id: UUID
@@ -356,6 +465,43 @@ class QuoteCreateRequest(BaseModel):
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
+
+    # RFQ details
+    rfq_number: Optional[str] = Field(None, max_length=100)
+    part_name: Optional[str] = Field(None, max_length=200)
+    part_number: Optional[str] = Field(None, max_length=100)
+    revision: Optional[str] = Field(None, max_length=50)
+    rfq_date: Optional[datetime] = None
+    quote_due_date: Optional[datetime] = None
+    annual_volume: Optional[int] = Field(None, ge=1)
+    batch_size: Optional[int] = Field(None, ge=1)
+    target_price: Optional[Decimal] = Field(None, ge=0)
+    application: Optional[str] = None
+
+    # Part & material details
+    raw_form: Optional[str] = Field(None, max_length=100)
+    raw_size: Optional[str] = Field(None, max_length=100)
+    net_weight_kg: Optional[float] = Field(None, ge=0)
+    raw_weight_kg: Optional[float] = Field(None, ge=0)
+    buy_to_fly_ratio: Optional[float] = Field(None, ge=0)
+    requested_surface_finish: Optional[str] = Field(None, max_length=100)
+    tolerance_notes: Optional[str] = Field(None, max_length=100)
+    complexity_level: Optional[str] = Field(None, max_length=50)
+
+    # Process routing and vendor requirements
+    process_routing: Optional[List[ProcessRoutingOperation]] = None
+    required_certifications: Optional[List[str]] = None
+
+    # Commercial terms
+    price_validity: Optional[str] = Field(None, max_length=100)
+    gst: Optional[str] = Field(None, max_length=50)
+    delivery: Optional[str] = Field(None, max_length=200)
+    payment_terms: Optional[str] = Field(None, max_length=200)
+    incoterms: Optional[str] = Field(None, max_length=50)
+    tooling_ownership: Optional[str] = Field(None, max_length=200)
+    packaging: Optional[str] = Field(None, max_length=200)
+    terms_and_conditions: Optional[str] = None
+    dfm_exceptions: Optional[str] = None
     
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
@@ -373,6 +519,35 @@ class BatchQuoteCreateRequest(BaseModel):
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
+    rfq_number: Optional[str] = Field(None, max_length=100)
+    part_name: Optional[str] = Field(None, max_length=200)
+    part_number: Optional[str] = Field(None, max_length=100)
+    revision: Optional[str] = Field(None, max_length=50)
+    rfq_date: Optional[datetime] = None
+    quote_due_date: Optional[datetime] = None
+    annual_volume: Optional[int] = Field(None, ge=1)
+    batch_size: Optional[int] = Field(None, ge=1)
+    target_price: Optional[Decimal] = Field(None, ge=0)
+    application: Optional[str] = None
+    raw_form: Optional[str] = Field(None, max_length=100)
+    raw_size: Optional[str] = Field(None, max_length=100)
+    net_weight_kg: Optional[float] = Field(None, ge=0)
+    raw_weight_kg: Optional[float] = Field(None, ge=0)
+    buy_to_fly_ratio: Optional[float] = Field(None, ge=0)
+    requested_surface_finish: Optional[str] = Field(None, max_length=100)
+    tolerance_notes: Optional[str] = Field(None, max_length=100)
+    complexity_level: Optional[str] = Field(None, max_length=50)
+    process_routing: Optional[List[ProcessRoutingOperation]] = None
+    required_certifications: Optional[List[str]] = None
+    price_validity: Optional[str] = Field(None, max_length=100)
+    gst: Optional[str] = Field(None, max_length=50)
+    delivery: Optional[str] = Field(None, max_length=200)
+    payment_terms: Optional[str] = Field(None, max_length=200)
+    incoterms: Optional[str] = Field(None, max_length=50)
+    tooling_ownership: Optional[str] = Field(None, max_length=200)
+    packaging: Optional[str] = Field(None, max_length=200)
+    terms_and_conditions: Optional[str] = None
+    dfm_exceptions: Optional[str] = None
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
     auto_send_email: bool = False
@@ -408,6 +583,27 @@ class QuoteResponse(BaseSchema):
     customer_name: Optional[str]
     customer_email: Optional[str]
     customer_company: Optional[str]
+    rfq_number: Optional[str]
+    part_name: Optional[str]
+    part_number: Optional[str]
+    revision: Optional[str]
+    rfq_date: Optional[datetime]
+    quote_due_date: Optional[datetime]
+    annual_volume: Optional[int]
+    batch_size: Optional[int]
+    target_price: Optional[Decimal]
+    application: Optional[str]
+    raw_form: Optional[str]
+    raw_size: Optional[str]
+    net_weight_kg: Optional[float]
+    raw_weight_kg: Optional[float]
+    buy_to_fly_ratio: Optional[float]
+    requested_surface_finish: Optional[str]
+    tolerance_notes: Optional[str]
+    complexity_level: Optional[str]
+    process_routing: Optional[List[ProcessRoutingOperation]]
+    matched_vendor: Optional[VendorMatchSummary]
+    vendor_match_details: Optional[dict]
     
     # References
     cad_file: CADFileResponse
@@ -434,6 +630,15 @@ class QuoteResponse(BaseSchema):
     status: str
     valid_until: datetime
     pdf_path: Optional[str]
+    price_validity: Optional[str]
+    gst: Optional[str]
+    delivery: Optional[str]
+    payment_terms: Optional[str]
+    incoterms: Optional[str]
+    tooling_ownership: Optional[str]
+    packaging: Optional[str]
+    terms_and_conditions: Optional[str]
+    dfm_exceptions: Optional[str]
     
     notes: Optional[str]
     created_at: datetime
