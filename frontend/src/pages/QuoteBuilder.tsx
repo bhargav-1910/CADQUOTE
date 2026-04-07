@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2 } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
@@ -8,8 +8,15 @@ import PricingDisplay from '@/components/PricingDisplay';
 import DFXAnalysis from '@/components/DFXAnalysis';
 import FilePreviewModal from '@/components/FilePreviewModal';
 import { useAuth } from '@/components/AuthProvider';
-import type { CADFile, GeometryAnalysis, PricingResponse, PricingOverrides, QuoteConfiguration } from '@/types';
-import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote } from '@/services/api';
+import type {
+  CADFile,
+  GeometryAnalysis,
+  PricingResponse,
+  PricingOverrides,
+  ProcessRoutingOperation,
+  QuoteConfiguration,
+} from '@/types';
+import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile } from '@/services/api';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 import { analyzeDFM } from '@/services/dfm';
 
@@ -32,6 +39,118 @@ interface EffectiveConfig {
   quantity: number;
 }
 
+interface RFQCommercialFormState {
+  rfqNumber: string;
+  rfqDate: string;
+  quoteDueDate: string;
+  toleranceNotes: string;
+  hsnCode: string;
+  priceValidity: string;
+  gst: string;
+  delivery: string;
+  paymentTerms: string;
+}
+
+interface CombinedEditItem {
+  cad_file_id: string;
+  file_name: string;
+  quantity: number;
+  material_id?: string;
+  surface_finish_id?: string;
+  inspection_level_id?: string;
+}
+
+const emptyRoutingRow: ProcessRoutingOperation = {
+  operation: '',
+  process: '',
+  machine_type: '',
+  setup_time_minutes: 0,
+  cycle_time_minutes: 0,
+  remarks: '',
+};
+
+const createDefaultRFQCommercialState = (): RFQCommercialFormState => ({
+  rfqNumber: '',
+  rfqDate: '',
+  quoteDueDate: '',
+  toleranceNotes: '',
+  hsnCode: '',
+  priceValidity: '',
+  gst: '',
+  delivery: '',
+  paymentTerms: '',
+});
+
+const toOptionalString = (value: string): string | undefined => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const toOptionalDateTimeString = (value: string): string | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  // Date inputs return YYYY-MM-DD; backend expects datetime for RFQ dates.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return `${trimmed}T00:00:00`;
+  }
+
+  return trimmed;
+};
+
+const toDateInputValue = (value?: string | null): string => {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+};
+
+const parseCombinedEditItems = (rawNotes?: string | null): CombinedEditItem[] => {
+  if (!rawNotes) {
+    return [];
+  }
+
+  const startTag = '[COMBINED_FILES]';
+  const endTag = '[/COMBINED_FILES]';
+  const start = rawNotes.indexOf(startTag);
+  const end = rawNotes.indexOf(endTag);
+
+  if (start === -1 || end === -1 || end <= start) {
+    return [];
+  }
+
+  return rawNotes
+    .slice(start + startTag.length, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('|').map((part) => part.trim());
+
+      // v2 format: cad_file_id|filename|qty|line_total|material_id|surface_finish_id|inspection_level_id
+      if (parts.length >= 4) {
+        return {
+          cad_file_id: parts[0],
+          file_name: parts[1],
+          quantity: Number(parts[2]) || 1,
+          material_id: parts[4] || undefined,
+          surface_finish_id: parts[5] || undefined,
+          inspection_level_id: parts[6] || undefined,
+        };
+      }
+
+      // v1 format: filename|qty|line_total (no ids available)
+      return {
+        cad_file_id: '',
+        file_name: parts[0] || 'Unknown file',
+        quantity: Number(parts[1]) || 1,
+      };
+    })
+    .filter((item) => item.cad_file_id.length > 0);
+};
+
 const formatINR = (v: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(v);
 
@@ -52,9 +171,17 @@ const buildPricingOverridesPayload = (
     return undefined;
   }
 
-  const filteredEntries = Object.entries(overrides).filter(([, value]) =>
-    typeof value === 'number' && Number.isFinite(value)
-  );
+  const filteredEntries = Object.entries(overrides).filter(([key, value]) => {
+    if (typeof value === 'number') {
+      return Number.isFinite(value);
+    }
+
+    if (key === 'machine_name' && typeof value === 'string') {
+      return value.trim().length > 0;
+    }
+
+    return false;
+  });
 
   if (filteredEntries.length === 0) {
     return undefined;
@@ -66,10 +193,12 @@ const buildPricingOverridesPayload = (
 const QuoteBuilder = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { quoteId: routeQuoteId } = useParams<{ quoteId?: string }>();
   const { user } = useAuth();
 
   const initialMultiFiles: ProcessedCADUpload[] =
     location.state?.multiFiles ?? [];
+  const editQuoteId: string | undefined = routeQuoteId ?? location.state?.fromQuoteId;
 
   // Shared config (multi-file mode)
   const [materialId, setMaterialId] = useState<string | null>(null);
@@ -123,6 +252,12 @@ const QuoteBuilder = () => {
   const [error, setError] = useState<string | null>(null);
   const [useQuoteSpecificPricing, setUseQuoteSpecificPricing] = useState(false);
   const [pricingOverrides, setPricingOverrides] = useState<PricingOverrides>({});
+  const [rfqCommercialForm, setRfqCommercialForm] = useState<RFQCommercialFormState>(
+    createDefaultRFQCommercialState(),
+  );
+  const [processRouting, setProcessRouting] = useState<ProcessRoutingOperation[]>([{ ...emptyRoutingRow }]);
+  const [showProcessRouting, setShowProcessRouting] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
   const [step, setStep] = useState<'upload' | 'configure'>(
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
   );
@@ -131,6 +266,198 @@ const QuoteBuilder = () => {
     () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
     [useQuoteSpecificPricing, pricingOverrides]
   );
+
+  const updateRFQField = useCallback(<K extends keyof RFQCommercialFormState>(key: K, value: RFQCommercialFormState[K]) => {
+    setRfqCommercialForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const updateRoutingRow = useCallback((index: number, updates: Partial<ProcessRoutingOperation>) => {
+    setProcessRouting((prev) =>
+      prev.map((row, rowIndex) => (rowIndex === index ? { ...row, ...updates } : row))
+    );
+  }, []);
+
+  const addRoutingRow = useCallback(() => {
+    setProcessRouting((prev) => [...prev, { ...emptyRoutingRow }]);
+  }, []);
+
+  const removeRoutingRow = useCallback((index: number) => {
+    setProcessRouting((prev) => {
+      const next = prev.filter((_, rowIndex) => rowIndex !== index);
+      if (next.length === 0) {
+        setShowProcessRouting(false);
+        return [{ ...emptyRoutingRow }];
+      }
+
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!editQuoteId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadQuoteForEdit = async () => {
+      setEditLoading(true);
+      setError(null);
+      try {
+        const existingQuote = await getQuote(editQuoteId);
+        const combinedEditItems = parseCombinedEditItems(existingQuote.notes);
+
+        if (combinedEditItems.length > 1) {
+          const restoredFiles = await Promise.all(
+            combinedEditItems.map(async (item) => {
+              const [cadFile, geometry] = await Promise.all([
+                getCADFile(item.cad_file_id),
+                getGeometryAnalysis(item.cad_file_id),
+              ]);
+
+              return {
+                cadFile,
+                geometry,
+                selected: true,
+                materialId: item.material_id ?? existingQuote.material.id,
+                surfaceFinishId: item.surface_finish_id ?? existingQuote.surface_finish.id,
+                inspectionLevelId: item.inspection_level_id ?? existingQuote.inspection_level.id,
+                quantity: item.quantity,
+                pricing: null,
+                pricingLoading: false,
+              };
+            })
+          );
+
+          if (cancelled) {
+            return;
+          }
+
+          const first = restoredFiles[0];
+          const sharedConfig = restoredFiles.every(
+            (file) =>
+              file.materialId === first.materialId &&
+              file.surfaceFinishId === first.surfaceFinishId &&
+              file.inspectionLevelId === first.inspectionLevelId &&
+              file.quantity === first.quantity
+          );
+
+          setConfig({
+            cadFile: first.cadFile,
+            geometry: first.geometry,
+            materialId: first.materialId,
+            surfaceFinishId: first.surfaceFinishId,
+            inspectionLevelId: first.inspectionLevelId,
+            quantity: first.quantity,
+            customerName: existingQuote.customer_name ?? user?.full_name ?? '',
+            customerEmail: existingQuote.customer_email ?? user?.email ?? '',
+            customerCompany: existingQuote.customer_company ?? user?.company_name ?? '',
+            notes: existingQuote.notes ?? '',
+          });
+
+          setMultiFiles(restoredFiles);
+          setActiveMultiFileId(first.cadFile.id);
+          setConfigureIndividually(!sharedConfig);
+
+          if (sharedConfig) {
+            setMaterialId(first.materialId);
+            setSurfaceFinishId(first.surfaceFinishId);
+            setInspectionLevelId(first.inspectionLevelId);
+            setQuantity(first.quantity);
+          }
+        } else {
+          const geometry = await getGeometryAnalysis(existingQuote.cad_file.id);
+
+          if (cancelled) {
+            return;
+          }
+
+          const defaultTolerance = existingQuote.tolerance_notes ?? '';
+          setConfig({
+            cadFile: existingQuote.cad_file,
+            geometry,
+            materialId: existingQuote.material.id,
+            surfaceFinishId: existingQuote.surface_finish.id,
+            inspectionLevelId: existingQuote.inspection_level.id,
+            quantity: existingQuote.quantity,
+            customerName: existingQuote.customer_name ?? user?.full_name ?? '',
+            customerEmail: existingQuote.customer_email ?? user?.email ?? '',
+            customerCompany: existingQuote.customer_company ?? user?.company_name ?? '',
+            notes: existingQuote.notes ?? '',
+          });
+
+          setMultiFiles([
+            {
+              cadFile: existingQuote.cad_file,
+              geometry,
+              selected: true,
+              materialId: existingQuote.material.id,
+              surfaceFinishId: existingQuote.surface_finish.id,
+              inspectionLevelId: existingQuote.inspection_level.id,
+              quantity: existingQuote.quantity,
+              pricing: null,
+              pricingLoading: false,
+            },
+          ]);
+
+          setRfqCommercialForm({
+            rfqNumber: existingQuote.rfq_number ?? '',
+            rfqDate: toDateInputValue(existingQuote.rfq_date),
+            quoteDueDate: toDateInputValue(existingQuote.quote_due_date),
+            toleranceNotes: defaultTolerance,
+            hsnCode: existingQuote.hsn_code ?? '',
+            priceValidity: existingQuote.price_validity ?? '',
+            gst: existingQuote.gst ?? '',
+            delivery: toDateInputValue(existingQuote.delivery),
+            paymentTerms: existingQuote.payment_terms ?? '',
+          });
+
+          if (existingQuote.process_routing && existingQuote.process_routing.length > 0) {
+            setProcessRouting(existingQuote.process_routing);
+            setShowProcessRouting(true);
+          }
+
+          setStep('configure');
+          return;
+        }
+
+        const defaultTolerance = existingQuote.tolerance_notes ?? '';
+
+        setRfqCommercialForm({
+          rfqNumber: existingQuote.rfq_number ?? '',
+          rfqDate: toDateInputValue(existingQuote.rfq_date),
+          quoteDueDate: toDateInputValue(existingQuote.quote_due_date),
+          toleranceNotes: defaultTolerance,
+          hsnCode: existingQuote.hsn_code ?? '',
+          priceValidity: existingQuote.price_validity ?? '',
+          gst: existingQuote.gst ?? '',
+          delivery: toDateInputValue(existingQuote.delivery),
+          paymentTerms: existingQuote.payment_terms ?? '',
+        });
+
+        if (existingQuote.process_routing && existingQuote.process_routing.length > 0) {
+          setProcessRouting(existingQuote.process_routing);
+          setShowProcessRouting(true);
+        }
+
+        setStep('configure');
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load quote for editing');
+        }
+      } finally {
+        if (!cancelled) {
+          setEditLoading(false);
+        }
+      }
+    };
+
+    loadQuoteForEdit();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editQuoteId, user]);
 
   useEffect(() => {
     if (!user) {
@@ -415,16 +742,40 @@ const QuoteBuilder = () => {
     setCreating(true);
     setError(null);
     try {
+      const routingPayload = processRouting
+        .filter((row) => row.operation.trim() || row.process.trim() || row.machine_type.trim())
+        .map((row) => ({
+          operation: row.operation.trim(),
+          process: row.process.trim(),
+          machine_type: row.machine_type.trim(),
+          setup_time_minutes: Number(row.setup_time_minutes) || 0,
+          cycle_time_minutes: Number(row.cycle_time_minutes) || 0,
+          remarks: toOptionalString(row.remarks ?? ''),
+        }));
+
       const quote = await createQuote({
         cad_file_id: config.cadFile.id,
         material_id: config.materialId!,
         surface_finish_id: config.surfaceFinishId!,
         inspection_level_id: config.inspectionLevelId!,
         quantity: config.quantity,
-        pricing_overrides: pricingOverridesPayload,
+        pricing_overrides: {
+          ...(pricingOverridesPayload ?? {}),
+          machine_name: toOptionalString(pricingOverrides.machine_name ?? ''),
+        },
         customer_name: config.customerName || undefined,
         customer_email: config.customerEmail || undefined,
         customer_company: config.customerCompany || undefined,
+        rfq_number: toOptionalString(rfqCommercialForm.rfqNumber),
+        rfq_date: toOptionalDateTimeString(rfqCommercialForm.rfqDate),
+        quote_due_date: toOptionalDateTimeString(rfqCommercialForm.quoteDueDate),
+        tolerance_notes: toOptionalString(rfqCommercialForm.toleranceNotes),
+        hsn_code: toOptionalString(rfqCommercialForm.hsnCode),
+        process_routing: routingPayload.length > 0 ? routingPayload : undefined,
+        price_validity: toOptionalString(rfqCommercialForm.priceValidity),
+        gst: toOptionalString(rfqCommercialForm.gst),
+        delivery: toOptionalString(rfqCommercialForm.delivery),
+        payment_terms: toOptionalString(rfqCommercialForm.paymentTerms),
         notes: config.notes || undefined,
         auto_send_email: false,
       });
@@ -446,6 +797,17 @@ const QuoteBuilder = () => {
     setCreating(true);
     setError(null);
     try {
+      const routingPayload = processRouting
+        .filter((row) => row.operation.trim() || row.process.trim() || row.machine_type.trim())
+        .map((row) => ({
+          operation: row.operation.trim(),
+          process: row.process.trim(),
+          machine_type: row.machine_type.trim(),
+          setup_time_minutes: Number(row.setup_time_minutes) || 0,
+          cycle_time_minutes: Number(row.cycle_time_minutes) || 0,
+          remarks: toOptionalString(row.remarks ?? ''),
+        }));
+
       const items = selectedFiles.map((file) => {
         const cfg = getEffectiveConfig(file);
         if (!hasCompleteConfig(cfg)) {
@@ -463,10 +825,23 @@ const QuoteBuilder = () => {
 
       const quote = await createCombinedQuote({
         items,
-        pricing_overrides: pricingOverridesPayload,
+        pricing_overrides: {
+          ...(pricingOverridesPayload ?? {}),
+          machine_name: toOptionalString(pricingOverrides.machine_name ?? ''),
+        },
         customer_name: customerName || undefined,
         customer_email: customerEmail || undefined,
         customer_company: customerCompany || undefined,
+        rfq_number: toOptionalString(rfqCommercialForm.rfqNumber),
+        rfq_date: toOptionalDateTimeString(rfqCommercialForm.rfqDate),
+        quote_due_date: toOptionalDateTimeString(rfqCommercialForm.quoteDueDate),
+        tolerance_notes: toOptionalString(rfqCommercialForm.toleranceNotes),
+        hsn_code: toOptionalString(rfqCommercialForm.hsnCode),
+        process_routing: routingPayload.length > 0 ? routingPayload : undefined,
+        price_validity: toOptionalString(rfqCommercialForm.priceValidity),
+        gst: toOptionalString(rfqCommercialForm.gst),
+        delivery: toOptionalString(rfqCommercialForm.delivery),
+        payment_terms: toOptionalString(rfqCommercialForm.paymentTerms),
         notes: notes || undefined,
         auto_send_email: false,
       });
@@ -499,6 +874,9 @@ const QuoteBuilder = () => {
     setActiveMultiFileId(null);
     setUseQuoteSpecificPricing(false);
     setPricingOverrides({});
+    setRfqCommercialForm(createDefaultRFQCommercialState());
+    setProcessRouting([{ ...emptyRoutingRow }]);
+    setShowProcessRouting(false);
     setStep('upload');
   };
 
@@ -549,6 +927,111 @@ const QuoteBuilder = () => {
     </div>
   );
 
+  const rfqAndCommercialForm = (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">RFQ and Part Details</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">RFQ Number</label>
+            <input type="text" value={rfqCommercialForm.rfqNumber} onChange={(e) => updateRFQField('rfqNumber', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="RFQ-2026-001" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">RFQ Date</label>
+            <input type="date" value={rfqCommercialForm.rfqDate} onChange={(e) => updateRFQField('rfqDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Quote Due Date</label>
+            <input type="date" value={rfqCommercialForm.quoteDueDate} onChange={(e) => updateRFQField('quoteDueDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tolerance Notes (Part-wise)</label>
+            <textarea value={rfqCommercialForm.toleranceNotes} onChange={(e) => updateRFQField('toleranceNotes', e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Part A: +/- 0.05mm, Part B: +/- 0.10mm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
+            <input type="text" value={rfqCommercialForm.hsnCode} onChange={(e) => updateRFQField('hsnCode', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="8479" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-gray-900">Process Routing</h3>
+          {!showProcessRouting && (
+            <button type="button" onClick={() => setShowProcessRouting(true)} className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Add Process</button>
+          )}
+        </div>
+        {showProcessRouting && (
+          <div className="space-y-3">
+            {processRouting.map((row, index) => (
+              <div key={`${index}-${row.operation}-${row.process}`} className="border border-gray-200 rounded-lg p-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input type="text" value={row.operation} onChange={(e) => updateRoutingRow(index, { operation: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Operation" />
+                  <input type="text" value={row.process} onChange={(e) => updateRoutingRow(index, { process: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Process" />
+                  <input type="text" value={row.machine_type} onChange={(e) => {
+                    const machineType = e.target.value;
+                    updateRoutingRow(index, { machine_type: machineType });
+                    if (index === 0) {
+                      setPricingOverrides((prev) => ({ ...prev, machine_name: machineType }));
+                    }
+                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Machine Type" />
+                  <input type="number" min={0} step="0.1" value={row.setup_time_minutes} onChange={(e) => updateRoutingRow(index, { setup_time_minutes: Number(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Setup Time (minutes)" />
+                  <input type="number" min={0} step="0.1" value={row.cycle_time_minutes} onChange={(e) => updateRoutingRow(index, { cycle_time_minutes: Number(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Cycle Time (minutes)" />
+                  <input type="text" value={row.remarks ?? ''} onChange={(e) => updateRoutingRow(index, { remarks: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Remarks" />
+                </div>
+                <div className="mt-2 flex justify-end gap-3">
+                  <button type="button" onClick={() => removeRoutingRow(index)} className="text-xs text-red-600 hover:text-red-700">Remove row</button>
+                </div>
+              </div>
+            ))}
+            <button type="button" onClick={addRoutingRow} className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Add Process Row</button>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-base font-semibold text-gray-900 mb-3">Vendor and Commercial Terms</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Price Validity</label>
+            <select value={rfqCommercialForm.priceValidity} onChange={(e) => updateRFQField('priceValidity', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
+              <option value="">Select validity</option>
+              <option value="30 days">30 days</option>
+              <option value="45 days">45 days</option>
+              <option value="60 days">60 days</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">GST</label>
+            <select value={rfqCommercialForm.gst} onChange={(e) => updateRFQField('gst', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
+              <option value="">Select GST</option>
+              <option value="0%">0%</option>
+              <option value="5%">5%</option>
+              <option value="12%">12%</option>
+              <option value="18%">18%</option>
+              <option value="28%">28%</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Delivery</label>
+            <input type="date" value={rfqCommercialForm.delivery} onChange={(e) => updateRFQField('delivery', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+            <select value={rfqCommercialForm.paymentTerms} onChange={(e) => updateRFQField('paymentTerms', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
+              <option value="">Select payment terms</option>
+              <option value="Advance 100%">Advance 100%</option>
+              <option value="50% Advance, 50% Before Dispatch">50% Advance, 50% Before Dispatch</option>
+              <option value="Net 15 days">Net 15 days</option>
+              <option value="Net 30 days">Net 30 days</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const selectedMultiFiles = multiFiles.filter((f) => f.selected);
   const activeMultiFile = multiFiles.find((file) => file.cadFile.id === activeMultiFileId) ?? null;
   const multiTotal = selectedMultiFiles.reduce((sum, f) => sum + Number(f.pricing?.price_breakdown.total_price ?? 0), 0);
@@ -557,6 +1040,14 @@ const QuoteBuilder = () => {
   const allMultiPriced = selectedMultiFiles.length > 0 && selectedMultiFiles.every((f) => f.pricing !== null);
   const anyMultiLoading = selectedMultiFiles.some((f) => f.pricingLoading);
   const allSelected = multiFiles.length > 0 && multiFiles.every((file) => file.selected);
+
+  if (editLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -576,7 +1067,11 @@ const QuoteBuilder = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            {isMultiMode ? `New Quote — ${multiFiles.length} Files` : 'New Quote'}
+            {editQuoteId
+              ? 'Edit Quote'
+              : isMultiMode
+              ? `New Quote — ${multiFiles.length} Files`
+              : 'New Quote'}
           </h1>
           <p className="text-gray-500 text-sm mt-0.5">
             {isMultiMode
@@ -717,6 +1212,7 @@ const QuoteBuilder = () => {
           <div className="space-y-6 lg:sticky lg:top-6 self-start">
             <PricingDisplay pricing={pricing} loading={pricingLoading} />
             {customerForm}
+            {rfqAndCommercialForm}
             <button
               onClick={handleCreateSingleQuote}
               disabled={!pricing || creating}
@@ -835,6 +1331,7 @@ const QuoteBuilder = () => {
             </div>
 
             {customerForm}
+            {rfqAndCommercialForm}
           </div>
 
           <div className="space-y-6 lg:sticky lg:top-6 self-start">

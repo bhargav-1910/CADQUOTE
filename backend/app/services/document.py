@@ -119,7 +119,7 @@ class PDFGenerator:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import mm
         from reportlab.lib.colors import black, HexColor
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
         styles = getSampleStyleSheet()
@@ -147,41 +147,70 @@ class PDFGenerator:
 
         content = []
         total_width = 190 * mm
-        light_gray = HexColor("#efefef")
+        light_gray = HexColor("#f1f5f9")
+        slate_ink = HexColor("#0f172a")
+        slate_muted = HexColor("#334155")
+        accent_blue = HexColor("#1d4ed8")
+        line_color = HexColor("#475569")
 
         company_name = (issuer_profile or {}).get("company_name") or "CNC Quote Platform"
         company_address = (issuer_profile or {}).get("company_address") or "123 Manufacturing Way, Industrial City"
         company_phone = (issuer_profile or {}).get("company_phone") or "N/A"
         company_email = (issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"
+        company_logo_abs_path = (issuer_profile or {}).get("company_logo_abs_path")
 
         cleaned_notes = self._strip_combined_notes(quote.notes)
         subject = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quote for CNC machining"
 
-        left_header = [
-            Paragraph(f"<font color='#cc1f1f' size='22'><b>{company_name}</b></font>", base_style),
-            Paragraph("<font color='#1f8a34'><b><i>Business Growth Platform</i></b></font>", base_style),
-            Paragraph(f"<b>{company_name}</b>", base_style),
-            Paragraph(company_address.replace("\n", "<br/>"), base_style),
-            Paragraph(f"Contact: {company_phone}", base_style),
-            Paragraph(f"Email: {company_email}", base_style),
+        logo_item = None
+        if company_logo_abs_path and Path(company_logo_abs_path).exists():
+            try:
+                logo_item = Image(company_logo_abs_path, width=28 * mm, height=28 * mm)
+                logo_item.hAlign = "LEFT"
+            except Exception:
+                logo_item = None
+
+        header_text_stack = [
+            Paragraph(f"<font color='{slate_ink}' size='15'><b>{company_name}</b></font>", base_style),
+            Paragraph(f"<font color='{accent_blue}' size='9'><b>Precision Manufacturing Quotation</b></font>", base_style),
+            Paragraph(f"<font color='{slate_muted}'>{company_address.replace(chr(10), '<br/>')}</font>", base_style),
+            Paragraph(f"<font color='{slate_muted}'>Contact: {company_phone}</font>", base_style),
+            Paragraph(f"<font color='{slate_muted}'>Email: {company_email}</font>", base_style),
         ]
+
+        if logo_item is not None:
+            left_header = Table(
+                [[logo_item, header_text_stack]],
+                colWidths=[33 * mm, 72 * mm],
+            )
+            left_header.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+        else:
+            left_header = header_text_stack
 
         meta_rows = [
             [Paragraph("<b>Quotation No.</b>", base_style), Paragraph(f"<b>{quote.quote_number}</b>", base_style)],
             [Paragraph("<b>Date</b>", base_style), Paragraph(f"<b>{quote.created_at.strftime('%d-%m-%Y')}</b>", base_style)],
-            [Paragraph("<b>Terms of Payment</b>", base_style), Paragraph("<b>30 days Credit</b>", base_style)],
+            [Paragraph("<b>Terms of Payment</b>", base_style), Paragraph(f"<b>{escape(quote.payment_terms or 'Not specified')}</b>", base_style)],
             [Paragraph("<b>Client ID</b>", base_style), Paragraph(f"<b>{str(quote.id).split('-')[0].upper()}</b>", base_style)],
         ]
-        right_meta = Table([[Paragraph("<b>QUOTATION</b>", ParagraphStyle("MetaTitle", parent=base_style, alignment=1, fontSize=13))], [Table(meta_rows, colWidths=[30 * mm, 55 * mm])]], colWidths=[85 * mm])
+        right_meta = Table([[Paragraph("<b>QUOTATION</b>", ParagraphStyle("MetaTitle", parent=base_style, alignment=1, fontSize=11, textColor=slate_ink))], [Table(meta_rows, colWidths=[30 * mm, 55 * mm])]], colWidths=[85 * mm])
         right_meta.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("BACKGROUND", (0, 0), (0, 0), light_gray),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
         ]))
 
         header = Table([[left_header, right_meta]], colWidths=[105 * mm, 85 * mm])
         header.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -197,8 +226,10 @@ class PDFGenerator:
             colWidths=[total_width],
         )
         recipient.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         content.append(recipient)
 
@@ -212,7 +243,7 @@ class PDFGenerator:
                     str(idx),
                     "CAD",
                     Paragraph(f"{item['file_name']}<br/><font size='8'>Bulk quote item</font>", base_style),
-                    "NA",
+                    escape(quote.hsn_code or "NA"),
                     f"{qty:.1f}",
                     "Pcs",
                     f"{(line_total / qty):,.2f}",
@@ -228,7 +259,7 @@ class PDFGenerator:
                     f"</font>",
                     base_style,
                 ),
-                "NA",
+                escape(quote.hsn_code or "NA"),
                 f"{max(int(quote.quantity), 1):.1f}",
                 "Pcs",
                 f"{float(quote.unit_price):,.2f}",
@@ -240,7 +271,7 @@ class PDFGenerator:
             colWidths=[8 * mm, 20 * mm, 55 * mm, 20 * mm, 14 * mm, 14 * mm, 24 * mm, 35 * mm],
         )
         items.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("BACKGROUND", (0, 0), (-1, 0), light_gray),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("ALIGN", (0, 0), (-1, 0), "CENTER"),
@@ -248,21 +279,19 @@ class PDFGenerator:
             ("ALIGN", (3, 1), (5, -1), "CENTER"),
             ("ALIGN", (6, 1), (7, -1), "RIGHT"),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 1), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
         ]))
         content.append(items)
 
         subtotal = float(quote.total_price)
-        sgst = subtotal * 0.09
-        cgst = subtotal * 0.09
-        round_off = round(round(subtotal + sgst + cgst, 2) - (subtotal + sgst + cgst), 2)
-        grand_total = subtotal + sgst + cgst + round_off
+        gst_display = quote.gst or "As applicable"
+        grand_total = subtotal
 
         lower_left = Paragraph(f"<b>Amount in Words</b><br/>INR {grand_total:,.2f} only.", base_style)
         totals_rows = [
             ["Sub Total", ":", f"{subtotal:,.2f}"],
-            ["SGST 9 Tax (9.0%)", ":", f"{sgst:,.2f}"],
-            ["CGST 9 Tax (9.0%)", ":", f"{cgst:,.2f}"],
-            ["Round Off", ":", f"{round_off:,.2f}"],
+            [f"GST ({gst_display})", ":", "Included/As applicable"],
             ["Total Amount", ":", f"{grand_total:,.2f}"],
         ]
         totals_table = Table(totals_rows, colWidths=[42 * mm, 5 * mm, 28 * mm])
@@ -278,20 +307,32 @@ class PDFGenerator:
 
         summary = Table([[lower_left, totals_table]], colWidths=[115 * mm, 75 * mm])
         summary.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ]))
         content.append(summary)
 
         terms_and_sign = Table(
             [[
-                Paragraph("<b>Terms and Conditions:</b><br/>1. GST rates apply as per prevailing tax slabs.<br/>2. Delivery timeline starts after order and payment confirmation.", base_style),
-                Paragraph(f"For <b>{company_name}</b><br/><br/><br/><b>Authorized Signatory</b>", ParagraphStyle("RightSign", parent=base_style, alignment=1)),
+                Paragraph(
+                    "<b>Terms and Conditions:</b><br/>"
+                    f"1. Payment Terms: {escape(quote.payment_terms or 'Not specified')}<br/>"
+                    f"2. Delivery: {escape(quote.delivery or 'Not specified')}<br/>"
+                    f"3. GST: {escape(quote.gst or 'As applicable')}<br/>"
+                    f"4. Price Validity: {escape(quote.price_validity or 'Not specified')}",
+                    base_style,
+                ),
+                Paragraph(
+                    f"For <b>{company_name}</b><br/><br/>"
+                    f"<font color='{slate_muted}'>Prepared on {datetime.utcnow().strftime('%d-%m-%Y')}</font><br/><br/>"
+                    "<b>Authorized Signatory</b>",
+                    ParagraphStyle("RightSign", parent=base_style, alignment=1),
+                ),
             ]],
             colWidths=[120 * mm, 70 * mm],
         )
         terms_and_sign.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ]))
         content.append(terms_and_sign)
@@ -317,14 +358,26 @@ class PDFGenerator:
                 colWidths=[total_width],
             )
             dfm_block.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 1, black),
+                ("GRID", (0, 0), (-1, -1), 0.8, line_color),
                 ("BACKGROUND", (0, 0), (-1, -1), HexColor("#f8fbff")),
             ]))
             content.append(dfm_block)
 
-        footer = Table([[Paragraph("This is a software generated quotation.", ParagraphStyle("Footer", parent=base_style, alignment=1))]], colWidths=[total_width])
+        footer_text = (
+            f"This is a software generated quotation from {company_name}. "
+            f"For clarifications, contact {company_email}."
+        )
+        footer = Table(
+            [[
+                Paragraph(
+                    footer_text,
+                    ParagraphStyle("Footer", parent=base_style, alignment=1, textColor=slate_muted, fontSize=8),
+                )
+            ]],
+            colWidths=[total_width],
+        )
         footer.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 1, black),
+            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
             ("TOPPADDING", (0, 0), (-1, -1), 4),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
@@ -352,7 +405,7 @@ class PDFGenerator:
                 line_total = float(item["line_total"])
                 line_items.append({
                     "description": f"{escape(item['file_name'])}<br><span class=\"desc-meta\">Bulk quote item</span>",
-                    "hsn_code": "NA",
+                    "hsn_code": escape(quote.hsn_code or "NA"),
                     "qty": qty,
                     "uom": "Pcs",
                     "unit_price": line_total / qty,
@@ -368,7 +421,7 @@ class PDFGenerator:
                     f"<span class=\"desc-meta\">Volume: {geometry.volume:.2f} cm3 | "
                     f"Weight: {weight_kg:.3f} kg</span>"
                 ),
-                "hsn_code": "NA",
+                "hsn_code": escape(quote.hsn_code or "NA"),
                 "qty": max(int(quote.quantity), 1),
                 "uom": "Pcs",
                 "unit_price": float(quote.unit_price),
@@ -391,11 +444,8 @@ class PDFGenerator:
             )
 
         subtotal = float(quote.total_price)
-        tax_rate = 0.09
-        sgst = subtotal * tax_rate
-        cgst = subtotal * tax_rate
-        round_off = round(round(subtotal + sgst + cgst, 2) - (subtotal + sgst + cgst), 2)
-        grand_total = subtotal + sgst + cgst + round_off
+        gst_display = quote.gst or "As applicable"
+        grand_total = subtotal
 
         subject_line = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quote for CNC machining"
         client_lines = [
@@ -405,25 +455,33 @@ class PDFGenerator:
         ]
         client_block = "<br>".join(escape(line) for line in client_lines if line)
 
+        logo_html = ""
+        logo_abs_path = (issuer_profile or {}).get("company_logo_abs_path")
+        if logo_abs_path and Path(logo_abs_path).exists():
+            logo_uri = Path(logo_abs_path).as_uri()
+            logo_html = f'<img src="{escape(logo_uri)}" alt="Company logo" class="logo-img">'
+
         context = {
             "company_name": escape((issuer_profile or {}).get("company_name") or "CNC Quote Platform"),
             "company_address": escape((issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345").replace("\n", "<br>"),
             "company_phone": escape((issuer_profile or {}).get("company_phone") or "N/A"),
             "company_email": escape((issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"),
+            "company_logo_html": logo_html,
             "quote_number": quote.quote_number,
             "quote_date": quote.created_at.strftime("%d-%m-%Y"),
-            "terms_of_payment": "30 days Credit",
+            "terms_of_payment": escape(quote.payment_terms or "Not specified"),
             "client_id": str(quote.id).split("-")[0].upper(),
             "client_block": client_block,
             "subject": escape(subject_line),
             "line_items_html": line_items_html,
             "subtotal": subtotal,
-            "sgst": sgst,
-            "cgst": cgst,
-            "round_off": round_off,
+            "gst_display": escape(gst_display),
             "grand_total": grand_total,
+            "delivery": escape(quote.delivery or "Not specified"),
+            "price_validity": escape(quote.price_validity or "Not specified"),
             "signature_name": escape((issuer_profile or {}).get("company_name") or "Authorized Signatory"),
             "dfm_summary_html": self._build_dfm_summary_html(dfm_analysis),
+            "prepared_date": datetime.utcnow().strftime("%d-%m-%Y"),
         }
         
         return self._get_inline_template().format(**context)
@@ -475,13 +533,23 @@ class PDFGenerator:
         items: list[dict] = []
         for line in block.splitlines():
             parts = line.strip().split("|")
-            if len(parts) != 3:
+            if len(parts) < 3:
                 continue
 
-            file_name = parts[0].strip()
+            # v2 format: cad_file_id|filename|qty|line_total|material_id|surface_finish_id|inspection_level_id
+            # v1 format: filename|qty|line_total
+            if len(parts) >= 4:
+                file_name = parts[1].strip()
+                qty_raw = parts[2].strip()
+                total_raw = parts[3].strip()
+            else:
+                file_name = parts[0].strip()
+                qty_raw = parts[1].strip()
+                total_raw = parts[2].strip()
+
             try:
-                quantity = int(parts[1].strip())
-                line_total = float(parts[2].strip())
+                quantity = int(qty_raw)
+                line_total = float(total_raw)
             except ValueError:
                 continue
 
@@ -521,46 +589,53 @@ class PDFGenerator:
     <style>
         @page {{ size: A4; margin: 10mm; }}
         body {{
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 12px;
-            color: #111;
+            font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+            font-size: 10.5px;
+            color: #0f172a;
             margin: 0;
+            line-height: 1.35;
         }}
-        .quote {{ border: 1px solid #2a2a2a; }}
+        .quote {{ border: 1px solid #1e293b; }}
         table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
-        td, th {{ border: 1px solid #2a2a2a; vertical-align: top; padding: 6px; }}
+        td, th {{ border: 0.8px solid #475569; vertical-align: top; padding: 7px; }}
         .no-border td {{ border: none; padding: 0; }}
-        .header-title {{ font-size: 34px; color: #cb1e1e; font-weight: 700; line-height: 1; margin-bottom: 4px; }}
-        .header-sub {{ font-size: 19px; color: #1f8a34; font-style: italic; font-weight: 700; margin-bottom: 8px; }}
-        .company-name {{ font-size: 38px; font-weight: 700; color: #cb1e1e; }}
-        .quote-heading {{ text-align: center; font-size: 34px; font-weight: 700; background: #ececec; }}
-        .meta-label {{ width: 44%; font-weight: 600; background: #f2f2f2; }}
+        .header-title {{ font-size: 22px; color: #0f172a; font-weight: 700; line-height: 1.2; margin-bottom: 2px; }}
+        .header-sub {{ font-size: 12px; color: #1d4ed8; font-weight: 600; margin-bottom: 8px; }}
+        .brand-wrap {{ display: table; width: 100%; }}
+        .brand-logo {{ display: table-cell; width: 70px; vertical-align: top; }}
+        .brand-text {{ display: table-cell; vertical-align: top; }}
+        .logo-img {{ max-width: 60px; max-height: 60px; object-fit: contain; }}
+        .quote-heading {{ text-align: center; font-size: 14px; font-weight: 700; background: #e2e8f0; letter-spacing: 0.5px; padding: 8px 6px; }}
+        .meta-label {{ width: 44%; font-weight: 600; background: #f8fafc; }}
         .meta-val {{ text-align: right; font-weight: 700; }}
-        .section-label {{ font-size: 35px; font-weight: 700; margin-bottom: 8px; }}
-        .subject-row {{ font-size: 13px; font-weight: 700; padding: 8px 6px; }}
-        .item-head th {{ background: #efefef; text-align: center; font-size: 12px; }}
+        .section-label {{ font-size: 13px; font-weight: 700; margin-bottom: 6px; }}
+        .subject-row {{ font-size: 12px; font-weight: 700; padding: 8px 0 2px; }}
+        .item-head th {{ background: #eef2ff; text-align: center; font-size: 11px; font-weight: 700; }}
         .center {{ text-align: center; }}
         .right {{ text-align: right; }}
         .image-cell {{ text-align: center; }}
         .img-ph {{
             margin: 0 auto;
-            width: 64px;
-            height: 64px;
+            width: 54px;
+            height: 54px;
             border: 1px dashed #777;
             color: #666;
-            font-size: 11px;
-            line-height: 64px;
+            font-size: 10px;
+            line-height: 54px;
         }}
         .desc-meta {{ color: #4a4a4a; font-size: 11px; }}
-        .amount-label {{ font-size: 16px; font-weight: 700; margin-bottom: 4px; }}
-        .terms-title {{ font-size: 16px; font-weight: 700; margin-bottom: 4px; }}
+        .amount-label {{ font-size: 13px; font-weight: 700; margin-bottom: 4px; }}
+        .terms-title {{ font-size: 13px; font-weight: 700; margin-bottom: 4px; }}
         .totals-table td {{ border: none; padding: 3px 0; }}
         .totals-table .key {{ width: 70%; font-weight: 700; }}
         .totals-table .sep {{ width: 6%; text-align: center; }}
         .totals-table .val {{ width: 24%; text-align: right; font-weight: 700; }}
         .sign-wrap {{ text-align: center; padding-top: 8px; }}
-        .sign-line {{ margin-top: 20px; font-weight: 700; }}
-        .footer-note {{ text-align: center; font-size: 12px; padding: 6px 0; border-top: 1px solid #2a2a2a; }}
+        .sign-date {{ color: #475569; font-size: 10px; margin-top: 4px; }}
+        .sign-line {{ margin-top: 24px; font-weight: 700; }}
+        .footer-note {{ text-align: center; font-size: 10px; color: #475569; padding: 6px 0; border-top: 1px solid #1e293b; }}
+        .section-table {{ margin-top: -1px; }}
+        .totals-cell {{ background: #f8fafc; }}
     </style>
 </head>
 <body>
@@ -568,12 +643,16 @@ class PDFGenerator:
         <table>
             <tr>
                 <td style="width:50%;">
-                    <div class="header-title">{company_name}</div>
-                    <div class="header-sub">Business Growth Platform</div>
-                    <div><strong>{company_name}</strong></div>
-                    <div>{company_address}</div>
-                    <div>Contact: {company_phone}</div>
-                    <div>Email: {company_email}</div>
+                    <div class="brand-wrap">
+                        <div class="brand-logo">{company_logo_html}</div>
+                        <div class="brand-text">
+                            <div class="header-title">{company_name}</div>
+                            <div class="header-sub">Precision Manufacturing Quotation</div>
+                            <div>{company_address}</div>
+                            <div>Contact: {company_phone}</div>
+                            <div>Email: {company_email}</div>
+                        </div>
+                    </div>
                 </td>
                 <td style="width:50%; padding:0;">
                     <table>
@@ -594,7 +673,7 @@ class PDFGenerator:
             </tr>
         </table>
 
-        <table>
+        <table class="section-table">
             <colgroup>
                 <col style="width:4%;"><col style="width:12%;"><col style="width:24%;"><col style="width:10%;">
                 <col style="width:8%;"><col style="width:7%;"><col style="width:12%;"><col style="width:13%;">
@@ -612,34 +691,35 @@ class PDFGenerator:
             {line_items_html}
         </table>
 
-        <table>
+        <table class="section-table">
             <tr>
                 <td style="width:60%;">
                     <div class="amount-label">Amount in Words</div>
                     <div>INR {grand_total:,.2f} only.</div>
                 </td>
-                <td style="width:40%;">
+                <td class="totals-cell" style="width:40%;">
                     <table class="totals-table">
                         <tr><td class="key">Sub Total</td><td class="sep">:</td><td class="val">{subtotal:,.2f}</td></tr>
-                        <tr><td class="key">SGST 9 Tax (9.0%)</td><td class="sep">:</td><td class="val">{sgst:,.2f}</td></tr>
-                        <tr><td class="key">CGST 9 Tax (9.0%)</td><td class="sep">:</td><td class="val">{cgst:,.2f}</td></tr>
-                        <tr><td class="key">Round Off</td><td class="sep">:</td><td class="val">{round_off:,.2f}</td></tr>
+                        <tr><td class="key">GST ({gst_display})</td><td class="sep">:</td><td class="val">Included/As applicable</td></tr>
                         <tr><td class="key">Total Amount</td><td class="sep">:</td><td class="val">{grand_total:,.2f}</td></tr>
                     </table>
                 </td>
             </tr>
         </table>
 
-        <table>
+        <table class="section-table">
             <tr>
                 <td style="width:65%;">
                     <div class="terms-title">Terms and Conditions:</div>
-                    <div>1. GST rates apply as per prevailing tax slabs.</div>
-                    <div>2. Delivery timeline starts after order and payment confirmation.</div>
+                    <div>1. Payment Terms: {terms_of_payment}</div>
+                    <div>2. Delivery: {delivery}</div>
+                    <div>3. GST: {gst_display}</div>
+                    <div>4. Price Validity: {price_validity}</div>
                 </td>
                 <td style="width:35%;">
                     <div class="sign-wrap">
                         <div>For {signature_name}</div>
+                        <div class="sign-date">Prepared on {prepared_date}</div>
                         <div class="sign-line">Authorized Signatory</div>
                     </div>
                 </td>
@@ -648,7 +728,7 @@ class PDFGenerator:
 
         {dfm_summary_html}
 
-        <div class="footer-note">This is a software generated quotation.</div>
+        <div class="footer-note">This is a software generated quotation from {company_name}. For clarifications, contact {company_email}.</div>
     </div>
 </body>
 </html>"""

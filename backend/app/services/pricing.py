@@ -190,7 +190,7 @@ class PricingEngine:
             "material_cost_per_part": float(material_cost),
         }
 
-        # B. Machining cost: cycle time = (removal volume / MRR) + feature time
+        # B. Machining cost: cycle time = (removal volume / MRR) + feature time + tool change time
         removal_cm3 = max(inputs.bounding_box_volume_cm3 - inputs.volume_cm3, 0.0)
         mrr_min, mrr_max = self.MRR_CM3_PER_MIN.get(material_key, (4.0, 8.0))
         base_mrr = mrr_min + (mrr_max - mrr_min) * (1.0 - complexity_norm)
@@ -199,7 +199,7 @@ class PricingEngine:
             base_mrr * _clamp(inputs.machine_efficiency, 0.1, 1.0) / max(inputs.machining_difficulty_factor, 0.1),
         )
 
-        base_cycle_min = removal_cm3 / adjusted_mrr if adjusted_mrr > 0 else 0.0
+        removal_time_min = removal_cm3 / adjusted_mrr if adjusted_mrr > 0 else 0.0
 
         hole_seconds = inputs.hole_count * (5.0 + (15.0 - 5.0) * complexity_norm)
         thread_estimate = max(0, int(round(inputs.hole_count * 0.2)))
@@ -214,7 +214,12 @@ class PricingEngine:
         )
 
         feature_time_min = (hole_seconds + thread_seconds) / 60.0 + pocket_time_min
-        cycle_time_min = base_cycle_min + feature_time_min
+
+        tool_change_count = max(1, int(round(1 + complexity_norm * 2 + (inputs.hole_count / 8.0))))
+        tool_change_time_per_event_min = 0.8 + 0.7 * complexity_norm
+        tool_change_time_min = tool_change_count * tool_change_time_per_event_min
+
+        cycle_time_min = removal_time_min + feature_time_min + tool_change_time_min
 
         machine_rate_per_hour = self._normalized_machine_rate(inputs.hourly_rate, machine_type)
         machining_cost = _to_decimal(cycle_time_min) * machine_rate_per_hour / _to_decimal(60)
@@ -224,8 +229,10 @@ class PricingEngine:
             "machine_type": machine_type,
             "removal_volume_cm3": round(removal_cm3, 4),
             "mrr_cm3_min": round(adjusted_mrr, 4),
-            "base_cycle_time_min": round(base_cycle_min, 4),
+            "removal_time_min": round(removal_time_min, 4),
             "feature_time_min": round(feature_time_min, 4),
+            "tool_change_count": tool_change_count,
+            "tool_change_time_min": round(tool_change_time_min, 4),
             "hole_seconds": round(hole_seconds, 2),
             "thread_seconds": round(thread_seconds, 2),
             "pocket_time_min": round(pocket_time_min, 4),
@@ -241,8 +248,28 @@ class PricingEngine:
 
         details["setup"] = {
             "setup_time_hours": round(setup_time_hours, 4),
+            "batch_size": inputs.quantity,
             "setup_cost_total": float(setup_cost_total),
             "setup_cost_per_part": float(setup_cost_per_part),
+        }
+
+        # C2. CAM/programming time allocation
+        cam_time_hours = (
+            0.25
+            + complexity_norm * 1.25
+            + min(inputs.hole_count, 40) * 0.01
+            + _clamp(inputs.surface_area_cm2 / 800.0, 0.0, 0.75)
+        )
+        cam_rate_per_hour = machine_rate_per_hour * _to_decimal(0.35)
+        cam_cost_total = _to_decimal(cam_time_hours) * cam_rate_per_hour
+        cam_cost_per_part = cam_cost_total / _to_decimal(max(inputs.quantity, 1))
+
+        details["cam_programming"] = {
+            "cam_time_hours": round(cam_time_hours, 4),
+            "cam_rate_per_hour": float(cam_rate_per_hour),
+            "cam_cost_total": float(cam_cost_total),
+            "cam_cost_per_part": float(cam_cost_per_part),
+            "batch_size": inputs.quantity,
         }
 
         # D. Tooling cost allocation
@@ -294,10 +321,25 @@ class PricingEngine:
             material_cost
             + machining_cost
             + setup_cost_per_part
+            + cam_cost_per_part
             + tooling_per_part
             + finish_cost
             + inspection_cost
         )
+
+        details["manufacturing_charges"] = {
+            "cycle_time_formula": "(material_removal_volume / mrr) + feature_time + tool_change_time",
+            "material_removal_volume_cm3": round(removal_cm3, 4),
+            "mrr_cm3_min": round(adjusted_mrr, 4),
+            "removal_time_min": round(removal_time_min, 4),
+            "feature_time_min": round(feature_time_min, 4),
+            "tool_change_time_min": round(tool_change_time_min, 4),
+            "cycle_time_min": round(cycle_time_min, 4),
+            "setup_cost_per_part_formula": "(setup_time_hours * machine_rate_per_hour) / batch_size",
+            "setup_cost_per_part": float(setup_cost_per_part),
+            "cam_cost_formula": "cam_time_hours * cam_rate_per_hour / batch_size",
+            "cam_cost_per_part": float(cam_cost_per_part),
+        }
 
         # G. Overheads
         vendor_oh = _clamp(inputs.vendor_overhead_pct, 10.0, 20.0) / 100.0
@@ -424,7 +466,7 @@ class PricingEngine:
 
         return PricingResult(
             material_cost=round_price(material_cost),
-            machining_cost=round_price(machining_cost + setup_cost_per_part + tooling_per_part),
+            machining_cost=round_price(machining_cost + setup_cost_per_part + cam_cost_per_part + tooling_per_part),
             finish_cost=round_price(finish_cost),
             inspection_cost=round_price(inspection_cost),
             subtotal=round_price(direct_cost_per_part),

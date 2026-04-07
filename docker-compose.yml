@@ -47,6 +47,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - ENVIRONMENT=production
       - DEBUG=false
+      - AUTO_CREATE_TABLES=false
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-this-in-production-use-a-long-random-string}
       - SECRET_KEY=${SECRET_KEY:-change-this-in-production-use-a-long-random-string}
       - ALLOWED_HOSTS=*

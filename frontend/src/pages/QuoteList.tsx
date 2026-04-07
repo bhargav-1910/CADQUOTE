@@ -161,6 +161,9 @@ const QuoteList = () => {
                 <th className="text-left px-6 py-3 text-sm font-semibold text-gray-600">
                   Created
                 </th>
+                <th className="text-right px-6 py-3 text-sm font-semibold text-gray-600">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -205,6 +208,15 @@ const QuoteList = () => {
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     {formatDate(quote.created_at)}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <Link
+                      to={`/quote/${quote.id}/edit`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded border border-primary-200 text-primary-700 hover:bg-primary-50"
+                    >
+                      Edit
+                    </Link>
                   </td>
                 </tr>
               ))}

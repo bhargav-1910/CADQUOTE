@@ -1,6 +1,6 @@
 # Pricing and DFM Documentation
 
-Last updated: 2026-03-31
+Last updated: 2026-04-07
 
 This document describes:
 - Current pricing values used by the system
@@ -156,23 +156,30 @@ The engine computes per-part cost first, then multiplies by quantity.
 2. Base MRR selected from material range; complexity reduces usable MRR
 3. Efficiency and machining difficulty adjust MRR:
    - `adjusted_mrr = base_mrr * machine_efficiency / machining_difficulty_factor`
-4. Base cycle time:
-   - `base_cycle_min = removal_cm3 / adjusted_mrr`
+4. Material removal time:
+  - `removal_time_min = removal_cm3 / adjusted_mrr`
 5. Feature time includes:
    - Hole time (5-15 sec each, scaled by complexity)
    - Thread estimate time (20-60 sec each, scaled by complexity)
    - Pocket time from area, removal ratio, and depth factor
-6. Total cycle time:
-   - `cycle_time_min = base_cycle_min + feature_time_min`
-7. Machine rate normalized to machine-type clamp
-8. Machining cost per part:
+6. Tool change time includes:
+  - Tool change count estimated from complexity + feature count
+  - Time per change scaled by complexity
+7. Total cycle time:
+  - `cycle_time_min = removal_time_min + feature_time_min + tool_change_time_min`
+8. Machine rate normalized to machine-type clamp
+9. Machining cost per part:
    - `machining_cost = cycle_time_min * machine_rate_per_hour / 60`
 
-### 4.3 Setup and tooling allocation
+### 4.3 Setup, CAM programming, and tooling allocation
 - Setup total:
   - `setup_cost_total = setup_time_hours * machine_rate_per_hour`
 - Setup per part:
   - `setup_cost_per_part = setup_cost_total / quantity`
+- CAM total:
+  - `cam_cost_total = cam_time_hours * cam_rate_per_hour`
+- CAM per part:
+  - `cam_cost_per_part = cam_cost_total / quantity`
 - Tooling total:
   - `tooling_total = tooling_base(material) + hole_count * 2 + complexity_norm * 40`
 - Tooling per part:
@@ -187,7 +194,7 @@ The engine computes per-part cost first, then multiplies by quantity.
   - If percentage cost > 0, add percentage of `(material + machining + setup_per_part)`
 
 ### 4.5 Direct subtotal per part
-- `direct_cost_per_part = material + machining + setup_per_part + tooling_per_part + finish + inspection`
+- `direct_cost_per_part = material + machining + setup_per_part + cam_cost_per_part + tooling_per_part + finish + inspection`
 
 ### 4.6 Overheads and risk
 - Overhead multiplier:
@@ -295,7 +302,23 @@ Supported in request payload under `pricing_overrides`.
 - All call the same pricing engine
 - Combined quote sums line-item totals into one quote record
 
-## 9) DFM Analysis Logic (Backend Canonical)
+## 9) UI Pricing Breakdown Updates
+
+The quote pricing UI now explicitly displays manufacturing charges that were requested for visibility:
+
+- Cycle Time formula components:
+  - material removal volume
+  - adjusted MRR
+  - feature time
+  - tool change time
+- Setup Cost Allocation (per part):
+  - `(Setup Time × Machine Rate) / Batch Size`
+- Programming / CAM Cost (per part):
+  - CAM time and hourly CAM rate
+
+These values are provided via `pricing_explanation` fields from the backend pricing engine.
+
+## 10) DFM Analysis Logic (Backend Canonical)
 
 DFM is now computed in backend and reused everywhere:
 1) Geometry API (`GET /api/files/{file_id}/geometry`)
@@ -306,7 +329,7 @@ DFM is now computed in backend and reused everywhere:
 Primary implementation:
 - `backend/app/services/dfm.py`
 
-### 9.1 Backend geometry extraction inputs
+### 10.1 Backend geometry extraction inputs
 Geometry extraction is implemented in `backend/app/services/geometry.py`.
 
 Computed metrics used as DFM inputs:

@@ -76,6 +76,16 @@ function App() {
             )}
           />
           <Route
+            path="/quote/:quoteId/edit"
+            element={(
+              <ProtectedRoute>
+                <Layout>
+                  <QuoteBuilder />
+                </Layout>
+              </ProtectedRoute>
+            )}
+          />
+          <Route
             path="/quotes"
             element={(
               <ProtectedRoute>

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
   ChevronRight, Download, FileText, Mail, Loader2, Home,
-  AlertCircle, CheckCircle, Package, Clock, User 
+  AlertCircle, CheckCircle, Package, Clock, User, Pencil, Eye 
 } from 'lucide-react';
 import type { Quote } from '@/types';
-import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail } from '@/services/api';
+import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail, fetchQuotePDFPreviewBlob } from '@/services/api';
 import { useAuth } from '@/components/AuthProvider';
 
 interface CombinedFileLine {
@@ -37,7 +37,15 @@ const parseCombinedNotes = (rawNotes: string | null): { files: CombinedFileLine[
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [fileName, qtyRaw, totalRaw] = line.split('|');
+      const parts = line.split('|');
+
+      // v2: cad_file_id|filename|qty|line_total|...
+      // v1: filename|qty|line_total
+      const hasV2Shape = parts.length >= 4;
+      const fileName = hasV2Shape ? parts[1] : parts[0];
+      const qtyRaw = hasV2Shape ? parts[2] : parts[1];
+      const totalRaw = hasV2Shape ? parts[3] : parts[2];
+
       return {
         fileName: fileName ?? 'Unknown file',
         quantity: Number(qtyRaw ?? 1),
@@ -58,20 +66,39 @@ const QuoteDetail = () => {
   const { user } = useAuth();
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [hasPreviewed, setHasPreviewed] = useState(false);
+  const previewSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const fetchQuote = async () => {
       if (!quoteId) return;
+
+      setLoading(true);
+      setQuote(null);
+      setLoadError(null);
+      setActionError(null);
+      setPreviewVisible(false);
+      setPreviewUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) {
+          URL.revokeObjectURL(prev);
+        }
+        return null;
+      });
+      setHasPreviewed(false);
       
       try {
         const data = await getQuote(quoteId);
         setQuote(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load quote');
+        setLoadError(err instanceof Error ? err.message : 'Failed to load quote');
       } finally {
         setLoading(false);
       }
@@ -79,6 +106,14 @@ const QuoteDetail = () => {
 
     fetchQuote();
   }, [quoteId]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -97,8 +132,12 @@ const QuoteDetail = () => {
 
   const handleDownloadPDF = async () => {
     if (!quote) return;
+    if (!hasPreviewed) {
+      setActionError('Please preview the quote before downloading.');
+      return;
+    }
 
-    setError(null);
+    setActionError(null);
     setGenerating(true);
     try {
       if (!quote.pdf_path) {
@@ -107,7 +146,7 @@ const QuoteDetail = () => {
 
       await downloadQuotePDF(quote.id, quote.quote_number);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate PDF');
+      setActionError(err instanceof Error ? err.message : 'Failed to generate PDF');
     } finally {
       setGenerating(false);
     }
@@ -115,7 +154,12 @@ const QuoteDetail = () => {
 
   const handleEmailQuote = async () => {
     if (!quote || !quote.customer_email) {
-      setError('Customer email is missing for this quote');
+      setActionError('Customer email is missing for this quote');
+      return;
+    }
+
+    if (!hasPreviewed) {
+      setActionError('Please preview the quote before emailing.');
       return;
     }
 
@@ -130,11 +174,11 @@ const QuoteDetail = () => {
 
     const permissionGranted = window.confirm(consentMessage);
     if (!permissionGranted) {
-      setError('Email sending cancelled. Permission was not granted.');
+      setActionError('Email sending cancelled. Permission was not granted.');
       return;
     }
 
-    setError(null);
+    setActionError(null);
     setEmailSuccess(null);
     setEmailing(true);
 
@@ -147,9 +191,36 @@ const QuoteDetail = () => {
       setEmailSuccess(`Email sent to ${response.recipient_email}`);
       setQuote((prev) => (prev ? { ...prev, status: 'sent' } : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to email quote');
+      setActionError(err instanceof Error ? err.message : 'Failed to email quote');
     } finally {
       setEmailing(false);
+    }
+  };
+
+  const handlePreviewQuote = async () => {
+    if (!quote) return;
+
+    setActionError(null);
+    setPreviewLoading(true);
+    try {
+      await generateQuotePDF(quote.id);
+      const previewBlob = await fetchQuotePDFPreviewBlob(quote.id);
+      const objectUrl = URL.createObjectURL(previewBlob);
+      setPreviewUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) {
+          URL.revokeObjectURL(prev);
+        }
+        return objectUrl;
+      });
+      setPreviewVisible(true);
+      setHasPreviewed(true);
+      requestAnimationFrame(() => {
+        previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to preview quote');
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -161,14 +232,14 @@ const QuoteDetail = () => {
     );
   }
 
-  if (error || !quote) {
+  if (loadError || !quote) {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-4">
           <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
           <div>
             <h2 className="text-lg font-semibold text-red-800">Error Loading Quote</h2>
-            <p className="text-red-600 mt-1">{error || 'Quote not found'}</p>
+            <p className="text-red-600 mt-1">{loadError || 'Quote not found'}</p>
             <Link
               to="/quotes"
               className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 hover:text-red-800"
@@ -221,6 +292,13 @@ const QuoteDetail = () => {
         
         <div className="flex gap-3">
           <Link
+            to={`/quote/${quote.id}/edit`}
+            className="flex items-center gap-2 px-4 py-2 border border-primary-200 text-primary-700 font-medium rounded-lg hover:bg-primary-50 transition-colors text-sm"
+          >
+            <Pencil className="w-4 h-4" />
+            Edit in Configure
+          </Link>
+          <Link
             to="/quotes"
             className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm"
           >
@@ -258,6 +336,13 @@ const QuoteDetail = () => {
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
           <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-green-700">{emailSuccess}</p>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700">{actionError}</p>
         </div>
       )}
 
@@ -423,6 +508,41 @@ const QuoteDetail = () => {
               <p className="text-gray-700 whitespace-pre-wrap">{combinedQuote.cleanNotes}</p>
             </div>
           )}
+
+          {previewVisible && previewUrl && (
+            <div ref={previewSectionRef} className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-gray-900">Quote Preview</h2>
+                <button
+                  type="button"
+                  onClick={() => setPreviewVisible(false)}
+                  className="text-sm text-gray-600 hover:text-gray-900"
+                >
+                  Hide Preview
+                </button>
+              </div>
+              <iframe
+                title="Quote PDF Preview"
+                src={previewUrl}
+                className="w-full h-[70vh] rounded-lg border border-gray-200"
+              />
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">RFQ and Commercial Terms</h2>
+            <div className="grid sm:grid-cols-2 gap-4 text-sm">
+              <div><p className="text-gray-500">RFQ Number</p><p className="font-medium text-gray-900">{quote.rfq_number || 'Not specified'}</p></div>
+              <div><p className="text-gray-500">RFQ Date</p><p className="font-medium text-gray-900">{quote.rfq_date ? formatDate(quote.rfq_date) : 'Not specified'}</p></div>
+              <div><p className="text-gray-500">Quote Due Date</p><p className="font-medium text-gray-900">{quote.quote_due_date ? formatDate(quote.quote_due_date) : 'Not specified'}</p></div>
+              <div><p className="text-gray-500">HSN Code</p><p className="font-medium text-gray-900">{quote.hsn_code || 'Not specified'}</p></div>
+              <div className="sm:col-span-2"><p className="text-gray-500">Tolerance Notes (Part-wise)</p><p className="font-medium text-gray-900 whitespace-pre-wrap">{quote.tolerance_notes || 'Not specified'}</p></div>
+              <div><p className="text-gray-500">Payment Terms</p><p className="font-medium text-gray-900">{quote.payment_terms || 'Not specified'}</p></div>
+              <div><p className="text-gray-500">Delivery</p><p className="font-medium text-gray-900">{quote.delivery || 'Not specified'}</p></div>
+              <div><p className="text-gray-500">GST</p><p className="font-medium text-gray-900">{quote.gst || 'Not specified'}</p></div>
+              <div><p className="text-gray-500">Price Validity</p><p className="font-medium text-gray-900">{quote.price_validity || 'Not specified'}</p></div>
+            </div>
+          </div>
         </div>
 
         {/* Sidebar */}
@@ -472,6 +592,14 @@ const QuoteDetail = () => {
           {/* Actions */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
             <button
+              onClick={handlePreviewQuote}
+              disabled={previewLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-primary-300 text-primary-700 font-medium rounded-lg hover:bg-primary-50 transition-colors disabled:opacity-50"
+            >
+              {previewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+              {previewLoading ? 'Loading Preview...' : 'Preview Quote'}
+            </button>
+            <button
               onClick={handleDownloadPDF}
               disabled={generating}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
@@ -493,6 +621,11 @@ const QuoteDetail = () => {
                 {emailing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 {emailing ? 'Sending Email...' : 'Email Customer'}
               </button>
+            )}
+            {!hasPreviewed && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                Preview is required before download or email.
+              </p>
             )}
           </div>
         </div>

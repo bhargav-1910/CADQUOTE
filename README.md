@@ -11,6 +11,8 @@ A full-stack web application for generating instant, transparent CNC machining q
 - **Automatic Geometry Analysis**: Extracts volume, surface area, bounding box, and complexity score
 - **Rule-Based Pricing**: Transparent, explainable pricing with detailed breakdown
 - **PDF Quotes**: Professional, client-ready quotation documents
+- **Quote PDF Preview**: In-app authenticated preview before download/email
+- **Bulk Quote Edit Restore**: Combined quotes reopen in Configure with full multi-file context
 - **Points Billing**: Wallet-based usage billing with Stripe top-ups
 - **Material Library**: Pre-configured materials with density and cost data
 - **Surface Finishes**: Multiple finish options with associated costs
@@ -181,6 +183,7 @@ That document includes:
 - `GET /api/quotes/{quote_id}` - Get quote details
 - `POST /api/quotes/{quote_id}/pdf` - Generate PDF
 - `GET /api/quotes/{quote_id}/pdf/download` - Download PDF
+- `GET /api/quotes/{quote_id}/pdf/preview` - Preview PDF inline
 
 ## Database Migrations (Alembic)
 
@@ -198,6 +201,26 @@ That document includes:
    ```bash
    cd backend
    alembic downgrade -1
+   ```
+
+## One-Time Combined Quote Metadata Migration
+
+Use this utility to enrich older combined quotes so "Edit in Configure" can reopen them in full bulk mode.
+
+- Dry run (recommended first):
+   ```bash
+   cd backend
+   python migrate_combined_quote_notes.py
+   ```
+- Apply changes:
+   ```bash
+   cd backend
+   python migrate_combined_quote_notes.py --apply
+   ```
+- Migrate a single quote only:
+   ```bash
+   cd backend
+   python migrate_combined_quote_notes.py --apply --quote-id <quote-uuid>
    ```
 
 ## Stripe Setup

@@ -391,6 +391,7 @@ async def create_batch_quotation(
                 buy_to_fly_ratio=request.buy_to_fly_ratio,
                 requested_surface_finish=request.requested_surface_finish,
                 tolerance_notes=request.tolerance_notes,
+                hsn_code=request.hsn_code,
                 complexity_level=request.complexity_level,
                 process_routing=(
                     [item.model_dump() for item in request.process_routing]
@@ -522,7 +523,21 @@ async def create_combined_quotation(
         max_lead_time = max(max_lead_time, float(pricing_result.estimated_lead_time_days))
 
         safe_filename = cad_file.original_filename.replace("|", "/")
-        combined_lines.append(f"{safe_filename}|{item.quantity}|{Decimal(str(pricing_result.total_price)):.2f}")
+        # Metadata format (v2): cad_file_id|filename|qty|line_total|material_id|surface_finish_id|inspection_level_id
+        # Keep pipe-separated format for backward compatibility with existing parsers.
+        combined_lines.append(
+            "|".join(
+                [
+                    str(cad_file.id),
+                    safe_filename,
+                    str(item.quantity),
+                    f"{Decimal(str(pricing_result.total_price)):.2f}",
+                    str(item.material_id),
+                    str(item.surface_finish_id),
+                    str(item.inspection_level_id),
+                ]
+            )
+        )
 
     margin_factor = float(total_price / total_subtotal) if total_subtotal > 0 else 1.0
     combined_notes = "[COMBINED_FILES]\n" + "\n".join(combined_lines) + "\n[/COMBINED_FILES]"
@@ -534,6 +549,30 @@ async def create_combined_quotation(
         customer_name=request.customer_name,
         customer_email=request.customer_email,
         customer_company=request.customer_company,
+        rfq_number=request.rfq_number,
+        part_name=request.part_name,
+        part_number=request.part_number,
+        revision=request.revision,
+        rfq_date=request.rfq_date,
+        quote_due_date=request.quote_due_date,
+        annual_volume=request.annual_volume,
+        batch_size=request.batch_size,
+        target_price=request.target_price,
+        application=request.application,
+        raw_form=request.raw_form,
+        raw_size=request.raw_size,
+        net_weight_kg=request.net_weight_kg,
+        raw_weight_kg=request.raw_weight_kg,
+        buy_to_fly_ratio=request.buy_to_fly_ratio,
+        requested_surface_finish=request.requested_surface_finish,
+        tolerance_notes=request.tolerance_notes,
+        hsn_code=request.hsn_code,
+        complexity_level=request.complexity_level,
+        process_routing=(
+            [item.model_dump() for item in request.process_routing]
+            if request.process_routing
+            else None
+        ),
         cad_file_id=first_item.cad_file_id,
         material_id=first_item.material_id,
         surface_finish_id=first_item.surface_finish_id,
@@ -550,6 +589,15 @@ async def create_combined_quotation(
         estimated_lead_time_days=max_lead_time,
         status=QuoteStatus.GENERATED,
         valid_until=datetime.utcnow() + timedelta(days=settings.QUOTE_VALIDITY_DAYS),
+        price_validity=request.price_validity,
+        gst=request.gst,
+        delivery=request.delivery,
+        payment_terms=request.payment_terms,
+        incoterms=request.incoterms,
+        tooling_ownership=request.tooling_ownership,
+        packaging=request.packaging,
+        terms_and_conditions=request.terms_and_conditions,
+        dfm_exceptions=request.dfm_exceptions,
         notes=final_notes,
     )
 
@@ -624,6 +672,7 @@ async def create_quotation(
             buy_to_fly_ratio=request.buy_to_fly_ratio,
             requested_surface_finish=request.requested_surface_finish,
             tolerance_notes=request.tolerance_notes,
+            hsn_code=request.hsn_code,
             complexity_level=request.complexity_level,
             process_routing=(
                 [item.model_dump() for item in request.process_routing]
@@ -761,6 +810,32 @@ async def download_quote_pdf(
     )
 
 
+@router.get("/quotes/{quote_id}/pdf/preview")
+async def preview_quote_pdf(
+    quote_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Preview the PDF document inline for a quote."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    try:
+        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF generation failed: {str(e)}"
+        )
+
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{quote.quote_number}.pdf"'},
+    )
+
+
 @router.post("/quotes/{quote_id}/email", response_model=QuoteEmailResponse)
 async def email_quote_to_customer(
     quote_id: uuid.UUID,
@@ -870,6 +945,7 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
         buy_to_fly_ratio=quote.buy_to_fly_ratio,
         requested_surface_finish=quote.requested_surface_finish,
         tolerance_notes=quote.tolerance_notes,
+        hsn_code=quote.hsn_code,
         complexity_level=quote.complexity_level,
         process_routing=quote.process_routing,
         matched_vendor=matched_vendor,

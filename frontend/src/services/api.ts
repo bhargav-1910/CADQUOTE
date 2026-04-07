@@ -99,11 +99,81 @@ api.interceptors.response.use(
   },
 );
 
+const formatApiErrorDetail = (detail: unknown): string | null => {
+  if (typeof detail === 'string') {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item;
+        }
+
+        if (item && typeof item === 'object') {
+          const errorItem = item as { loc?: unknown; msg?: unknown; message?: unknown };
+          const rawMessage = typeof errorItem.msg === 'string'
+            ? errorItem.msg
+            : typeof errorItem.message === 'string'
+            ? errorItem.message
+            : null;
+
+          if (!rawMessage) {
+            return null;
+          }
+
+          if (Array.isArray(errorItem.loc)) {
+            const fieldPath = errorItem.loc
+              .filter((segment) => segment !== 'body')
+              .map((segment) => String(segment))
+              .join('.');
+
+            return fieldPath ? `${fieldPath}: ${rawMessage}` : rawMessage;
+          }
+
+          return rawMessage;
+        }
+
+        return null;
+      })
+      .filter((message): message is string => Boolean(message));
+
+    if (messages.length > 0) {
+      return messages.join(' | ');
+    }
+  }
+
+  if (detail && typeof detail === 'object') {
+    const detailObject = detail as { message?: unknown; detail?: unknown; error?: unknown };
+
+    if (typeof detailObject.message === 'string') {
+      return detailObject.message;
+    }
+
+    if (typeof detailObject.detail === 'string') {
+      return detailObject.detail;
+    }
+
+    if (typeof detailObject.error === 'string') {
+      return detailObject.error;
+    }
+  }
+
+  return null;
+};
+
 // Error handler
 const handleError = (error: AxiosError): never => {
   if (error.response) {
-    const data = error.response.data as { detail?: string };
-    throw new Error(data.detail || `API Error: ${error.response.status}`);
+    const data = error.response.data as { detail?: unknown; message?: unknown; error?: unknown };
+    const message =
+      formatApiErrorDetail(data?.detail) ??
+      (typeof data?.message === 'string' ? data.message : null) ??
+      (typeof data?.error === 'string' ? data.error : null) ??
+      `API Error: ${error.response.status}`;
+
+    throw new Error(message);
   } else if (error.request) {
     throw new Error('Network error. Please check your connection.');
   } else {
@@ -475,6 +545,21 @@ export const downloadQuotePDF = async (quoteId: string, quoteNumber?: string): P
     });
     const filename = quoteNumber ? `${quoteNumber}.pdf` : `quote-${quoteId}.pdf`;
     triggerBlobDownload(response.data, filename);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getQuotePDFPreviewUrl = (quoteId: string): string => {
+  return `/api/quotes/${quoteId}/pdf/preview`;
+};
+
+export const fetchQuotePDFPreviewBlob = async (quoteId: string): Promise<Blob> => {
+  try {
+    const response = await api.get<Blob>(`/quotes/${quoteId}/pdf/preview`, {
+      responseType: 'blob',
+    });
+    return response.data;
   } catch (error) {
     return handleError(error as AxiosError);
   }

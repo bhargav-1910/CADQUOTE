@@ -486,6 +486,7 @@ class QuoteCreateRequest(BaseModel):
     buy_to_fly_ratio: Optional[float] = Field(None, ge=0)
     requested_surface_finish: Optional[str] = Field(None, max_length=100)
     tolerance_notes: Optional[str] = Field(None, max_length=100)
+    hsn_code: Optional[str] = Field(None, max_length=50)
     complexity_level: Optional[str] = Field(None, max_length=50)
 
     # Process routing and vendor requirements
@@ -536,6 +537,7 @@ class BatchQuoteCreateRequest(BaseModel):
     buy_to_fly_ratio: Optional[float] = Field(None, ge=0)
     requested_surface_finish: Optional[str] = Field(None, max_length=100)
     tolerance_notes: Optional[str] = Field(None, max_length=100)
+    hsn_code: Optional[str] = Field(None, max_length=50)
     complexity_level: Optional[str] = Field(None, max_length=50)
     process_routing: Optional[List[ProcessRoutingOperation]] = None
     required_certifications: Optional[List[str]] = None
@@ -569,6 +571,36 @@ class CombinedQuoteCreateRequest(BaseModel):
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
+    rfq_number: Optional[str] = Field(None, max_length=100)
+    part_name: Optional[str] = Field(None, max_length=200)
+    part_number: Optional[str] = Field(None, max_length=100)
+    revision: Optional[str] = Field(None, max_length=50)
+    rfq_date: Optional[datetime] = None
+    quote_due_date: Optional[datetime] = None
+    annual_volume: Optional[int] = Field(None, ge=1)
+    batch_size: Optional[int] = Field(None, ge=1)
+    target_price: Optional[Decimal] = Field(None, ge=0)
+    application: Optional[str] = None
+    raw_form: Optional[str] = Field(None, max_length=100)
+    raw_size: Optional[str] = Field(None, max_length=100)
+    net_weight_kg: Optional[float] = Field(None, ge=0)
+    raw_weight_kg: Optional[float] = Field(None, ge=0)
+    buy_to_fly_ratio: Optional[float] = Field(None, ge=0)
+    requested_surface_finish: Optional[str] = Field(None, max_length=100)
+    tolerance_notes: Optional[str] = Field(None, max_length=100)
+    hsn_code: Optional[str] = Field(None, max_length=50)
+    complexity_level: Optional[str] = Field(None, max_length=50)
+    process_routing: Optional[List[ProcessRoutingOperation]] = None
+    required_certifications: Optional[List[str]] = None
+    price_validity: Optional[str] = Field(None, max_length=100)
+    gst: Optional[str] = Field(None, max_length=50)
+    delivery: Optional[str] = Field(None, max_length=200)
+    payment_terms: Optional[str] = Field(None, max_length=200)
+    incoterms: Optional[str] = Field(None, max_length=50)
+    tooling_ownership: Optional[str] = Field(None, max_length=200)
+    packaging: Optional[str] = Field(None, max_length=200)
+    terms_and_conditions: Optional[str] = None
+    dfm_exceptions: Optional[str] = None
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
     auto_send_email: bool = False
@@ -600,6 +632,7 @@ class QuoteResponse(BaseSchema):
     buy_to_fly_ratio: Optional[float]
     requested_surface_finish: Optional[str]
     tolerance_notes: Optional[str]
+    hsn_code: Optional[str]
     complexity_level: Optional[str]
     process_routing: Optional[List[ProcessRoutingOperation]]
     matched_vendor: Optional[VendorMatchSummary]

@@ -44,6 +44,13 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
   }
 
   const breakdown = pricing.price_breakdown;
+  const explanation = pricing.pricing_explanation as Record<string, any>;
+  const machining = explanation?.machining ?? {};
+  const setup = explanation?.setup ?? {};
+  const camProgramming = explanation?.cam_programming ?? {};
+  const manufacturingCharges = explanation?.manufacturing_charges ?? {};
+  const tooling = explanation?.tooling ?? {};
+  const quality = explanation?.quality ?? {};
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -109,6 +116,30 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
 
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
             <div>
+              <p className="font-medium text-gray-700">Setup Cost Allocation</p>
+              <p className="text-xs text-gray-500">
+                (Setup Time x Machine Rate) / Batch Size
+              </p>
+            </div>
+            <p className="font-medium text-gray-900">
+              {formatCurrency(Number(setup.setup_cost_per_part ?? 0))}/part
+            </p>
+          </div>
+
+          <div className="flex justify-between items-center py-2 border-b border-gray-100">
+            <div>
+              <p className="font-medium text-gray-700">Programming / CAM Cost</p>
+              <p className="text-xs text-gray-500">
+                CAM time charged per hour
+              </p>
+            </div>
+            <p className="font-medium text-gray-900">
+              {formatCurrency(Number(camProgramming.cam_cost_per_part ?? 0))}/part
+            </p>
+          </div>
+
+          <div className="flex justify-between items-center py-2 border-b border-gray-100">
+            <div>
               <p className="font-medium text-gray-700">Surface Finish</p>
               <p className="text-xs text-gray-500">{pricing.surface_finish.name}</p>
             </div>
@@ -153,6 +184,50 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
               </p>
             </div>
           )}
+        </div>
+
+        <h3 className="font-semibold text-gray-900 mt-6 mb-3">Machining Considerations</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Cycle Time</p>
+            <p className="font-semibold text-gray-900">{formatNumber(Number(machining.cycle_time_min ?? 0), 2)} min/part</p>
+            <p className="text-xs text-gray-500 mt-1">
+              ({formatNumber(Number(manufacturingCharges.material_removal_volume_cm3 ?? 0), 2)} / {formatNumber(Number(manufacturingCharges.mrr_cm3_min ?? 0), 2)}) + {formatNumber(Number(manufacturingCharges.feature_time_min ?? 0), 2)} + {formatNumber(Number(manufacturingCharges.tool_change_time_min ?? 0), 2)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Setup Time</p>
+            <p className="font-semibold text-gray-900">{formatNumber(Number(setup.setup_time_hours ?? 0), 2)} hrs</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Feature Time</p>
+            <p className="font-semibold text-gray-900">{formatNumber(Number(machining.feature_time_min ?? 0), 2)} min</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Machine Rate</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(Number(machining.machine_rate_per_hour ?? 0))}/hr</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Tool Change Time</p>
+            <p className="font-semibold text-gray-900">{formatNumber(Number(machining.tool_change_time_min ?? 0), 2)} min</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Tooling Allocation</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(Number(tooling.tooling_cost_per_part ?? 0))}/part</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Setup Cost per Part</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(Number(setup.setup_cost_per_part ?? 0))}/part</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">CAM Programming</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(Number(camProgramming.cam_cost_per_part ?? 0))}/part</p>
+            <p className="text-xs text-gray-500 mt-1">{formatNumber(Number(camProgramming.cam_time_hours ?? 0), 2)} hrs at {formatCurrency(Number(camProgramming.cam_rate_per_hour ?? 0))}/hr</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <p className="text-gray-500">Quality Cost</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(Number(quality.inspection_cost_per_part ?? 0))}/part</p>
+          </div>
         </div>
       </div>
 

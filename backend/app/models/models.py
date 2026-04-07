@@ -465,6 +465,7 @@ class Quote(Base):
     buy_to_fly_ratio = Column(Float, nullable=True)
     requested_surface_finish = Column(String(100), nullable=True)
     tolerance_notes = Column(String(100), nullable=True)
+    hsn_code = Column(String(50), nullable=True)
     complexity_level = Column(String(50), nullable=True)
 
     # Process routing matrix snapshot
