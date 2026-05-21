@@ -39,10 +39,12 @@ export interface DFMAnalysisResult {
 export interface Material {
   id: string;
   name: string;
+  common_names: string | null;
   description: string | null;
   category: string;
   density: number;
   cost_per_kg: number;
+  scrap_cost_per_kg: number;
   machining_difficulty_factor: number;
   availability_factor: number;
   is_active: boolean;
@@ -57,6 +59,10 @@ export interface SurfaceFinish {
   description: string | null;
   cost_multiplier: number;
   fixed_cost: number;
+  rate_per_kg: number;
+  rate_per_sq_inch: number;
+  rate_per_sq_ft: number;
+  rate_per_piece: number;
   lead_time_addition_days: number;
   compatible_materials: string[] | null;
   is_active: boolean;
@@ -128,12 +134,20 @@ export interface PriceBreakdown {
 
 export interface PricingOverrides {
   material_cost_per_kg?: number;
+  material_density?: number;
   material_machining_difficulty_factor?: number;
+  scrap_cost_per_kg?: number;
+  include_scrap_saving?: boolean;
   surface_finish_fixed_cost?: number;
   surface_finish_cost_multiplier?: number;
+  surface_finish_rate_per_kg?: number;
+  surface_finish_rate_per_sq_inch?: number;
+  surface_finish_rate_per_sq_ft?: number;
+  surface_finish_rate_per_piece?: number;
   inspection_fixed_cost?: number;
   inspection_percentage_cost?: number;
   machine_hourly_rate?: number;
+  machine_setup_hourly_rate?: number;
   machine_efficiency_rate?: number;
   machine_setup_time_hours?: number;
   machine_name?: string;

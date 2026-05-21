@@ -23,10 +23,12 @@ class BaseSchema(BaseModel):
 class MaterialBase(BaseModel):
     """Material base schema."""
     name: str = Field(..., max_length=100)
+    common_names: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
     category: str = Field(..., max_length=50)
     density: float = Field(..., gt=0, description="Density in g/cm³")
     cost_per_kg: Decimal = Field(..., gt=0, description="Cost per kg in USD")
+    scrap_cost_per_kg: Decimal = Field(default=30, ge=0, description="Scrap saving benchmark in INR/kg")
     machining_difficulty_factor: float = Field(default=1.0, ge=0.5, le=3.0)
     availability_factor: float = Field(default=1.0, ge=0.5, le=2.0)
 
@@ -39,9 +41,11 @@ class MaterialCreate(MaterialBase):
 class MaterialUpdate(BaseModel):
     """Schema for updating a material."""
     name: Optional[str] = Field(None, max_length=100)
+    common_names: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
     density: Optional[float] = Field(None, gt=0)
     cost_per_kg: Optional[Decimal] = Field(None, gt=0)
+    scrap_cost_per_kg: Optional[Decimal] = Field(None, ge=0)
     machining_difficulty_factor: Optional[float] = Field(None, ge=0.5, le=3.0)
     availability_factor: Optional[float] = Field(None, ge=0.5, le=2.0)
     is_active: Optional[bool] = None
@@ -65,6 +69,10 @@ class SurfaceFinishBase(BaseModel):
     description: Optional[str] = None
     cost_multiplier: float = Field(default=1.0, ge=1.0)
     fixed_cost: Decimal = Field(default=0, ge=0)
+    rate_per_kg: Decimal = Field(default=0, ge=0)
+    rate_per_sq_inch: Decimal = Field(default=0, ge=0)
+    rate_per_sq_ft: Decimal = Field(default=0, ge=0)
+    rate_per_piece: Decimal = Field(default=0, ge=0)
     lead_time_addition_days: float = Field(default=0, ge=0)
     compatible_materials: Optional[List[str]] = None
 
@@ -80,6 +88,10 @@ class SurfaceFinishUpdate(BaseModel):
     description: Optional[str] = None
     cost_multiplier: Optional[float] = Field(None, ge=1.0)
     fixed_cost: Optional[Decimal] = Field(None, ge=0)
+    rate_per_kg: Optional[Decimal] = Field(None, ge=0)
+    rate_per_sq_inch: Optional[Decimal] = Field(None, ge=0)
+    rate_per_sq_ft: Optional[Decimal] = Field(None, ge=0)
+    rate_per_piece: Optional[Decimal] = Field(None, ge=0)
     lead_time_addition_days: Optional[float] = Field(None, ge=0)
     is_active: Optional[bool] = None
 
@@ -139,6 +151,7 @@ class MachineRateBase(BaseModel):
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
     hourly_rate: Decimal = Field(..., gt=0, description="Hourly rate in INR")
+    setup_hour_rate: Decimal = Field(default=0, ge=0, description="Setup-specific hourly rate in INR")
     efficiency_rate: float = Field(default=0.75, ge=0.1, le=1.0)
     setup_time_hours: float = Field(default=0.5, ge=0)
     is_default: bool = False
@@ -154,6 +167,7 @@ class MachineRateUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
     hourly_rate: Optional[Decimal] = Field(None, gt=0)
+    setup_hour_rate: Optional[Decimal] = Field(None, ge=0)
     efficiency_rate: Optional[float] = Field(None, ge=0.1, le=1.0)
     setup_time_hours: Optional[float] = Field(None, ge=0)
     is_default: Optional[bool] = None
@@ -336,11 +350,19 @@ class PricingOverrides(BaseModel):
     """Optional quote-scoped pricing overrides (does not change global config)."""
     material_cost_per_kg: Optional[Decimal] = Field(None, gt=0)
     material_machining_difficulty_factor: Optional[float] = Field(None, ge=0.5, le=3.0)
+    material_density: Optional[float] = Field(None, gt=0)
+    scrap_cost_per_kg: Optional[Decimal] = Field(None, ge=0)
+    include_scrap_saving: Optional[bool] = None
     surface_finish_fixed_cost: Optional[Decimal] = Field(None, ge=0)
     surface_finish_cost_multiplier: Optional[float] = Field(None, ge=1.0)
+    surface_finish_rate_per_kg: Optional[Decimal] = Field(None, ge=0)
+    surface_finish_rate_per_sq_inch: Optional[Decimal] = Field(None, ge=0)
+    surface_finish_rate_per_sq_ft: Optional[Decimal] = Field(None, ge=0)
+    surface_finish_rate_per_piece: Optional[Decimal] = Field(None, ge=0)
     inspection_fixed_cost: Optional[Decimal] = Field(None, ge=0)
     inspection_percentage_cost: Optional[float] = Field(None, ge=0, le=100)
     machine_hourly_rate: Optional[Decimal] = Field(None, gt=0)
+    machine_setup_hourly_rate: Optional[Decimal] = Field(None, ge=0)
     machine_efficiency_rate: Optional[float] = Field(None, ge=0.1, le=1.0)
     machine_setup_time_hours: Optional[float] = Field(None, ge=0)
     machine_name: Optional[str] = Field(None, max_length=100)

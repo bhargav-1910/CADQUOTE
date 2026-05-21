@@ -44,9 +44,11 @@ import type {
 const AUTH_TOKEN_KEY = 'forgequote.auth.token';
 const REFRESH_TOKEN_KEY = 'forgequote.auth.refresh-token';
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+
 // Create axios instance
 const api: AxiosInstance = axios.create({
-  baseURL: '/api',
+  baseURL: apiBaseUrl,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -680,6 +682,7 @@ export interface MachineRate {
   name: string;
   description: string | null;
   hourly_rate: number;
+  setup_hour_rate: number;
   efficiency_rate: number;
   setup_time_hours: number;
   is_default: boolean;

@@ -194,6 +194,7 @@ class Material(Base):
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), nullable=False, unique=True)
+    common_names = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
     category = Column(String(50), nullable=False)  # e.g., "aluminum", "steel", "plastic"
     
@@ -202,6 +203,7 @@ class Material(Base):
     
     # Cost factors
     cost_per_kg = Column(Numeric(10, 2), nullable=False)  # USD per kg
+    scrap_cost_per_kg = Column(Numeric(10, 2), nullable=False, default=Decimal("30.00"))
     machining_difficulty_factor = Column(Float, nullable=False, default=1.0)
     
     # Availability
@@ -226,6 +228,10 @@ class SurfaceFinish(Base):
     # Cost factors
     cost_multiplier = Column(Float, nullable=False, default=1.0)  # Multiplies machining cost
     fixed_cost = Column(Numeric(10, 2), default=0)  # Additional fixed cost
+    rate_per_kg = Column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    rate_per_sq_inch = Column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    rate_per_sq_ft = Column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    rate_per_piece = Column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
     
     # Lead time impact
     lead_time_addition_days = Column(Float, default=0)
@@ -277,6 +283,7 @@ class MachineRate(Base):
     description = Column(Text, nullable=True)
     
     hourly_rate = Column(Numeric(10, 2), nullable=False)  # USD per hour
+    setup_hour_rate = Column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
     efficiency_rate = Column(Float, default=0.75)  # Machine efficiency
     setup_time_hours = Column(Float, default=0.5)  # Setup time per job
     

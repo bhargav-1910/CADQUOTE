@@ -129,6 +129,19 @@ A full-stack web application for generating instant, transparent CNC machining q
 
 3. Access at http://localhost:5173
 
+## Vercel Deployment (Frontend)
+
+Vercel is best used to host the React frontend. The FastAPI backend needs a long-running server plus Postgres/Redis and native system packages, so host it separately (Render, Railway, Fly.io, or a VM).
+
+1. Create a new Vercel project and select this repo.
+2. Set **Root Directory** to `frontend`.
+3. Set **Build Command** to `npm run build` and **Output Directory** to `dist`.
+4. Add environment variables:
+   - `VITE_API_BASE_URL` = your backend URL, e.g. `https://api.example.com`
+5. Deploy.
+
+Local development can keep using the `/api` proxy in Vite by leaving `VITE_API_BASE_URL` unset.
+
 ## Pricing and DFM Documentation
 
 Pricing and DFM logic is documented in detail in:

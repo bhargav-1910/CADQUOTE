@@ -1,6 +1,6 @@
 # Pricing and DFM Documentation
 
-Last updated: 2026-04-07
+Last updated: 2026-04-14
 
 This document describes:
 - Current pricing values used by the system
@@ -302,21 +302,61 @@ Supported in request payload under `pricing_overrides`.
 - All call the same pricing engine
 - Combined quote sums line-item totals into one quote record
 
-## 9) UI Pricing Breakdown Updates
+## 9) UI Pricing Breakdown (Single + Multi File)
 
-The quote pricing UI now explicitly displays manufacturing charges that were requested for visibility:
+Detailed pricing cards are now consistent across:
+- Single-file pricing flow (`POST /api/pricing`)
+- Multi-file pricing flow (`POST /api/pricing/batch` or per-file fallback)
 
-- Cycle Time formula components:
-  - material removal volume
-  - adjusted MRR
-  - feature time
-  - tool change time
-- Setup Cost Allocation (per part):
-  - `(Setup Time × Machine Rate) / Batch Size`
-- Programming / CAM Cost (per part):
-  - CAM time and hourly CAM rate
+In multi-file mode, the active/selected file renders the same detailed breakdown card used in single-file mode, while bulk totals remain visible separately.
 
-These values are provided via `pricing_explanation` fields from the backend pricing engine.
+### 9.1 Cost summary row
+- Total price for requested quantity
+- Unit price
+- Quantity
+- Estimated lead time
+
+### 9.2 Cost breakup sections and parameters
+
+Raw Material Cost:
+- Raw Material Stock Dimension (mm)
+- Raw Material Mass (kg)
+- Raw Material Rate per Kg (INR/kg)
+- Scrap Saving Cost (and whether included in cost)
+- Scrap Weight (kg)
+- Scrap Cost per Kg (INR/kg)
+
+Machining Cost:
+- Total Machining Time
+- Machine Hour Rate (INR/hr)
+- Feature Time
+- Tool Change Time
+
+Setup Cost Per Item:
+- Total Setup Cost
+- Number of Setups
+- Setup Time
+- Setup Hour Rate (INR/hr)
+
+Additional manufacturing contributors:
+- CAM Programming cost per part, CAM time, CAM hourly rate
+- Tooling allocation per part
+- Quality/inspection cost per part
+
+### 9.3 Backend explanation keys powering the UI
+Primary values are supplied in `pricing_explanation`:
+- `raw_material`
+- `material`
+- `machining`
+- `setup`
+- `cam_programming`
+- `tooling`
+- `quality`
+- `manufacturing_charges`
+
+Backward compatibility:
+- Existing keys are preserved.
+- New fields were added (not replacing old fields) so older consumers keep working.
 
 ## 10) DFM Analysis Logic (Backend Canonical)
 

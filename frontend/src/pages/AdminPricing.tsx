@@ -8,6 +8,7 @@ import {
 } from '@/services/api';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+type PricingTab = 'material' | 'finish' | 'inspection' | 'machining';
 
 interface EditField {
   [id: string]: {
@@ -23,6 +24,7 @@ function PricingSection<T extends { id: string; name: string }>({
   fieldKey,
   fieldLabel,
   fieldUnit,
+  fieldPrefix = '₹',
   onSave,
 }: {
   title: string;
@@ -30,6 +32,7 @@ function PricingSection<T extends { id: string; name: string }>({
   fieldKey: keyof T;
   fieldLabel: string;
   fieldUnit: string;
+  fieldPrefix?: string;
   onSave: (id: string, value: number) => Promise<void>;
 }) {
   const [edits, setEdits] = useState<EditField>({});
@@ -94,6 +97,11 @@ function PricingSection<T extends { id: string; name: string }>({
                 <div className="md:grid md:grid-cols-[1fr_auto_auto] md:gap-x-4 md:items-center">
                   <div className="mb-3 md:mb-0">
                     <p className="font-medium text-gray-900">{item.name}</p>
+                    {'common_names' in item && (item as { common_names?: string | null }).common_names && (
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {(item as { common_names?: string | null }).common_names}
+                      </p>
+                    )}
                     {'description' in item && (item as { description?: string | null }).description && (
                       <p className="text-xs text-gray-400 mt-0.5 truncate">
                         {(item as { description?: string | null }).description}
@@ -102,7 +110,7 @@ function PricingSection<T extends { id: string; name: string }>({
                   </div>
 
                   <div className="flex items-center gap-2 w-full md:w-48">
-                    <span className="text-gray-500 text-sm">₹</span>
+                    {fieldPrefix ? <span className="text-gray-500 text-sm">{fieldPrefix}</span> : null}
                     <input
                       type="number"
                       min={0}
@@ -146,6 +154,7 @@ const AdminPricing = () => {
   const [finishes, setFinishes] = useState<SurfaceFinish[]>([]);
   const [inspections, setInspections] = useState<InspectionLevel[]>([]);
   const [machineRates, setMachineRates] = useState<MachineRate[]>([]);
+  const [activeTab, setActiveTab] = useState<PricingTab>('material');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,57 +197,215 @@ const AdminPricing = () => {
         <p className="text-gray-500 mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. All values in INR (₹).</p>
       </div>
 
-      <PricingSection
-        title="Material Costs (per kg)"
-        items={materials}
-        fieldKey="cost_per_kg"
-        fieldLabel="Cost/kg"
-        fieldUnit="₹/kg"
-        onSave={(id, value) =>
-          updateMaterial(id, { cost_per_kg: value }).then((updated) =>
-            setMaterials((prev) => prev.map((m) => (m.id === id ? updated : m)))
-          )
-        }
-      />
+      <div className="bg-white rounded-xl border border-gray-200 p-2 flex flex-wrap gap-2">
+        {[
+          { key: 'material', label: 'Material Rate' },
+          { key: 'machining', label: 'Machining Rate' },
+          { key: 'finish', label: 'Surface Finish Rate' },
+          { key: 'inspection', label: 'Inspection Rate' },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key as PricingTab)}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+              activeTab === tab.key
+                ? 'bg-primary-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <PricingSection
-        title="Surface Finish Fixed Costs"
-        items={finishes}
-        fieldKey="fixed_cost"
-        fieldLabel="Fixed Cost"
-        fieldUnit="₹"
-        onSave={(id, value) =>
-          updateSurfaceFinish(id, { fixed_cost: value }).then((updated) =>
-            setFinishes((prev) => prev.map((f) => (f.id === id ? updated : f)))
-          )
-        }
-      />
+      {activeTab === 'material' && (
+        <div className="space-y-6">
+          <PricingSection
+            title="Material Costs (per kg)"
+            items={materials}
+            fieldKey="cost_per_kg"
+            fieldLabel="Cost/kg"
+            fieldUnit="₹/kg"
+            onSave={(id, value) =>
+              updateMaterial(id, { cost_per_kg: value }).then((updated) =>
+                setMaterials((prev) => prev.map((m) => (m.id === id ? updated : m)))
+              )
+            }
+          />
 
-      <PricingSection
-        title="Inspection Level Fixed Costs"
-        items={inspections}
-        fieldKey="fixed_cost"
-        fieldLabel="Fixed Cost"
-        fieldUnit="₹"
-        onSave={(id, value) =>
-          updateInspectionLevel(id, { fixed_cost: value }).then((updated) =>
-            setInspections((prev) => prev.map((i) => (i.id === id ? updated : i)))
-          )
-        }
-      />
+          <PricingSection
+            title="Material Density"
+            items={materials}
+            fieldKey="density"
+            fieldLabel="Density"
+            fieldUnit="g/cm3"
+            fieldPrefix=""
+            onSave={(id, value) =>
+              updateMaterial(id, { density: value }).then((updated) =>
+                setMaterials((prev) => prev.map((m) => (m.id === id ? updated : m)))
+              )
+            }
+          />
 
-      <PricingSection
-        title="Machine Hourly Rates"
-        items={machineRates}
-        fieldKey="hourly_rate"
-        fieldLabel="Hourly Rate"
-        fieldUnit="₹/hr"
-        onSave={(id, value) =>
-          updateMachineRate(id, { hourly_rate: value }).then((updated) =>
-            setMachineRates((prev) => prev.map((r) => (r.id === id ? updated : r)))
-          )
-        }
-      />
+          <PricingSection
+            title="Material Scrap Saving Cost"
+            items={materials}
+            fieldKey="scrap_cost_per_kg"
+            fieldLabel="Scrap Saving"
+            fieldUnit="₹/kg"
+            onSave={(id, value) =>
+              updateMaterial(id, { scrap_cost_per_kg: value }).then((updated) =>
+                setMaterials((prev) => prev.map((m) => (m.id === id ? updated : m)))
+              )
+            }
+          />
+        </div>
+      )}
+
+      {activeTab === 'finish' && (
+        <div className="space-y-6">
+          <PricingSection
+            title="Surface Finish Fixed Costs"
+            items={finishes}
+            fieldKey="fixed_cost"
+            fieldLabel="Fixed Cost"
+            fieldUnit="₹"
+            onSave={(id, value) =>
+              updateSurfaceFinish(id, { fixed_cost: value }).then((updated) =>
+                setFinishes((prev) => prev.map((f) => (f.id === id ? updated : f)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Surface Finish Rate per Kg"
+            items={finishes}
+            fieldKey="rate_per_kg"
+            fieldLabel="Rate"
+            fieldUnit="₹/kg"
+            onSave={(id, value) =>
+              updateSurfaceFinish(id, { rate_per_kg: value }).then((updated) =>
+                setFinishes((prev) => prev.map((f) => (f.id === id ? updated : f)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Surface Finish Rate per sq.in"
+            items={finishes}
+            fieldKey="rate_per_sq_inch"
+            fieldLabel="Rate"
+            fieldUnit="₹/sq.in"
+            onSave={(id, value) =>
+              updateSurfaceFinish(id, { rate_per_sq_inch: value }).then((updated) =>
+                setFinishes((prev) => prev.map((f) => (f.id === id ? updated : f)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Surface Finish Rate per sq.ft"
+            items={finishes}
+            fieldKey="rate_per_sq_ft"
+            fieldLabel="Rate"
+            fieldUnit="₹/sq.ft"
+            onSave={(id, value) =>
+              updateSurfaceFinish(id, { rate_per_sq_ft: value }).then((updated) =>
+                setFinishes((prev) => prev.map((f) => (f.id === id ? updated : f)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Surface Finish Rate per Piece"
+            items={finishes}
+            fieldKey="rate_per_piece"
+            fieldLabel="Rate"
+            fieldUnit="₹/piece"
+            onSave={(id, value) =>
+              updateSurfaceFinish(id, { rate_per_piece: value }).then((updated) =>
+                setFinishes((prev) => prev.map((f) => (f.id === id ? updated : f)))
+              )
+            }
+          />
+        </div>
+      )}
+
+      {activeTab === 'inspection' && (
+        <div className="space-y-6">
+          <PricingSection
+            title="Inspection Level Fixed Costs"
+            items={inspections}
+            fieldKey="fixed_cost"
+            fieldLabel="Fixed Cost"
+            fieldUnit="₹"
+            onSave={(id, value) =>
+              updateInspectionLevel(id, { fixed_cost: value }).then((updated) =>
+                setInspections((prev) => prev.map((i) => (i.id === id ? updated : i)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Inspection Percentage Costs"
+            items={inspections}
+            fieldKey="percentage_cost"
+            fieldLabel="Percentage"
+            fieldUnit="%"
+            fieldPrefix=""
+            onSave={(id, value) =>
+              updateInspectionLevel(id, { percentage_cost: value }).then((updated) =>
+                setInspections((prev) => prev.map((i) => (i.id === id ? updated : i)))
+              )
+            }
+          />
+        </div>
+      )}
+
+      {activeTab === 'machining' && (
+        <div className="space-y-6">
+          <PricingSection
+            title="Machine Hourly Rates"
+            items={machineRates}
+            fieldKey="hourly_rate"
+            fieldLabel="Hourly Rate"
+            fieldUnit="₹/hr"
+            onSave={(id, value) =>
+              updateMachineRate(id, { hourly_rate: value }).then((updated) =>
+                setMachineRates((prev) => prev.map((r) => (r.id === id ? updated : r)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Machine Setup Hour Rates"
+            items={machineRates}
+            fieldKey="setup_hour_rate"
+            fieldLabel="Setup Hour"
+            fieldUnit="₹/hr"
+            onSave={(id, value) =>
+              updateMachineRate(id, { setup_hour_rate: value }).then((updated) =>
+                setMachineRates((prev) => prev.map((r) => (r.id === id ? updated : r)))
+              )
+            }
+          />
+
+          <PricingSection
+            title="Machine Setup Time"
+            items={machineRates}
+            fieldKey="setup_time_hours"
+            fieldLabel="Setup Time"
+            fieldUnit="hours"
+            fieldPrefix=""
+            onSave={(id, value) =>
+              updateMachineRate(id, { setup_time_hours: value }).then((updated) =>
+                setMachineRates((prev) => prev.map((r) => (r.id === id ? updated : r)))
+              )
+            }
+          />
+        </div>
+      )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-sm text-blue-700">

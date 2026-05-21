@@ -14,6 +14,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   const [companyAddress, setCompanyAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [logo, setLogo] = useState<File | undefined>(undefined);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,8 +27,23 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
     setCompanyAddress(user.company_address ?? '');
     setPhoneNumber(user.phone_number ?? '');
     setLogo(undefined);
+    setLogoPreviewUrl(null);
     setError(null);
   }, [open, user]);
+
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(logo);
+    setLogoPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [logo]);
 
   if (!open || !user) {
     return null;
@@ -55,108 +71,126 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#060e20]/80 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl border border-[#3a494a] bg-[#171f33] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#3a494a]/60 px-5 py-4">
-          <h2 className="font-headline text-lg font-bold uppercase tracking-wider text-[#e9feff]">Operator Profile Settings</h2>
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Profile Settings</h2>
+            <p className="text-sm text-slate-500 mt-0.5">Update your public details used in quotes and PDF branding.</p>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded px-2 py-1 text-sm text-[#b9caca] hover:bg-[#222a3d] hover:text-[#e9feff]"
+            className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800"
           >
             Close
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 px-5 py-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="text-sm text-[#b9caca]">
-              <span className="inline-flex items-center gap-1.5">
-                <User className="h-3.5 w-3.5" />
-                Full name
-              </span>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                className="mf-input mt-1"
-              />
-            </label>
+        <form onSubmit={onSubmit} className="space-y-5 px-6 py-6">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_220px]">
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="text-sm text-slate-700">
+                  <span className="inline-flex items-center gap-1.5 font-medium">
+                    <User className="h-3.5 w-3.5" />
+                    Full name
+                  </span>
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  />
+                </label>
 
-            <label className="text-sm text-[#b9caca]">
-              <span className="inline-flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5" />
-                Company name
-              </span>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                required
-                className="mf-input mt-1"
-              />
-            </label>
+                <label className="text-sm text-slate-700">
+                  <span className="inline-flex items-center gap-1.5 font-medium">
+                    <Building2 className="h-3.5 w-3.5" />
+                    Company name
+                  </span>
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    required
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-sm text-slate-700">
+                <span className="font-medium">Company address</span>
+                <textarea
+                  rows={4}
+                  value={companyAddress}
+                  onChange={(e) => setCompanyAddress(e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                />
+              </label>
+
+              <label className="text-sm text-slate-700 block">
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <Phone className="h-3.5 w-3.5" />
+                  Phone number
+                </span>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+91 98765 43210"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                />
+              </label>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 h-fit">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Company Logo</p>
+              <div className="aspect-square w-full rounded-lg border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                {(logoPreviewUrl || user.company_logo_url) ? (
+                  <img
+                    src={logoPreviewUrl || user.company_logo_url || ''}
+                    alt="Company logo preview"
+                    className="h-full w-full object-contain p-3"
+                  />
+                ) : (
+                  <div className="text-center text-slate-400 text-xs px-4">
+                    <Upload className="h-5 w-5 mx-auto mb-1" />
+                    No logo uploaded
+                  </div>
+                )}
+              </div>
+              <label className="mt-3 text-sm text-slate-700 block">
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload logo
+                </span>
+                <input
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.svg,.webp"
+                  onChange={(e) => setLogo(e.target.files?.[0])}
+                  className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:rounded file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-slate-700"
+                />
+              </label>
+            </div>
           </div>
-
-          <label className="block text-sm text-[#b9caca]">
-            Company address
-            <textarea
-              rows={3}
-              value={companyAddress}
-              onChange={(e) => setCompanyAddress(e.target.value)}
-              required
-              className="mf-input mt-1"
-            />
-          </label>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="text-sm text-[#b9caca]">
-              <span className="inline-flex items-center gap-1.5">
-                <Phone className="h-3.5 w-3.5" />
-                Phone number
-              </span>
-              <input
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="+91 98765 43210"
-                className="mf-input mt-1"
-              />
-            </label>
-
-            <label className="text-sm text-[#b9caca]">
-              <span className="inline-flex items-center gap-1.5">
-                <Upload className="h-3.5 w-3.5" />
-                Company logo
-              </span>
-              <input
-                type="file"
-                accept=".png,.jpg,.jpeg,.svg,.webp"
-                onChange={(e) => setLogo(e.target.files?.[0])}
-                className="mf-input mt-1 file:mr-2 file:border-0 file:bg-[#222a3d] file:px-2 file:py-1 file:text-[#dae2fd]"
-              />
-            </label>
-          </div>
-
-          {user.company_logo_url && !logo && (
-            <p className="text-xs text-[#b9caca]">Current logo is set. Upload a new file to replace it.</p>
-          )}
 
           {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-          <div className="flex items-center justify-end gap-3 pt-1">
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="border border-[#3a494a] px-4 py-2 text-sm font-medium text-[#dae2fd] hover:bg-[#222a3d]"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="mf-btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Save Changes

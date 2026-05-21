@@ -49,11 +49,17 @@ class PricingInputs:
     material_cost_per_kg: Decimal
     machining_difficulty_factor: float
     material_availability_factor: float
+    scrap_cost_per_kg: Decimal
+    include_scrap_saving: bool
 
     # Finish
     finish_name: str
     finish_cost_multiplier: float
     finish_fixed_cost: Decimal
+    finish_rate_per_kg: Decimal
+    finish_rate_per_sq_inch: Decimal
+    finish_rate_per_sq_ft: Decimal
+    finish_rate_per_piece: Decimal
     finish_lead_time_days: float
 
     # Inspection
@@ -65,6 +71,7 @@ class PricingInputs:
     # Machine
     machine_name: str
     hourly_rate: Decimal
+    setup_hour_rate: Decimal
     machine_efficiency: float
     setup_time_hours: float
 
@@ -180,14 +187,39 @@ class PricingEngine:
             inputs.material_name,
             inputs.material_category,
         )
-        material_cost = _to_decimal(buy_weight_kg) * effective_material_rate
+        material_cost_gross = _to_decimal(buy_weight_kg) * effective_material_rate
+        scrap_weight_kg = max(buy_weight_kg - raw_weight_kg, 0.0)
+        scrap_cost_per_kg = max(inputs.scrap_cost_per_kg, _to_decimal(0))
+        scrap_saving_cost = _to_decimal(scrap_weight_kg) * scrap_cost_per_kg
+        material_cost = material_cost_gross
+        if inputs.include_scrap_saving:
+            material_cost = max(material_cost_gross - scrap_saving_cost, _to_decimal(0))
 
         details["material"] = {
             "raw_weight_kg": round(raw_weight_kg, 4),
             "wastage_pct": round(wastage_pct * 100, 2),
             "buy_weight_kg": round(buy_weight_kg, 4),
             "material_rate_per_kg": float(effective_material_rate),
+            "material_cost_gross_per_part": float(material_cost_gross),
+            "scrap_weight_kg": round(scrap_weight_kg, 4),
+            "scrap_cost_per_kg": float(scrap_cost_per_kg),
+            "scrap_saving_cost": float(scrap_saving_cost),
+            "scrap_saving_included_in_cost": inputs.include_scrap_saving,
             "material_cost_per_part": float(material_cost),
+        }
+
+        details["raw_material"] = {
+            "raw_material_stock_dimensions_mm": {
+                "x": round(inputs.bbox_x_cm * 10.0, 2),
+                "y": round(inputs.bbox_y_cm * 10.0, 2),
+                "z": round(inputs.bbox_z_cm * 10.0, 2),
+            },
+            "raw_material_mass_kg": round(raw_weight_kg, 4),
+            "raw_material_rate_per_kg": float(effective_material_rate),
+            "scrap_weight_kg": round(scrap_weight_kg, 4),
+            "scrap_cost_per_kg": float(scrap_cost_per_kg),
+            "scrap_saving_cost": float(scrap_saving_cost),
+            "scrap_saving_included_in_cost": inputs.include_scrap_saving,
         }
 
         # B. Machining cost: cycle time = (removal volume / MRR) + feature time + tool change time
@@ -243,11 +275,20 @@ class PricingEngine:
 
         # C. Setup cost
         setup_time_hours = _clamp(inputs.setup_time_hours, 0.1, 2.0)
-        setup_cost_total = _to_decimal(setup_time_hours) * machine_rate_per_hour
+        number_of_setups = max(1, int(round(1 + complexity_norm * 1.5)))
+        setup_time_total_hours = setup_time_hours * number_of_setups
+        setup_hour_rate_per_hour = max(inputs.setup_hour_rate, _to_decimal(0))
+        if setup_hour_rate_per_hour <= 0:
+            setup_hour_rate_per_hour = machine_rate_per_hour
+
+        setup_cost_total = _to_decimal(setup_time_total_hours) * setup_hour_rate_per_hour
         setup_cost_per_part = setup_cost_total / _to_decimal(max(inputs.quantity, 1))
 
         details["setup"] = {
             "setup_time_hours": round(setup_time_hours, 4),
+            "setup_time_total_hours": round(setup_time_total_hours, 4),
+            "number_of_setups": number_of_setups,
+            "setup_hour_rate": float(setup_hour_rate_per_hour),
             "batch_size": inputs.quantity,
             "setup_cost_total": float(setup_cost_total),
             "setup_cost_per_part": float(setup_cost_per_part),
@@ -285,15 +326,32 @@ class PricingEngine:
 
         # E. Secondary operation cost
         secondary_per_part = self._secondary_cost(inputs.finish_name)
+        finish_area_sq_in = max(inputs.surface_area_cm2 / 6.4516, 0.0)
+        finish_area_sq_ft = max(inputs.surface_area_cm2 / 929.0304, 0.0)
+        finish_rate_cost_per_part = (
+            _to_decimal(max(raw_weight_kg, 0.0)) * max(inputs.finish_rate_per_kg, _to_decimal(0))
+            + _to_decimal(finish_area_sq_in) * max(inputs.finish_rate_per_sq_inch, _to_decimal(0))
+            + _to_decimal(finish_area_sq_ft) * max(inputs.finish_rate_per_sq_ft, _to_decimal(0))
+            + max(inputs.finish_rate_per_piece, _to_decimal(0))
+        )
 
         # Keep compatibility with existing field name `finish_cost`
-        finish_cost = secondary_per_part + inputs.finish_fixed_cost / _to_decimal(max(inputs.quantity, 1))
+        finish_cost = (
+            secondary_per_part
+            + finish_rate_cost_per_part
+            + inputs.finish_fixed_cost / _to_decimal(max(inputs.quantity, 1))
+        )
         if inputs.finish_cost_multiplier > 1.0:
             finish_cost *= _to_decimal(inputs.finish_cost_multiplier)
 
         details["secondary_operations"] = {
             "finish_name": inputs.finish_name,
             "secondary_cost_per_part": float(secondary_per_part),
+            "finish_rate_cost_per_part": float(finish_rate_cost_per_part),
+            "rate_per_kg": float(inputs.finish_rate_per_kg),
+            "rate_per_sq_inch": float(inputs.finish_rate_per_sq_inch),
+            "rate_per_sq_ft": float(inputs.finish_rate_per_sq_ft),
+            "rate_per_piece": float(inputs.finish_rate_per_piece),
             "finish_fixed_cost_allocated": float(inputs.finish_fixed_cost / _to_decimal(max(inputs.quantity, 1))),
             "finish_multiplier": inputs.finish_cost_multiplier,
             "finish_cost_per_part": float(finish_cost),
@@ -335,7 +393,12 @@ class PricingEngine:
             "feature_time_min": round(feature_time_min, 4),
             "tool_change_time_min": round(tool_change_time_min, 4),
             "cycle_time_min": round(cycle_time_min, 4),
+            "machine_hour_rate": float(machine_rate_per_hour),
             "setup_cost_per_part_formula": "(setup_time_hours * machine_rate_per_hour) / batch_size",
+            "setup_cost_total_formula": "setup_time_total_hours * machine_rate_per_hour",
+            "setup_time_total_hours": round(setup_time_total_hours, 4),
+            "number_of_setups": number_of_setups,
+            "setup_hour_rate": float(setup_hour_rate_per_hour),
             "setup_cost_per_part": float(setup_cost_per_part),
             "cam_cost_formula": "cam_time_hours * cam_rate_per_hour / batch_size",
             "cam_cost_per_part": float(cam_cost_per_part),
@@ -606,26 +669,47 @@ async def calculate_pricing(
     pricing_overrides: Optional[Dict[str, Any]] = None,
 ) -> PricingResult:
     """Calculate pricing for a CNC job and return a detailed breakdown."""
-    query = select(MachineRate).where(MachineRate.is_default == True, MachineRate.is_active == True)
-    result = await db.execute(query)
-    machine_rate = result.scalar_one_or_none()
+    default_query = (
+        select(MachineRate)
+        .where(MachineRate.is_default == True, MachineRate.is_active == True)
+        .order_by(MachineRate.updated_at.desc())
+    )
+    default_result = await db.execute(default_query)
+    machine_rate = default_result.scalars().first()
+
+    if machine_rate is None:
+        fallback_query = (
+            select(MachineRate)
+            .where(MachineRate.is_active == True)
+            .order_by(MachineRate.is_default.desc(), MachineRate.updated_at.desc())
+        )
+        fallback_result = await db.execute(fallback_query)
+        machine_rate = fallback_result.scalars().first()
 
     if machine_rate:
         machine_name = machine_rate.name
         hourly_rate = machine_rate.hourly_rate
+        setup_hour_rate = machine_rate.setup_hour_rate
         machine_efficiency = machine_rate.efficiency_rate
         setup_time = machine_rate.setup_time_hours
     else:
         machine_name = "Standard 3-Axis CNC Mill"
         hourly_rate = _to_decimal(settings.DEFAULT_HOURLY_MACHINE_RATE)
+        setup_hour_rate = hourly_rate
         machine_efficiency = settings.DEFAULT_MACHINE_EFFICIENCY
         setup_time = 0.5
 
     # Existing fields (backward compatible)
     material_cost_per_kg = material.cost_per_kg
+    material_density = material.density
     material_machining_difficulty_factor = material.machining_difficulty_factor
+    material_scrap_cost_per_kg = getattr(material, "scrap_cost_per_kg", _to_decimal(30))
     finish_cost_multiplier = surface_finish.cost_multiplier
     finish_fixed_cost = surface_finish.fixed_cost
+    finish_rate_per_kg = getattr(surface_finish, "rate_per_kg", _to_decimal(0))
+    finish_rate_per_sq_inch = getattr(surface_finish, "rate_per_sq_inch", _to_decimal(0))
+    finish_rate_per_sq_ft = getattr(surface_finish, "rate_per_sq_ft", _to_decimal(0))
+    finish_rate_per_piece = getattr(surface_finish, "rate_per_piece", _to_decimal(0))
     inspection_fixed_cost = inspection_level.fixed_cost
     inspection_percentage_cost = inspection_level.percentage_cost
 
@@ -637,6 +721,8 @@ async def calculate_pricing(
     vendor_load_pct = 70.0
     urgent_factor_pct = 0.0
     negotiation_buffer_pct = 7.0
+    scrap_cost_per_kg = _to_decimal(material_scrap_cost_per_kg)
+    include_scrap_saving = True
 
     complexity_risk = _clamp(((geometry.complexity_score - 14.0) / 20.0) * 8.0, 0.0, 8.0)
     inferred_risk_pct = _clamp(
@@ -656,9 +742,21 @@ async def calculate_pricing(
             material_cost_per_kg = _to_decimal(pricing_overrides["material_cost_per_kg"])
             applied_overrides["material_cost_per_kg"] = float(material_cost_per_kg)
 
+        if pricing_overrides.get("material_density") is not None:
+            material_density = float(pricing_overrides["material_density"])
+            applied_overrides["material_density"] = material_density
+
         if pricing_overrides.get("material_machining_difficulty_factor") is not None:
             material_machining_difficulty_factor = float(pricing_overrides["material_machining_difficulty_factor"])
             applied_overrides["material_machining_difficulty_factor"] = material_machining_difficulty_factor
+
+        if pricing_overrides.get("scrap_cost_per_kg") is not None:
+            scrap_cost_per_kg = _to_decimal(pricing_overrides["scrap_cost_per_kg"])
+            applied_overrides["scrap_cost_per_kg"] = float(scrap_cost_per_kg)
+
+        if pricing_overrides.get("include_scrap_saving") is not None:
+            include_scrap_saving = bool(pricing_overrides["include_scrap_saving"])
+            applied_overrides["include_scrap_saving"] = include_scrap_saving
 
         if pricing_overrides.get("surface_finish_fixed_cost") is not None:
             finish_fixed_cost = _to_decimal(pricing_overrides["surface_finish_fixed_cost"])
@@ -667,6 +765,22 @@ async def calculate_pricing(
         if pricing_overrides.get("surface_finish_cost_multiplier") is not None:
             finish_cost_multiplier = float(pricing_overrides["surface_finish_cost_multiplier"])
             applied_overrides["surface_finish_cost_multiplier"] = finish_cost_multiplier
+
+        if pricing_overrides.get("surface_finish_rate_per_kg") is not None:
+            finish_rate_per_kg = _to_decimal(pricing_overrides["surface_finish_rate_per_kg"])
+            applied_overrides["surface_finish_rate_per_kg"] = float(finish_rate_per_kg)
+
+        if pricing_overrides.get("surface_finish_rate_per_sq_inch") is not None:
+            finish_rate_per_sq_inch = _to_decimal(pricing_overrides["surface_finish_rate_per_sq_inch"])
+            applied_overrides["surface_finish_rate_per_sq_inch"] = float(finish_rate_per_sq_inch)
+
+        if pricing_overrides.get("surface_finish_rate_per_sq_ft") is not None:
+            finish_rate_per_sq_ft = _to_decimal(pricing_overrides["surface_finish_rate_per_sq_ft"])
+            applied_overrides["surface_finish_rate_per_sq_ft"] = float(finish_rate_per_sq_ft)
+
+        if pricing_overrides.get("surface_finish_rate_per_piece") is not None:
+            finish_rate_per_piece = _to_decimal(pricing_overrides["surface_finish_rate_per_piece"])
+            applied_overrides["surface_finish_rate_per_piece"] = float(finish_rate_per_piece)
 
         if pricing_overrides.get("inspection_fixed_cost") is not None:
             inspection_fixed_cost = _to_decimal(pricing_overrides["inspection_fixed_cost"])
@@ -679,6 +793,10 @@ async def calculate_pricing(
         if pricing_overrides.get("machine_hourly_rate") is not None:
             hourly_rate = _to_decimal(pricing_overrides["machine_hourly_rate"])
             applied_overrides["machine_hourly_rate"] = float(hourly_rate)
+
+        if pricing_overrides.get("machine_setup_hourly_rate") is not None:
+            setup_hour_rate = _to_decimal(pricing_overrides["machine_setup_hourly_rate"])
+            applied_overrides["machine_setup_hourly_rate"] = float(setup_hour_rate)
 
         if pricing_overrides.get("machine_efficiency_rate") is not None:
             machine_efficiency = float(pricing_overrides["machine_efficiency_rate"])
@@ -753,13 +871,19 @@ async def calculate_pricing(
         triangle_count=geometry.triangle_count,
         material_name=material.name,
         material_category=material.category,
-        material_density=material.density,
+        material_density=material_density,
         material_cost_per_kg=material_cost_per_kg,
         machining_difficulty_factor=material_machining_difficulty_factor,
         material_availability_factor=material.availability_factor,
+        scrap_cost_per_kg=scrap_cost_per_kg,
+        include_scrap_saving=include_scrap_saving,
         finish_name=surface_finish.name,
         finish_cost_multiplier=finish_cost_multiplier,
         finish_fixed_cost=finish_fixed_cost,
+        finish_rate_per_kg=finish_rate_per_kg,
+        finish_rate_per_sq_inch=finish_rate_per_sq_inch,
+        finish_rate_per_sq_ft=finish_rate_per_sq_ft,
+        finish_rate_per_piece=finish_rate_per_piece,
         finish_lead_time_days=surface_finish.lead_time_addition_days,
         inspection_name=inspection_level.name,
         inspection_fixed_cost=inspection_fixed_cost,
@@ -767,6 +891,7 @@ async def calculate_pricing(
         inspection_lead_time_days=inspection_level.lead_time_addition_days,
         machine_name=machine_name,
         hourly_rate=hourly_rate,
+        setup_hour_rate=setup_hour_rate,
         machine_efficiency=machine_efficiency,
         setup_time_hours=setup_time,
         quantity=quantity,

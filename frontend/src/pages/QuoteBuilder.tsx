@@ -176,6 +176,10 @@ const buildPricingOverridesPayload = (
       return Number.isFinite(value);
     }
 
+    if (typeof value === 'boolean') {
+      return true;
+    }
+
     if (key === 'machine_name' && typeof value === 'string') {
       return value.trim().length > 0;
     }
@@ -266,6 +270,11 @@ const QuoteBuilder = () => {
     () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
     [useQuoteSpecificPricing, pricingOverrides]
   );
+
+  const handlePricingOverridePatch = useCallback((patch: PricingOverrides) => {
+    setUseQuoteSpecificPricing(true);
+    setPricingOverrides((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   const updateRFQField = useCallback(<K extends keyof RFQCommercialFormState>(key: K, value: RFQCommercialFormState[K]) => {
     setRfqCommercialForm((prev) => ({ ...prev, [key]: value }));
@@ -1040,6 +1049,20 @@ const QuoteBuilder = () => {
   const allMultiPriced = selectedMultiFiles.length > 0 && selectedMultiFiles.every((f) => f.pricing !== null);
   const anyMultiLoading = selectedMultiFiles.some((f) => f.pricingLoading);
   const allSelected = multiFiles.length > 0 && multiFiles.every((file) => file.selected);
+  const pricedSelectedMultiFiles = selectedMultiFiles.filter((file) => file.pricing !== null);
+  const bulkBreakdown = pricedSelectedMultiFiles.reduce(
+    (acc, file) => {
+      const breakdown = file.pricing!.price_breakdown;
+      acc.material += Number(breakdown.material_cost);
+      acc.machining += Number(breakdown.machining_cost);
+      acc.finish += Number(breakdown.finish_cost);
+      acc.inspection += Number(breakdown.inspection_cost);
+      acc.subtotal += Number(breakdown.subtotal);
+      acc.total += Number(breakdown.total_price);
+      return acc;
+    },
+    { material: 0, machining: 0, finish: 0, inspection: 0, subtotal: 0, total: 0 }
+  );
 
   if (editLoading) {
     return (
@@ -1144,9 +1167,9 @@ const QuoteBuilder = () => {
 
       {/* Single-file configure */}
       {step === 'configure' && !isMultiMode && config.cadFile && (
-        <div className="grid lg:grid-cols-2 gap-6">
+        <div className="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)] gap-6 items-start">
           <div className="space-y-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="surface-strong rounded-xl border border-gray-200 p-4 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">3D Preview</h2>
               <ModelViewer
                 fileId={config.cadFile.id}
@@ -1184,14 +1207,14 @@ const QuoteBuilder = () => {
             </div>
 
             {config.geometry && (
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">DFX Analysis</h2>
                 <DFXAnalysis geometry={config.geometry} />
               </div>
             )}
 
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Configuration</h2>
+            <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Configuration Controls</h2>
               <ConfigurationPanel
                 materialId={config.materialId}
                 surfaceFinishId={config.surfaceFinishId}
@@ -1210,7 +1233,13 @@ const QuoteBuilder = () => {
           </div>
 
           <div className="space-y-6 lg:sticky lg:top-6 self-start">
-            <PricingDisplay pricing={pricing} loading={pricingLoading} />
+            <PricingDisplay
+              pricing={pricing}
+              loading={pricingLoading}
+              editable
+              pricingOverrides={pricingOverrides}
+              onPricingOverridesChange={handlePricingOverridePatch}
+            />
             {customerForm}
             {rfqAndCommercialForm}
             <button
@@ -1228,9 +1257,9 @@ const QuoteBuilder = () => {
 
       {/* Multi-file configure */}
       {step === 'configure' && isMultiMode && (
-        <div className="grid lg:grid-cols-[1fr_380px] gap-6">
+        <div className="grid xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.9fr)] gap-6 items-start">
           <div className="space-y-6">
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="surface-strong rounded-xl border border-gray-200 overflow-hidden shadow-sm">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center gap-2">
                 <Package className="w-5 h-5 text-primary-600" />
                 <h2 className="text-lg font-semibold text-gray-900">Files ({selectedMultiFiles.length}/{multiFiles.length} selected)</h2>
@@ -1330,17 +1359,76 @@ const QuoteBuilder = () => {
               </div>
             </div>
 
+            <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Bulk Price Breakdown</h2>
+              {pricedSelectedMultiFiles.length === 0 ? (
+                <p className="text-sm text-gray-500">Price at least one selected file to view breakdown.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500">Material</p>
+                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.material)}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500">Machining</p>
+                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.machining)}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500">Surface Finish</p>
+                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.finish)}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500">Inspection</p>
+                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.inspection)}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500">Subtotal</p>
+                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.subtotal)}</p>
+                    </div>
+                    <div className="rounded-lg border border-primary-200 bg-primary-50 p-3">
+                      <p className="text-xs text-primary-700">Total</p>
+                      <p className="font-semibold text-primary-900">{formatINR(bulkBreakdown.total)}</p>
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-[1.8fr_repeat(5,minmax(0,1fr))] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                      <span>File</span>
+                      <span className="text-right">Material</span>
+                      <span className="text-right">Machining</span>
+                      <span className="text-right">Finish</span>
+                      <span className="text-right">Inspection</span>
+                      <span className="text-right">Total</span>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                      {pricedSelectedMultiFiles.map((file) => (
+                        <div key={file.cadFile.id} className="grid grid-cols-[1.8fr_repeat(5,minmax(0,1fr))] gap-2 px-3 py-2 text-xs text-gray-700">
+                          <span className="truncate" title={file.cadFile.original_filename}>{file.cadFile.original_filename}</span>
+                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.material_cost)}</span>
+                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.machining_cost)}</span>
+                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.finish_cost)}</span>
+                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.inspection_cost)}</span>
+                          <span className="text-right font-semibold text-gray-900">{formatINR(file.pricing!.price_breakdown.total_price)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             {customerForm}
             {rfqAndCommercialForm}
           </div>
 
           <div className="space-y-6 lg:sticky lg:top-6 self-start">
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
                     <Settings2 className="w-4 h-4 text-gray-500" />
-                    {configureIndividually ? 'Individual Configuration' : 'Shared Configuration'}
+                    {configureIndividually ? 'Individual File Configuration' : 'Shared Configuration'}
                   </h2>
                   <p className="text-sm text-gray-500">
                     {configureIndividually
@@ -1442,6 +1530,21 @@ const QuoteBuilder = () => {
                 disabled={configureIndividually && !activeMultiFile}
               />
             </div>
+
+            {activeMultiFile && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-900">
+                  Selected File Detailed Pricing: {activeMultiFile.cadFile.original_filename}
+                </p>
+                <PricingDisplay
+                  pricing={activeMultiFile.pricing}
+                  loading={activeMultiFile.pricingLoading}
+                  editable
+                  pricingOverrides={pricingOverrides}
+                  onPricingOverridesChange={handlePricingOverridePatch}
+                />
+              </div>
+            )}
 
             <button
               onClick={handleCreateBatchQuotes}

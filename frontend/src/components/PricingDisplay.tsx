@@ -1,12 +1,27 @@
-import { DollarSign, Clock, TrendingUp, Package, Info } from 'lucide-react';
-import type { PricingResponse } from '@/types';
+import { useState } from 'react';
+import { DollarSign, Clock, TrendingUp, Package, Info, PencilLine, Check, X } from 'lucide-react';
+import type { PricingResponse, PricingOverrides } from '@/types';
 
 interface PricingDisplayProps {
   pricing: PricingResponse | null;
   loading?: boolean;
+  editable?: boolean;
+  pricingOverrides?: PricingOverrides;
+  onPricingOverridesChange?: (patch: PricingOverrides) => void;
 }
 
-const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
+type EditableField = 'material_cost_per_kg' | 'scrap_cost_per_kg' | 'machine_hourly_rate';
+
+const PricingDisplay = ({
+  pricing,
+  loading = false,
+  editable = false,
+  pricingOverrides = {},
+  onPricingOverridesChange,
+}: PricingDisplayProps) => {
+  const [editingField, setEditingField] = useState<EditableField | null>(null);
+  const [editDraft, setEditDraft] = useState<string>('');
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -16,6 +31,14 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
 
   const formatNumber = (value: number, decimals = 2) => {
     return value.toFixed(decimals);
+  };
+
+  const formatDurationMinutes = (minutes: number) => {
+    const safeMinutes = Number.isFinite(minutes) ? Math.max(minutes, 0) : 0;
+    const totalSeconds = Math.round(safeMinutes * 60);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins} min ${secs} sec`;
   };
 
   if (loading) {
@@ -51,6 +74,49 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
   const manufacturingCharges = explanation?.manufacturing_charges ?? {};
   const tooling = explanation?.tooling ?? {};
   const quality = explanation?.quality ?? {};
+  const material = explanation?.material ?? {};
+  const rawMaterial = explanation?.raw_material ?? {};
+
+  const stockDims = rawMaterial?.raw_material_stock_dimensions_mm as
+    | { x?: number; y?: number; z?: number }
+    | undefined;
+
+  const fallbackMaterialRate = Number(
+    rawMaterial.raw_material_rate_per_kg ?? material.material_rate_per_kg ?? pricing.material.cost_per_kg,
+  );
+  const fallbackScrapRate = Number(rawMaterial.scrap_cost_per_kg ?? material.scrap_cost_per_kg ?? 0);
+  const fallbackMachineRate = Number(manufacturingCharges.machine_hour_rate ?? machining.machine_rate_per_hour ?? 0);
+
+  const effectiveMaterialRate = Number(pricingOverrides.material_cost_per_kg ?? fallbackMaterialRate);
+  const effectiveScrapRate = Number(pricingOverrides.scrap_cost_per_kg ?? fallbackScrapRate);
+  const effectiveMachineRate = Number(pricingOverrides.machine_hourly_rate ?? fallbackMachineRate);
+  const includeScrapSaving =
+    pricingOverrides.include_scrap_saving ??
+    Boolean(rawMaterial.scrap_saving_included_in_cost ?? material.scrap_saving_included_in_cost);
+
+  const canEdit = editable && Boolean(onPricingOverridesChange);
+
+  const beginEdit = (field: EditableField, value: number) => {
+    if (!canEdit) return;
+    setEditingField(field);
+    setEditDraft(Number.isFinite(value) ? String(value) : '0');
+  };
+
+  const commitEdit = (field: EditableField) => {
+    if (!onPricingOverridesChange) return;
+    const parsed = Number(editDraft);
+    if (!Number.isFinite(parsed)) {
+      setEditingField(null);
+      return;
+    }
+    onPricingOverridesChange({ [field]: Math.max(0, parsed) } as PricingOverrides);
+    setEditingField(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingField(null);
+    setEditDraft('');
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -86,16 +152,13 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
       <div className="p-6">
         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-gray-400" />
-          Price Breakdown
+          Price Summary
         </h3>
         
         <div className="space-y-3">
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
             <div>
               <p className="font-medium text-gray-700">Material Cost</p>
-              <p className="text-xs text-gray-500">
-                {formatNumber(pricing.volume_cm3)} cm³ × {pricing.material.density} g/cm³
-              </p>
             </div>
             <p className="font-medium text-gray-900">
               {formatCurrency(breakdown.material_cost)}
@@ -105,36 +168,9 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
             <div>
               <p className="font-medium text-gray-700">Machining Cost</p>
-              <p className="text-xs text-gray-500">
-                Complexity: {formatNumber(pricing.complexity_score, 2)}
-              </p>
             </div>
             <p className="font-medium text-gray-900">
               {formatCurrency(breakdown.machining_cost)}
-            </p>
-          </div>
-
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <div>
-              <p className="font-medium text-gray-700">Setup Cost Allocation</p>
-              <p className="text-xs text-gray-500">
-                (Setup Time x Machine Rate) / Batch Size
-              </p>
-            </div>
-            <p className="font-medium text-gray-900">
-              {formatCurrency(Number(setup.setup_cost_per_part ?? 0))}/part
-            </p>
-          </div>
-
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <div>
-              <p className="font-medium text-gray-700">Programming / CAM Cost</p>
-              <p className="text-xs text-gray-500">
-                CAM time charged per hour
-              </p>
-            </div>
-            <p className="font-medium text-gray-900">
-              {formatCurrency(Number(camProgramming.cam_cost_per_part ?? 0))}/part
             </p>
           </div>
 
@@ -186,47 +222,206 @@ const PricingDisplay = ({ pricing, loading = false }: PricingDisplayProps) => {
           )}
         </div>
 
-        <h3 className="font-semibold text-gray-900 mt-6 mb-3">Machining Considerations</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Cycle Time</p>
-            <p className="font-semibold text-gray-900">{formatNumber(Number(machining.cycle_time_min ?? 0), 2)} min/part</p>
-            <p className="text-xs text-gray-500 mt-1">
-              ({formatNumber(Number(manufacturingCharges.material_removal_volume_cm3 ?? 0), 2)} / {formatNumber(Number(manufacturingCharges.mrr_cm3_min ?? 0), 2)}) + {formatNumber(Number(manufacturingCharges.feature_time_min ?? 0), 2)} + {formatNumber(Number(manufacturingCharges.tool_change_time_min ?? 0), 2)}
-            </p>
+        <h3 className="font-semibold text-gray-900 mt-6 mb-3">Cost Breakup</h3>
+        <div className="rounded-xl border border-gray-200 p-4 space-y-5">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="font-semibold text-gray-900">Raw Material Cost</p>
+              <p className="font-semibold text-gray-900">{formatCurrency(breakdown.material_cost)}</p>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between gap-3 text-gray-600">
+                <span>Raw Material Stock Dimension</span>
+                <span>
+                  {formatNumber(Number(stockDims?.x ?? pricing.bounding_box.x * 10), 1)} × {formatNumber(Number(stockDims?.y ?? pricing.bounding_box.y * 10), 1)} × {formatNumber(Number(stockDims?.z ?? pricing.bounding_box.z * 10), 1)} mm
+                </span>
+              </div>
+              <div className="flex justify-between gap-3 text-gray-600">
+                <span>Raw Material Mass</span>
+                <span>{formatNumber(Number(rawMaterial.raw_material_mass_kg ?? material.raw_weight_kg ?? pricing.weight_kg), 3)} kg</span>
+              </div>
+              <div className="flex justify-between gap-3 text-gray-800">
+                <span className="font-medium">Raw Material Rate per Kg</span>
+                <span className="font-medium inline-flex items-center gap-2">
+                  {editingField === 'material_cost_per_kg' ? (
+                    <>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-xs"
+                      />
+                      <button type="button" onClick={() => commitEdit('material_cost_per_kg')} className="text-green-700 hover:text-green-800">
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {formatCurrency(effectiveMaterialRate)}
+                      {canEdit && (
+                        <button type="button" onClick={() => beginEdit('material_cost_per_kg', effectiveMaterialRate)} className="text-primary-600 hover:text-primary-700">
+                          <PencilLine className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3 text-amber-700">
+                <span className="font-medium inline-flex items-center gap-2">
+                  Scrap Saving Cost ({includeScrapSaving ? 'Included in Cost' : 'Not Included'})
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onPricingOverridesChange?.({ include_scrap_saving: !includeScrapSaving })}
+                      className="text-[11px] px-1.5 py-0.5 border border-amber-300 rounded text-amber-800 hover:bg-amber-100"
+                    >
+                      Toggle
+                    </button>
+                  )}
+                </span>
+                <span className="font-medium">(-) {formatCurrency(Number(rawMaterial.scrap_saving_cost ?? material.scrap_saving_cost ?? 0))}</span>
+              </div>
+              <div className="flex justify-between gap-3 text-gray-600">
+                <span>Scrap Weight</span>
+                <span>{formatNumber(Number(rawMaterial.scrap_weight_kg ?? material.scrap_weight_kg ?? 0), 3)} kg</span>
+              </div>
+              <div className="flex justify-between gap-3 text-gray-600">
+                <span>Scrap Cost per Kg</span>
+                <span className="inline-flex items-center gap-2">
+                  {editingField === 'scrap_cost_per_kg' ? (
+                    <>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-xs"
+                      />
+                      <button type="button" onClick={() => commitEdit('scrap_cost_per_kg')} className="text-green-700 hover:text-green-800">
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {formatCurrency(effectiveScrapRate)}
+                      {canEdit && (
+                        <button type="button" onClick={() => beginEdit('scrap_cost_per_kg', effectiveScrapRate)} className="text-primary-600 hover:text-primary-700">
+                          <PencilLine className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Setup Time</p>
-            <p className="font-semibold text-gray-900">{formatNumber(Number(setup.setup_time_hours ?? 0), 2)} hrs</p>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="font-semibold text-gray-900">Machining Cost</p>
+              <p className="font-semibold text-gray-900">{formatCurrency(breakdown.machining_cost)}</p>
+            </div>
+            <div className="space-y-1.5 text-sm text-gray-600">
+              <div className="flex justify-between gap-3">
+                <span>Total Machining Time</span>
+                <span>{formatDurationMinutes(Number(manufacturingCharges.cycle_time_min ?? machining.cycle_time_min ?? 0))}</span>
+              </div>
+              <div className="flex justify-between gap-3 text-gray-800">
+                <span className="font-medium">Machine Hour Rate</span>
+                <span className="font-medium inline-flex items-center gap-2">
+                  {editingField === 'machine_hourly_rate' ? (
+                    <>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-xs"
+                      />
+                      <button type="button" onClick={() => commitEdit('machine_hourly_rate')} className="text-green-700 hover:text-green-800">
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {formatCurrency(effectiveMachineRate)}
+                      {canEdit && (
+                        <button type="button" onClick={() => beginEdit('machine_hourly_rate', effectiveMachineRate)} className="text-primary-600 hover:text-primary-700">
+                          <PencilLine className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Feature Time</span>
+                <span>{formatDurationMinutes(Number(manufacturingCharges.feature_time_min ?? machining.feature_time_min ?? 0))}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Tool Change Time</span>
+                <span>{formatDurationMinutes(Number(manufacturingCharges.tool_change_time_min ?? machining.tool_change_time_min ?? 0))}</span>
+              </div>
+            </div>
           </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Feature Time</p>
-            <p className="font-semibold text-gray-900">{formatNumber(Number(machining.feature_time_min ?? 0), 2)} min</p>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="font-semibold text-gray-900">Setup Cost Per Item</p>
+              <p className="font-semibold text-gray-900">{formatCurrency(Number(setup.setup_cost_per_part ?? manufacturingCharges.setup_cost_per_part ?? 0))}</p>
+            </div>
+            <div className="space-y-1.5 text-sm text-gray-600">
+              <div className="flex justify-between gap-3">
+                <span>Total Setup Cost</span>
+                <span>{formatCurrency(Number(setup.setup_cost_total ?? 0))}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Number of Setups</span>
+                <span>{Number(setup.number_of_setups ?? manufacturingCharges.number_of_setups ?? 1)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Setup Time</span>
+                <span>{formatDurationMinutes(Number(setup.setup_time_total_hours ?? manufacturingCharges.setup_time_total_hours ?? 0) * 60)}</span>
+              </div>
+              <div className="flex justify-between gap-3 text-gray-800">
+                <span className="font-medium">Setup Hour Rate</span>
+                <span className="font-medium">{formatCurrency(effectiveMachineRate)}</span>
+              </div>
+            </div>
           </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Machine Rate</p>
-            <p className="font-semibold text-gray-900">{formatCurrency(Number(machining.machine_rate_per_hour ?? 0))}/hr</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Tool Change Time</p>
-            <p className="font-semibold text-gray-900">{formatNumber(Number(machining.tool_change_time_min ?? 0), 2)} min</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Tooling Allocation</p>
-            <p className="font-semibold text-gray-900">{formatCurrency(Number(tooling.tooling_cost_per_part ?? 0))}/part</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Setup Cost per Part</p>
-            <p className="font-semibold text-gray-900">{formatCurrency(Number(setup.setup_cost_per_part ?? 0))}/part</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">CAM Programming</p>
-            <p className="font-semibold text-gray-900">{formatCurrency(Number(camProgramming.cam_cost_per_part ?? 0))}/part</p>
-            <p className="text-xs text-gray-500 mt-1">{formatNumber(Number(camProgramming.cam_time_hours ?? 0), 2)} hrs at {formatCurrency(Number(camProgramming.cam_rate_per_hour ?? 0))}/hr</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <p className="text-gray-500">Quality Cost</p>
-            <p className="font-semibold text-gray-900">{formatCurrency(Number(quality.inspection_cost_per_part ?? 0))}/part</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-gray-500">CAM Programming</p>
+              <p className="font-semibold text-gray-900">{formatCurrency(Number(camProgramming.cam_cost_per_part ?? 0))}/part</p>
+              <p className="text-xs text-gray-500 mt-1">{formatNumber(Number(camProgramming.cam_time_hours ?? 0), 2)} hrs at {formatCurrency(Number(camProgramming.cam_rate_per_hour ?? 0))}/hr</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-gray-500">Tooling Allocation</p>
+              <p className="font-semibold text-gray-900">{formatCurrency(Number(tooling.tooling_cost_per_part ?? 0))}/part</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-gray-500">Quality Cost</p>
+              <p className="font-semibold text-gray-900">{formatCurrency(Number(quality.inspection_cost_per_part ?? 0))}/part</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-gray-500">Complexity Score</p>
+              <p className="font-semibold text-gray-900">{formatNumber(pricing.complexity_score, 2)}</p>
+            </div>
           </div>
         </div>
       </div>
