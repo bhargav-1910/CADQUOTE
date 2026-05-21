@@ -82,6 +82,21 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
+    def model_post_init(self, __context: object) -> None:
+        """Normalize database URL for async SQLAlchemy drivers."""
+        if self.DATABASE_URL.startswith("sqlite"):
+            return
+
+        if "+asyncpg" in self.DATABASE_URL:
+            return
+
+        if self.DATABASE_URL.startswith("postgresql://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return
+
+        if self.DATABASE_URL.startswith("postgres://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+
 
 @lru_cache()
 def get_settings() -> Settings:
