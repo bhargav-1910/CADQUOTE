@@ -126,7 +126,7 @@ A full-stack web application for generating instant, transparent CNC machining q
    ```bash
    npm run dev
    ```
-
+   
 3. Access at http://localhost:5173
 
 ## Vercel Deployment (Frontend)

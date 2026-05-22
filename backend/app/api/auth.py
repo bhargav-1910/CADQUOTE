@@ -3,7 +3,6 @@ from pathlib import Path
 import uuid
 from datetime import datetime, timedelta
 import secrets
-import random
 from jose import JWTError, jwt
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -21,7 +20,7 @@ from app.core.security import (
     validate_password_strength,
     verify_password,
 )
-from app.models.models import User, SignupOTP, PasswordResetToken
+from app.models.models import User, PasswordResetToken
 from app.services.email import send_plain_email
 from app.services.billing import add_points
 from app.schemas.schemas import (
@@ -31,23 +30,16 @@ from app.schemas.schemas import (
     LoginRequest,
     RefreshTokenRequest,
     ResetPasswordRequest,
-    SignupOtpRequest,
-    SignupOtpResponse,
     UserProfileResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-OTP_EXPIRY_SECONDS = 10 * 60
 PASSWORD_RESET_EXPIRY_SECONDS = 30 * 60
 
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
-
-
-def _generate_otp() -> str:
-    return f"{random.randint(0, 999999):06d}"
 
 
 def _build_logo_url(path: str | None) -> str | None:
@@ -127,7 +119,6 @@ async def register(
     company_name: str = Form(...),
     company_address: str = Form(...),
     phone_number: str | None = Form(None),
-    otp: str = Form(...),
     logo: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -141,31 +132,6 @@ async def register(
     existing = await db.execute(select(User).where(User.email == normalized_email))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Email is already registered")
-
-    otp_query = (
-        select(SignupOTP)
-        .where(
-            SignupOTP.email == normalized_email,
-            SignupOTP.used.is_(False),
-        )
-        .order_by(SignupOTP.created_at.desc())
-    )
-    otp_result = await db.execute(otp_query)
-    otp_entry = otp_result.scalar_one_or_none()
-
-    if otp_entry is None:
-        raise HTTPException(status_code=400, detail="OTP verification is required before signup")
-    if otp_entry.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="OTP has expired. Request a new OTP")
-    if otp_entry.attempts >= 5:
-        raise HTTPException(status_code=400, detail="Too many OTP attempts. Request a new OTP")
-
-    otp_entry.attempts += 1
-    if hash_token(otp.strip()) != otp_entry.otp_hash:
-        await db.commit()
-        raise HTTPException(status_code=400, detail="Invalid OTP")
-
-    otp_entry.used = True
 
     logo_relative_path = await _store_logo_file(logo)
     normalized_phone_number = _normalize_phone(phone_number)
@@ -200,54 +166,6 @@ async def register(
 
     access_token, refresh_token = await _issue_tokens_for_user(db, user)
     return AuthTokenResponse(access_token=access_token, refresh_token=refresh_token, user=_profile_from_user(user))
-
-
-@router.post("/register/request-otp", response_model=SignupOtpResponse)
-async def request_signup_otp(
-    payload: SignupOtpRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Send OTP to verify signup email ownership."""
-    normalized_email = _normalize_email(payload.email)
-
-    existing = await db.execute(select(User).where(User.email == normalized_email))
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="Email is already registered")
-
-    now = datetime.utcnow()
-    cleanup_query = select(SignupOTP).where(
-        SignupOTP.email == normalized_email,
-        SignupOTP.used.is_(False),
-    )
-    cleanup_result = await db.execute(cleanup_query)
-    for existing_otp in cleanup_result.scalars().all():
-        existing_otp.used = True
-
-    otp = _generate_otp()
-    otp_entry = SignupOTP(
-        email=normalized_email,
-        otp_hash=hash_token(otp),
-        expires_at=now + timedelta(seconds=OTP_EXPIRY_SECONDS),
-        used=False,
-        attempts=0,
-    )
-    db.add(otp_entry)
-    await db.commit()
-
-    subject = "Your ForgeQuote signup verification code"
-    body = (
-        "Use the following OTP to verify your email and complete account creation:\n\n"
-        f"OTP: {otp}\n"
-        f"Expires in: {OTP_EXPIRY_SECONDS // 60} minutes\n\n"
-        "If you did not request this code, you can ignore this email."
-    )
-
-    try:
-        await send_plain_email(recipient_email=normalized_email, subject=subject, body=body)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to send OTP email: {str(exc)}") from exc
-
-    return SignupOtpResponse(message="OTP sent to your email", expires_in_seconds=OTP_EXPIRY_SECONDS)
 
 
 @router.post("/login", response_model=AuthTokenResponse)

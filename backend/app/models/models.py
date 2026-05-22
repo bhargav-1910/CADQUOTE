@@ -87,26 +87,9 @@ class User(Base):
     # Relationships
     cad_files = relationship("CADFile", back_populates="user")
     quotes = relationship("Quote", back_populates="user")
-    signup_otps = relationship("SignupOTP", back_populates="user")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user")
     points_wallet = relationship("PointsWallet", back_populates="user", uselist=False)
     points_ledger_entries = relationship("PointsLedgerEntry", back_populates="user")
-
-
-class SignupOTP(Base):
-    """One-time password used to verify signup email ownership."""
-    __tablename__ = "signup_otps"
-
-    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    email = Column(String(200), nullable=False, index=True)
-    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
-    otp_hash = Column(String(128), nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    used = Column(Boolean, default=False)
-    attempts = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="signup_otps")
 
 
 class PasswordResetToken(Base):

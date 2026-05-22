@@ -2,7 +2,6 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Building2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
-import { requestSignupOtp } from '@/services/api';
 
 const SignupPage = () => {
   const { signup } = useAuth();
@@ -14,10 +13,6 @@ const SignupPage = () => {
   const [companyName, setCompanyName] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [logo, setLogo] = useState<File | undefined>(undefined);
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpSending, setOtpSending] = useState(false);
-  const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,12 +39,6 @@ const SignupPage = () => {
       return;
     }
 
-    if (!otp.trim()) {
-      setLoading(false);
-      setError('Please enter the OTP sent to your email');
-      return;
-    }
-
     try {
       await signup({
         full_name: fullName,
@@ -57,7 +46,6 @@ const SignupPage = () => {
         password,
         company_name: companyName,
         company_address: companyAddress,
-        otp,
         logo,
       });
       navigate('/login', { replace: true, state: { justSignedUp: true, email } });
@@ -65,27 +53,6 @@ const SignupPage = () => {
       setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    if (!email.trim()) {
-      setError('Enter your email first to receive OTP');
-      return;
-    }
-
-    setOtpSending(true);
-    setError(null);
-    setOtpMessage(null);
-
-    try {
-      const response = await requestSignupOtp({ email });
-      setOtpSent(true);
-      setOtpMessage(`OTP sent. It expires in ${Math.round(response.expires_in_seconds / 60)} minutes.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send OTP');
-    } finally {
-      setOtpSending(false);
     }
   };
 
@@ -124,30 +91,6 @@ const SignupPage = () => {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-amber-500" />
             </label>
           </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr,auto] sm:items-end">
-            <label className="block text-sm text-slate-700">
-              Email OTP
-              <input
-                type="text"
-                inputMode="numeric"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter 6-digit OTP"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-amber-500"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={handleSendOtp}
-              disabled={otpSending}
-              className="h-[42px] px-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm font-semibold hover:bg-amber-100 disabled:opacity-60"
-            >
-              {otpSending ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}
-            </button>
-          </div>
-
-          {otpMessage && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{otpMessage}</p>}
 
           <label className="block text-sm text-slate-700">
             Password

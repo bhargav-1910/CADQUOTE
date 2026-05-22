@@ -534,17 +534,7 @@ export interface SignupRequest {
   password: string;
   company_name: string;
   company_address: string;
-  otp: string;
   logo?: File;
-}
-
-export interface SignupOtpRequest {
-  email: string;
-}
-
-export interface SignupOtpResponse {
-  message: string;
-  expires_in_seconds: number;
 }
 
 export interface ForgotPasswordRequest {

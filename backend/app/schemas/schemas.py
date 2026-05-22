@@ -832,17 +832,6 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-class SignupOtpRequest(BaseModel):
-    """Request OTP for signup verification."""
-    email: str = Field(..., max_length=200)
-
-
-class SignupOtpResponse(BaseModel):
-    """Response when OTP email is dispatched."""
-    message: str
-    expires_in_seconds: int
-
-
 class ForgotPasswordRequest(BaseModel):
     """Request password reset email."""
     email: str = Field(..., max_length=200)

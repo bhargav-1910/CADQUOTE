@@ -21,8 +21,6 @@ import type {
   QuoteListItem,
   LoginRequest,
   SignupRequest,
-  SignupOtpRequest,
-  SignupOtpResponse,
   ForgotPasswordRequest,
   ResetPasswordRequest,
   GenericMessageResponse,
@@ -342,7 +340,6 @@ export const signupUser = async (payload: SignupRequest): Promise<AuthTokenRespo
     formData.append('password', payload.password);
     formData.append('company_name', payload.company_name);
     formData.append('company_address', payload.company_address);
-    formData.append('otp', payload.otp);
     if (payload.logo) {
       formData.append('logo', payload.logo);
     }
@@ -379,15 +376,6 @@ export const updateCurrentUser = async (payload: UpdateProfileRequest): Promise<
     const response = await api.patch<UserProfile>('/auth/me', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return response.data;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
-};
-
-export const requestSignupOtp = async (payload: SignupOtpRequest): Promise<SignupOtpResponse> => {
-  try {
-    const response = await api.post<SignupOtpResponse>('/auth/register/request-otp', payload);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);
