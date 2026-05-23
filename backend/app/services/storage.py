@@ -49,6 +49,8 @@ class LocalStorageBackend(StorageBackend):
         candidate = Path(path)
         if candidate.is_absolute():
             return candidate
+        if candidate.parts and candidate.parts[0] == self.base_dir.name:
+            return self.base_dir / Path(*candidate.parts[1:])
         return self.base_dir / candidate
     
     async def save(self, file_data: bytes, filename: str) -> str:
