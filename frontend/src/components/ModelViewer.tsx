@@ -17,48 +17,51 @@ interface SceneProps {
   fileFormat: string;
   geometry?: GeometryAnalysis;
   previewUrl: string | null;
+  previewBlob: Blob | null;
 }
 
 // STL Model Component
-const STLModel = ({ url }: { url: string }) => {
+const STLModel = ({ blob }: { blob: Blob }) => {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
-    const loader = new STLLoader();
     let mounted = true;
 
-    loader.load(
-      url,
-      (geo) => {
+    const loadGeometry = async () => {
+      try {
+        const loader = new STLLoader();
+        const buffer = await blob.arrayBuffer();
         if (!mounted) {
-          geo.dispose();
           return;
         }
+
+        const geo = loader.parse(buffer);
         setLoadFailed(false);
         geo.computeVertexNormals();
         geo.center();
-        
+
         // Scale to reasonable size
         geo.computeBoundingBox();
         const box = geo.boundingBox!;
         const size = new THREE.Vector3();
         box.getSize(size);
         const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 4 / maxDim;
+        const safeMax = maxDim > 0 ? maxDim : 1;
+        const scale = 4 / safeMax;
         geo.scale(scale, scale, scale);
-        
+
         setGeometry(geo);
-      },
-      undefined,
-      (error) => {
+      } catch (error) {
         console.error('Error loading STL:', error);
         if (mounted) {
           setLoadFailed(true);
         }
       }
-    );
+    };
+
+    loadGeometry();
 
     return () => {
       mounted = false;
@@ -66,7 +69,7 @@ const STLModel = ({ url }: { url: string }) => {
         geometry.dispose();
       }
     };
-  }, [url]);
+  }, [blob]);
 
   // Slow rotation
   useFrame((_, delta) => {
@@ -237,7 +240,7 @@ const PlaceholderBox = ({ dimensions }: { dimensions?: { x: number; y: number; z
 };
 
 // Scene component
-const Scene = ({ fileFormat, geometry, previewUrl }: SceneProps) => {
+const Scene = ({ fileFormat, geometry, previewUrl, previewBlob }: SceneProps) => {
   const isSTL = fileFormat.toLowerCase() === 'stl';
   const isSTEP = fileFormat.toLowerCase() === 'step';
 
@@ -265,8 +268,8 @@ const Scene = ({ fileFormat, geometry, previewUrl }: SceneProps) => {
       {/* Model */}
       <Suspense fallback={null}>
         {isSTL ? (
-          previewUrl ? (
-            <STLModel url={previewUrl} />
+          previewBlob ? (
+            <STLModel blob={previewBlob} />
           ) : (
             <PlaceholderBox
               dimensions={geometry && {
@@ -319,6 +322,7 @@ const Scene = ({ fileFormat, geometry, previewUrl }: SceneProps) => {
 
 const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -331,12 +335,18 @@ const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
           return;
         }
 
-        activeUrl = URL.createObjectURL(blob);
-        setPreviewUrl(activeUrl);
+        setPreviewBlob(blob);
+        if (fileFormat.toLowerCase() !== 'stl') {
+          activeUrl = URL.createObjectURL(blob);
+          setPreviewUrl(activeUrl);
+        } else {
+          setPreviewUrl(null);
+        }
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load authenticated preview:', error);
           setPreviewUrl(null);
+          setPreviewBlob(null);
         }
       }
     };
@@ -349,7 +359,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
         URL.revokeObjectURL(activeUrl);
       }
     };
-  }, [fileId]);
+  }, [fileId, fileFormat]);
 
   return (
     <div className="relative bg-gray-100 rounded-lg overflow-hidden h-[280px] sm:h-[400px]">
@@ -375,7 +385,12 @@ const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
       {/* 3D Canvas */}
       <Canvas shadows>
         <Suspense fallback={null}>
-          <Scene fileFormat={fileFormat} geometry={geometry} previewUrl={previewUrl} />
+          <Scene
+            fileFormat={fileFormat}
+            geometry={geometry}
+            previewUrl={previewUrl}
+            previewBlob={previewBlob}
+          />
         </Suspense>
       </Canvas>
     </div>
