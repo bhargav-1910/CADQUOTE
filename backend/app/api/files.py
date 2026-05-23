@@ -291,20 +291,40 @@ async def preview_file(
     if cad_file.file_format == 'step':
         try:
             import cascadio
-            
-            # Create temp GLB file
-            glb_fd, glb_path = tempfile.mkstemp(suffix='.glb')
-            os.close(glb_fd)
-            
+            import trimesh
+
             try:
+                step_content = await get_cad_file_content(cad_file.file_path)
+            except Exception:
+                raise HTTPException(status_code=404, detail="Preview file not found")
+
+            # Create temp STEP + GLB files
+            step_fd, step_path = tempfile.mkstemp(suffix='.step')
+            glb_fd, glb_path = tempfile.mkstemp(suffix='.glb')
+            os.close(step_fd)
+            os.close(glb_fd)
+
+            try:
+                with open(step_path, 'wb') as f:
+                    f.write(step_content)
+
                 # Convert STEP to GLB
-                cascadio.step_to_glb(cad_file.file_path, glb_path)
-                
-                # Read the GLB content
-                with open(glb_path, 'rb') as f:
-                    glb_content = f.read()
-                
-                from fastapi.responses import Response
+                cascadio.step_to_glb(step_path, glb_path)
+
+                glb_content = b""
+                if os.path.exists(glb_path):
+                    with open(glb_path, 'rb') as f:
+                        glb_content = f.read()
+
+                if not glb_content:
+                    mesh = trimesh.load(step_path)
+                    if isinstance(mesh, trimesh.Scene):
+                        mesh = mesh.dump(concatenate=True)
+                    glb_content = mesh.export(file_type='glb')
+
+                if not glb_content:
+                    raise HTTPException(status_code=500, detail="STEP preview produced empty output")
+
                 return Response(
                     content=glb_content,
                     media_type="model/gltf-binary",
@@ -313,15 +333,18 @@ async def preview_file(
                     }
                 )
             finally:
-                # Clean up temp file
+                if os.path.exists(step_path):
+                    os.remove(step_path)
                 if os.path.exists(glb_path):
                     os.remove(glb_path)
-                    
+
         except ImportError:
             raise HTTPException(
                 status_code=501,
                 detail="STEP preview requires cascadio library"
             )
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=500,
