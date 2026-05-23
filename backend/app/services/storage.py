@@ -44,10 +44,16 @@ class LocalStorageBackend(StorageBackend):
     def __init__(self, base_dir: str):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    def _resolve_path(self, path: str | Path) -> Path:
+        candidate = Path(path)
+        if candidate.is_absolute():
+            return candidate
+        return self.base_dir / candidate
     
     async def save(self, file_data: bytes, filename: str) -> str:
         """Save file to local filesystem."""
-        file_path = self.base_dir / filename
+        file_path = self._resolve_path(filename)
         
         # Ensure subdirectories exist
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,24 +65,25 @@ class LocalStorageBackend(StorageBackend):
     
     async def get(self, path: str) -> bytes:
         """Read file from local filesystem."""
-        async with aiofiles.open(path, 'rb') as f:
+        resolved = self._resolve_path(path)
+        async with aiofiles.open(resolved, 'rb') as f:
             return await f.read()
     
     async def delete(self, path: str) -> bool:
         """Delete file from local filesystem."""
         try:
-            os.remove(path)
+            os.remove(self._resolve_path(path))
             return True
         except OSError:
             return False
     
     async def exists(self, path: str) -> bool:
         """Check if file exists."""
-        return os.path.exists(path)
+        return os.path.exists(self._resolve_path(path))
     
     def get_url(self, path: str) -> str:
         """Get local file path."""
-        return path
+        return str(self._resolve_path(path))
 
 
 class S3StorageBackend(StorageBackend):
