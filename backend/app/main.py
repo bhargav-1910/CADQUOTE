@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.cache import cache
 from app.api import files, config, quotes, auth, billing
+from app.seed import seed_if_empty
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +29,11 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     logger.info("Database connection verified")
+
+    try:
+        await seed_if_empty()
+    except Exception as e:
+        logger.warning(f"Seed check failed: {e}")
     
     # Connect to Redis
     try:

@@ -4,7 +4,7 @@ from decimal import Decimal
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.database import async_session_maker, init_db
 from app.models.models import (
@@ -1062,6 +1062,35 @@ async def seed_all():
         await seed_vendors(session)
     
     logger.info("Database seeding completed!")
+
+
+async def seed_if_empty():
+    """Seed configuration data only when core tables are empty."""
+    logger.info("Checking whether configuration data needs seeding...")
+    await init_db()
+
+    async with async_session_maker() as session:
+        counts = {}
+        for label, model in (
+            ("materials", Material),
+            ("surface_finishes", SurfaceFinish),
+            ("inspection_levels", InspectionLevel),
+            ("machine_rates", MachineRate),
+        ):
+            result = await session.execute(select(func.count()).select_from(model))
+            counts[label] = int(result.scalar() or 0)
+
+        if all(count > 0 for count in counts.values()):
+            logger.info("Seed skipped: configuration data already present.")
+            return
+
+        logger.info("Seeding configuration data (missing tables detected).")
+        await seed_materials(session)
+        await seed_surface_finishes(session)
+        await seed_inspection_levels(session)
+        await seed_machine_rates(session)
+        await seed_vendors(session)
+        logger.info("Seed completed.")
 
 
 if __name__ == "__main__":
