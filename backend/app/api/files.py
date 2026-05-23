@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -274,10 +274,17 @@ async def preview_file(
     
     # STL files can be served directly
     if cad_file.file_format == 'stl':
-        return FileResponse(
-            path=cad_file.file_path,
-            filename=cad_file.original_filename,
+        try:
+            content = await get_cad_file_content(cad_file.file_path)
+        except Exception:
+            raise HTTPException(status_code=404, detail="Preview file not found")
+
+        return Response(
+            content=content,
             media_type="model/stl",
+            headers={
+                "Content-Disposition": f'inline; filename="{cad_file.original_filename}"'
+            },
         )
     
     # STEP files need to be converted to GLB
