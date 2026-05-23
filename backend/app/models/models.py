@@ -87,23 +87,8 @@ class User(Base):
     # Relationships
     cad_files = relationship("CADFile", back_populates="user")
     quotes = relationship("Quote", back_populates="user")
-    password_reset_tokens = relationship("PasswordResetToken", back_populates="user")
     points_wallet = relationship("PointsWallet", back_populates="user", uselist=False)
     points_ledger_entries = relationship("PointsLedgerEntry", back_populates="user")
-
-
-class PasswordResetToken(Base):
-    """Single-use password reset token."""
-    __tablename__ = "password_reset_tokens"
-
-    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
-    token_hash = Column(String(128), nullable=False, unique=True, index=True)
-    expires_at = Column(DateTime, nullable=False)
-    used = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="password_reset_tokens")
 
 
 class PointsWallet(Base):

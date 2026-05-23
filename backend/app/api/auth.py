@@ -1,8 +1,7 @@
 """Authentication endpoints for signup/login/profile."""
 from pathlib import Path
 import uuid
-from datetime import datetime, timedelta
-import secrets
+from datetime import datetime
 from jose import JWTError, jwt
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -20,22 +19,16 @@ from app.core.security import (
     validate_password_strength,
     verify_password,
 )
-from app.models.models import User, PasswordResetToken
-from app.services.email import send_plain_email
+from app.models.models import User
 from app.services.billing import add_points
 from app.schemas.schemas import (
     AuthTokenResponse,
-    ForgotPasswordRequest,
-    GenericMessageResponse,
     LoginRequest,
     RefreshTokenRequest,
-    ResetPasswordRequest,
     UserProfileResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-PASSWORD_RESET_EXPIRY_SECONDS = 30 * 60
 
 
 def _normalize_email(email: str) -> str:
@@ -220,94 +213,6 @@ async def refresh(
         refresh_token=new_refresh_token,
         user=_profile_from_user(user),
     )
-
-
-@router.post("/password/forgot", response_model=GenericMessageResponse)
-async def forgot_password(
-    payload: ForgotPasswordRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Send password reset link email if account exists."""
-    normalized_email = _normalize_email(payload.email)
-    result = await db.execute(select(User).where(User.email == normalized_email))
-    user = result.scalar_one_or_none()
-
-    generic_message = GenericMessageResponse(
-        message="If the email exists, a password reset link has been sent."
-    )
-    if user is None:
-        return generic_message
-
-    # Revoke previous unused tokens for this user.
-    existing_tokens = await db.execute(
-        select(PasswordResetToken).where(
-            PasswordResetToken.user_id == user.id,
-            PasswordResetToken.used.is_(False),
-        )
-    )
-    for token in existing_tokens.scalars().all():
-        token.used = True
-
-    reset_token_raw = secrets.token_urlsafe(32)
-    token_entry = PasswordResetToken(
-        user_id=user.id,
-        token_hash=hash_token(reset_token_raw),
-        expires_at=datetime.utcnow() + timedelta(seconds=PASSWORD_RESET_EXPIRY_SECONDS),
-        used=False,
-    )
-    db.add(token_entry)
-    await db.commit()
-
-    reset_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/reset-password?token={reset_token_raw}"
-    subject = "Reset your ForgeQuote password"
-    body = (
-        "We received a request to reset your password.\n\n"
-        f"Reset link: {reset_url}\n"
-        f"This link expires in {PASSWORD_RESET_EXPIRY_SECONDS // 60} minutes.\n\n"
-        "If you did not request this, you can ignore this email."
-    )
-
-    try:
-        await send_plain_email(recipient_email=normalized_email, subject=subject, body=body)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to send reset email: {str(exc)}") from exc
-
-    return generic_message
-
-
-@router.post("/password/reset", response_model=GenericMessageResponse)
-async def reset_password(
-    payload: ResetPasswordRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Reset password from a valid one-time reset token."""
-    password_error = validate_password_strength(payload.new_password)
-    if password_error:
-        raise HTTPException(status_code=400, detail=password_error)
-
-    token_hash = hash_token(payload.token.strip())
-    query = (
-        select(PasswordResetToken)
-        .where(PasswordResetToken.token_hash == token_hash)
-        .limit(1)
-    )
-    result = await db.execute(query)
-    token_entry = result.scalar_one_or_none()
-
-    if token_entry is None or token_entry.used or token_entry.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-
-    user = await db.get(User, token_entry.user_id)
-    if user is None:
-        raise HTTPException(status_code=400, detail="Invalid reset token")
-
-    user.hashed_password = get_password_hash(payload.new_password)
-    user.refresh_token_hash = None
-    user.refresh_token_expires_at = None
-    token_entry.used = True
-
-    await db.commit()
-    return GenericMessageResponse(message="Password reset successful")
 
 
 @router.post("/logout")

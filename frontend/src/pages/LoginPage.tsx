@@ -85,12 +85,6 @@ const LoginPage = () => {
             />
           </label>
 
-          <div className="-mt-2 text-right">
-            <Link to="/forgot-password" className="text-xs font-medium text-sky-700 hover:text-sky-800">
-              Forgot password?
-            </Link>
-          </div>
-
           {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <button

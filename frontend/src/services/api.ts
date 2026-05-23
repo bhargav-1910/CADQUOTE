@@ -21,9 +21,6 @@ import type {
   QuoteListItem,
   LoginRequest,
   SignupRequest,
-  ForgotPasswordRequest,
-  ResetPasswordRequest,
-  GenericMessageResponse,
   AuthTokenResponse,
   UserProfile,
   UpdateProfileRequest,
@@ -376,24 +373,6 @@ export const updateCurrentUser = async (payload: UpdateProfileRequest): Promise<
     const response = await api.patch<UserProfile>('/auth/me', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return response.data;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
-};
-
-export const requestPasswordReset = async (payload: ForgotPasswordRequest): Promise<GenericMessageResponse> => {
-  try {
-    const response = await api.post<GenericMessageResponse>('/auth/password/forgot', payload);
-    return response.data;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
-};
-
-export const resetPassword = async (payload: ResetPasswordRequest): Promise<GenericMessageResponse> => {
-  try {
-    const response = await api.post<GenericMessageResponse>('/auth/password/reset', payload);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

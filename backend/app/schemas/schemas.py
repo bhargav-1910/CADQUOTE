@@ -832,22 +832,6 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-class ForgotPasswordRequest(BaseModel):
-    """Request password reset email."""
-    email: str = Field(..., max_length=200)
-
-
-class ResetPasswordRequest(BaseModel):
-    """Reset password using one-time reset token."""
-    token: str
-    new_password: str = Field(..., min_length=10, max_length=200)
-
-
-class GenericMessageResponse(BaseModel):
-    """Simple message response."""
-    message: str
-
-
 # ============================================================================
 # Error Schemas
 # ============================================================================

@@ -7,8 +7,6 @@ import PublicOnlyRoute from './components/PublicOnlyRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
 import HomePage from './pages/HomePage';
 import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteList from './pages/QuoteList';
@@ -38,23 +36,6 @@ function App() {
               </PublicOnlyRoute>
             )}
           />
-          <Route
-            path="/forgot-password"
-            element={(
-              <PublicOnlyRoute>
-                <ForgotPasswordPage />
-              </PublicOnlyRoute>
-            )}
-          />
-          <Route
-            path="/reset-password"
-            element={(
-              <PublicOnlyRoute>
-                <ResetPasswordPage />
-              </PublicOnlyRoute>
-            )}
-          />
-
           <Route
             path="/workspace"
             element={(

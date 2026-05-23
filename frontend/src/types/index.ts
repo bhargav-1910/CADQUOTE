@@ -537,19 +537,6 @@ export interface SignupRequest {
   logo?: File;
 }
 
-export interface ForgotPasswordRequest {
-  email: string;
-}
-
-export interface ResetPasswordRequest {
-  token: string;
-  new_password: string;
-}
-
-export interface GenericMessageResponse {
-  message: string;
-}
-
 export interface AuthTokenResponse {
   access_token: string;
   refresh_token: string;
