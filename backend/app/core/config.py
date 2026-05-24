@@ -38,11 +38,13 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 100
     ALLOWED_EXTENSIONS: list[str] = [".step", ".stp", ".stl"]
     
-    # S3 Configuration (for future use)
+    # S3 Configuration (R2/S3 compatible)
     S3_BUCKET: Optional[str] = None
     S3_REGION: Optional[str] = None
     S3_ACCESS_KEY: Optional[str] = None
     S3_SECRET_KEY: Optional[str] = None
+    S3_ENDPOINT_URL: Optional[str] = None
+    S3_PUBLIC_BASE_URL: Optional[str] = None
     
     # Pricing defaults
     DEFAULT_MARGIN_FACTOR: float = 1.25

@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -245,11 +245,18 @@ async def download_file(
     cad_file = await get_cad_file(db, file_id, current_user.id)
     if not cad_file:
         raise HTTPException(status_code=404, detail="File not found")
-    
-    return FileResponse(
-        path=cad_file.file_path,
-        filename=cad_file.original_filename,
+
+    try:
+        content = await get_cad_file_content(cad_file.file_path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return Response(
+        content=content,
         media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{cad_file.original_filename}"'
+        },
     )
 
 

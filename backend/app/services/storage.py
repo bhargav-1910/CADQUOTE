@@ -1,7 +1,10 @@
 """Storage service abstraction for file handling."""
 import os
 import hashlib
+import asyncio
 import aiofiles
+import boto3
+from botocore.exceptions import ClientError
 from pathlib import Path
 from typing import BinaryIO, Optional
 from abc import ABC, abstractmethod
@@ -89,28 +92,68 @@ class LocalStorageBackend(StorageBackend):
 
 
 class S3StorageBackend(StorageBackend):
-    """S3-compatible storage backend (placeholder for future use)."""
-    
-    def __init__(self, bucket: str, region: str, access_key: str, secret_key: str):
+    """S3-compatible storage backend (R2/S3)."""
+
+    def __init__(
+        self,
+        bucket: str,
+        region: str,
+        access_key: str,
+        secret_key: str,
+        endpoint_url: str | None = None,
+        public_base_url: str | None = None,
+    ):
         self.bucket = bucket
         self.region = region
-        # In production, initialize boto3 client here
-        raise NotImplementedError("S3 backend not yet implemented")
-    
+        self.endpoint_url = endpoint_url
+        self.public_base_url = public_base_url
+        self.client = boto3.client(
+            "s3",
+            region_name=region,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            endpoint_url=endpoint_url,
+        )
+
     async def save(self, file_data: bytes, filename: str) -> str:
-        raise NotImplementedError()
-    
+        await asyncio.to_thread(
+            self.client.put_object,
+            Bucket=self.bucket,
+            Key=filename,
+            Body=file_data,
+        )
+        return filename
+
     async def get(self, path: str) -> bytes:
-        raise NotImplementedError()
-    
+        def _read() -> bytes:
+            response = self.client.get_object(Bucket=self.bucket, Key=path)
+            return response["Body"].read()
+
+        return await asyncio.to_thread(_read)
+
     async def delete(self, path: str) -> bool:
-        raise NotImplementedError()
-    
+        try:
+            await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=path)
+            return True
+        except ClientError:
+            return False
+
     async def exists(self, path: str) -> bool:
-        raise NotImplementedError()
-    
+        try:
+            await asyncio.to_thread(self.client.head_object, Bucket=self.bucket, Key=path)
+            return True
+        except ClientError as exc:
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            if error_code in {"404", "NoSuchKey", "NotFound"}:
+                return False
+            return False
+
     def get_url(self, path: str) -> str:
-        raise NotImplementedError()
+        if self.public_base_url:
+            return f"{self.public_base_url.rstrip('/')}/{path}"
+        if self.endpoint_url:
+            return f"{self.endpoint_url.rstrip('/')}/{self.bucket}/{path}"
+        return f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{path}"
 
 
 def compute_file_hash(data: bytes) -> str:
@@ -123,9 +166,11 @@ def get_storage_backend() -> StorageBackend:
     if settings.STORAGE_TYPE == "s3" and settings.S3_BUCKET:
         return S3StorageBackend(
             bucket=settings.S3_BUCKET,
-            region=settings.S3_REGION,
-            access_key=settings.S3_ACCESS_KEY,
-            secret_key=settings.S3_SECRET_KEY,
+            region=settings.S3_REGION or "auto",
+            access_key=settings.S3_ACCESS_KEY or "",
+            secret_key=settings.S3_SECRET_KEY or "",
+            endpoint_url=settings.S3_ENDPOINT_URL,
+            public_base_url=settings.S3_PUBLIC_BASE_URL,
         )
     return LocalStorageBackend(settings.UPLOAD_DIR)
 
