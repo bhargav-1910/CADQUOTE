@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     gir1.2-pango-1.0 \
     fonts-liberation \
     curl \
+    libgl1 \
+    libglu1-mesa \
     libocct-data-exchange-dev \
     libocct-draw-dev \
     occt-misc \
@@ -23,6 +25,7 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir cascadio
 
 # Copy application code
 COPY . .
