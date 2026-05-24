@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-bookworm
 
 WORKDIR /app
 
@@ -15,8 +15,18 @@ RUN apt-get update && apt-get install -y \
     gir1.2-pango-1.0 \
     fonts-liberation \
     curl \
+    libegl1 \
     libgl1 \
     libglu1-mesa \
+    libxrender1 \
+    libxrandr2 \
+    libxfixes3 \
+    libxdamage1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxi6 \
+    libsm6 \
+    libice6 \
     libocct-data-exchange-dev \
     libocct-draw-dev \
     occt-misc \
