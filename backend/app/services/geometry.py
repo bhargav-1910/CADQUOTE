@@ -2,6 +2,7 @@
 import time
 import asyncio
 import logging
+import os
 from typing import Optional, Dict, Any
 from pathlib import Path
 import tempfile
@@ -13,6 +14,7 @@ from sqlalchemy import select
 
 from app.models.models import CADFile, GeometryAnalysis, ProcessingStatus
 from app.core.cache import cache
+from app.core.config import settings
 from app.services.storage import storage
 
 logger = logging.getLogger(__name__)
@@ -273,11 +275,27 @@ async def process_cad_file(
         await db.commit()
         
         try:
-            # Perform analysis
-            analysis_data = await geometry_processor.analyze_file(
-                cad_file.file_path,
-                cad_file.file_format
-            )
+            # Perform analysis. For remote storage, materialize a temp file first.
+            if settings.STORAGE_TYPE == "s3":
+                suffix = ".stl" if cad_file.file_format == "stl" else ".step"
+                fd, temp_path = tempfile.mkstemp(suffix=suffix)
+                os.close(fd)
+                try:
+                    content = await storage.get(cad_file.file_path)
+                    with open(temp_path, "wb") as f:
+                        f.write(content)
+                    analysis_data = await geometry_processor.analyze_file(
+                        temp_path,
+                        cad_file.file_format,
+                    )
+                finally:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+            else:
+                analysis_data = await geometry_processor.analyze_file(
+                    cad_file.file_path,
+                    cad_file.file_format
+                )
             
             # Cache the result
             await cache.set(cache_key, analysis_data)
