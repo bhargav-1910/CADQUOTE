@@ -9,7 +9,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
-from app.core.database import Base, _get_database_url
+from app.core.database import Base, _get_postgres_connect_args
 from app.models import models  # noqa: F401
 
 config = context.config
@@ -49,8 +49,9 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     connectable = create_async_engine(
-        _get_database_url(settings.DATABASE_URL),
+        settings.DATABASE_URL,
         poolclass=pool.NullPool,
+        connect_args=_get_postgres_connect_args(settings.DATABASE_URL),
     )
 
     async with connectable.connect() as connection:

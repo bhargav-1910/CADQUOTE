@@ -1,24 +1,23 @@
 """Database connection and session management."""
 from contextlib import asynccontextmanager
+import ssl
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
 from app.core.config import settings
 
-def _get_database_url(database_url: str) -> str:
-    """Normalize database URLs for the current deployment target."""
-    url = make_url(database_url)
-    hostname = (url.host or "").lower()
+def _get_postgres_connect_args(database_url: str) -> dict:
+    """Return SSL connect args for hosted Postgres services."""
+    hostname = database_url.split("@", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
 
     if hostname in {"localhost", "127.0.0.1", "::1"}:
-        return database_url
+        return {}
 
-    if url.get_backend_name().startswith("postgresql"):
-        url = url.set(query={**url.query, "sslmode": "disable"})
-
-    return str(url)
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return {"ssl": ssl_context}
 
 
 # Create async engine - handle SQLite vs PostgreSQL
@@ -30,10 +29,11 @@ if settings.DATABASE_URL.startswith("sqlite"):
     )
 else:
     engine = create_async_engine(
-        _get_database_url(settings.DATABASE_URL),
+        settings.DATABASE_URL,
         pool_size=settings.DATABASE_POOL_SIZE,
         pool_pre_ping=True,
         echo=settings.DEBUG,
+        connect_args=_get_postgres_connect_args(settings.DATABASE_URL),
     )
 
 # Create async session factory
