@@ -16,7 +16,10 @@ def _get_postgres_connect_args(database_url: str) -> dict:
     if hostname in {"localhost", "127.0.0.1", "::1"}:
         return {}
 
-    return {"ssl": ssl.create_default_context()}
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return {"ssl": ssl_context}
 
 
 # Create async engine - handle SQLite vs PostgreSQL
