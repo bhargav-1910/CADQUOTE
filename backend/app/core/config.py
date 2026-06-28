@@ -84,8 +84,24 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
+    @staticmethod
+    def _strip_wrapping_quotes(value: str) -> str:
+        if value.startswith('"') and value.endswith('"'):
+            return value[1:-1]
+        if value.startswith("'") and value.endswith("'"):
+            return value[1:-1]
+        return value
+
     def model_post_init(self, __context: object) -> None:
         """Normalize database URL for async SQLAlchemy drivers."""
+        self.DATABASE_URL = self._strip_wrapping_quotes(self.DATABASE_URL.strip())
+        if self.REDIS_URL:
+            self.REDIS_URL = self._strip_wrapping_quotes(self.REDIS_URL.strip())
+        if self.S3_ENDPOINT_URL:
+            self.S3_ENDPOINT_URL = self._strip_wrapping_quotes(self.S3_ENDPOINT_URL.strip())
+        if self.S3_PUBLIC_BASE_URL:
+            self.S3_PUBLIC_BASE_URL = self._strip_wrapping_quotes(self.S3_PUBLIC_BASE_URL.strip())
+
         if self.DATABASE_URL.startswith("sqlite"):
             return
 
