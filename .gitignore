@@ -64,3 +64,6 @@ htmlcov/
 
 # Docker
 .docker/
+
+# Claude Code local settings
+.claude/
