@@ -15,6 +15,24 @@ export interface BoundingBox {
 }
 
 export type DFMSeverity = 'error' | 'warning' | 'info';
+export type ToleranceTier = 'general' | 'precision' | 'tight';
+
+export interface QuantityBreak {
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  lead_time_days: number;
+  is_selected: boolean;
+  savings_pct_vs_single: number;
+}
+
+export interface DFMIssueCostImpact {
+  code: string;
+  title: string;
+  severity: DFMSeverity;
+  reason: string;
+  estimated_cost_per_part: number;
+}
 
 export interface DFMIssue {
   severity: DFMSeverity;
@@ -111,6 +129,7 @@ export interface GeometryAnalysis {
   bounding_box: BoundingBox;
   min_wall_thickness: number | null;
   hole_count: number;
+  hole_diameters_mm?: number[] | null;
   complexity_score: number;
   removal_ratio: number;
   triangle_count: number | null;
@@ -152,6 +171,7 @@ export interface PricingOverrides {
   machine_setup_time_hours?: number;
   machine_name?: string;
   margin_factor?: number;
+  tolerance_tier?: ToleranceTier;
 }
 
 export interface ProcessRoutingOperation {

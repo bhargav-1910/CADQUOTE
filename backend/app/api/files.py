@@ -182,6 +182,7 @@ async def get_file_geometry(
         ),
         min_wall_thickness=geometry.min_wall_thickness,
         hole_count=geometry.hole_count,
+        hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
         complexity_score=geometry.complexity_score,
         removal_ratio=geometry.removal_ratio,
         triangle_count=geometry.triangle_count,

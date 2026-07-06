@@ -1,7 +1,8 @@
 """Rule-based CNC pricing engine with India-focused benchmark ranges."""
+import math
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -39,6 +40,7 @@ class PricingInputs:
     complexity_score: float
     removal_ratio: float
     hole_count: int
+    hole_diameters_mm: Optional[List[float]]
     min_wall_thickness_mm: Optional[float]
     triangle_count: Optional[int]
 
@@ -88,6 +90,9 @@ class PricingInputs:
     urgent_factor_pct: float
     negotiation_buffer_pct: float
     min_order_value: Decimal
+
+    # Tolerance requirement (general / precision / tight)
+    tolerance_tier: str = "general"
 
 
 @dataclass
@@ -154,6 +159,56 @@ class PricingEngine:
         "cmm": (100.0, 300.0),
     }
 
+    # Tolerance tiers: tighter tolerances slow machining (finishing passes,
+    # slower feeds) and add inspection effort.
+    TOLERANCE_TIERS = {
+        "general": {
+            "label": "General (±0.10 mm)",
+            "machining_time_multiplier": 1.0,
+            "inspection_multiplier": 1.0,
+            "lead_time_add_days": 0.0,
+        },
+        "precision": {
+            "label": "Precision (±0.05 mm)",
+            "machining_time_multiplier": 1.35,
+            "inspection_multiplier": 1.5,
+            "lead_time_add_days": 0.5,
+        },
+        "tight": {
+            "label": "Tight (±0.01 mm)",
+            "machining_time_multiplier": 2.0,
+            "inspection_multiplier": 2.5,
+            "lead_time_add_days": 1.5,
+        },
+    }
+
+    # Per-rule DFM cost effects, replacing the old single blunt surcharge.
+    # cycle_time_pct slows cutting, tooling_add buys special tooling (per
+    # batch), extra_setups adds a fixturing setup, inspection_pct adds QC
+    # effort, risk_pct stays a residual surcharge for hard-to-model risks.
+    DFM_COST_RULES = {
+        "wall-too-thin-critical": {"cycle_time_pct": 18.0, "inspection_pct": 10.0, "reason": "Reduced feed rates and extra finishing passes around fragile walls"},
+        "wall-too-thin": {"cycle_time_pct": 12.0, "inspection_pct": 6.0, "reason": "Slower feeds to avoid deforming thin walls"},
+        "wall-thin-warning": {"cycle_time_pct": 5.0, "reason": "Conservative cutting parameters near thin sections"},
+        "wall-thickness-unknown": {"risk_pct": 3.0, "reason": "Manual wall review buffer"},
+        "complexity-very-high": {"cycle_time_pct": 10.0, "extra_setups": 1, "reason": "Difficult tool access and an extra fixturing setup"},
+        "complexity-high": {"cycle_time_pct": 6.0, "reason": "More feature transitions and toolpath overhead"},
+        "complexity-elevated": {"cycle_time_pct": 2.0, "reason": "Moderate cycle-time impact"},
+        "removal-ratio-critical": {"risk_pct": 4.0, "reason": "Heavy stock removal wear and chip management"},
+        "removal-ratio-high": {"risk_pct": 2.0, "reason": "High stock removal overhead"},
+        "holes-dense-critical": {"cycle_time_pct": 8.0, "tooling_add": 60.0, "reason": "Dense drill patterns need extra tools and pecking cycles"},
+        "holes-dense": {"cycle_time_pct": 4.0, "tooling_add": 30.0, "reason": "Extra drilling and inspection time"},
+        "holes-many": {"cycle_time_pct": 1.5, "reason": "Additional drilling operations"},
+        "aspect-ratio-critical": {"extra_setups": 1, "cycle_time_pct": 6.0, "reason": "Special fixturing and vibration-limited cutting"},
+        "aspect-ratio-high": {"cycle_time_pct": 4.0, "reason": "Reduced rigidity limits cutting speed"},
+        "aspect-ratio-elevated": {"cycle_time_pct": 1.5, "reason": "Workholding care for a slender part"},
+        "thinness-ratio-high": {"cycle_time_pct": 4.0, "reason": "Chatter-limited cutting parameters"},
+        "deep-drillability-risk": {"tooling_add": 80.0, "cycle_time_pct": 5.0, "reason": "Deep-hole drilling cycles and specialized drills"},
+        "tool-access-risk": {"cycle_time_pct": 6.0, "extra_setups": 1, "reason": "Narrow tool access may force smaller tools and extra setups"},
+        "micro-feature-density-high": {"cycle_time_pct": 5.0, "reason": "Tiny features need small tools at low feed"},
+        "mesh-very-dense": {"risk_pct": 0.5, "reason": "Analysis overhead only"},
+    }
+
     def calculate_price(self, inputs: PricingInputs) -> PricingResult:
         details: Dict[str, Any] = {}
 
@@ -177,11 +232,36 @@ class PricingEngine:
         # are typically near ~15 and complex parts trend higher.
         complexity_norm = _clamp((inputs.complexity_score - 14.0) / 18.0, 0.0, 1.0)
 
-        # A. Material cost
+        # A. Material cost — stock model depends on process:
+        # turned parts buy round bar (pi/4 * d^2 * L), milled parts buy a
+        # rectangular billet estimated from part volume plus wastage.
         raw_weight_kg = (inputs.volume_cm3 * inputs.material_density) / 1000.0
-        wastage_range = (0.10, 0.25) if process_type == "milling" else (0.05, 0.15)
-        wastage_pct = wastage_range[0] + (wastage_range[1] - wastage_range[0]) * complexity_norm
-        buy_weight_kg = raw_weight_kg * (1.0 + wastage_pct)
+
+        if process_type == "turning":
+            stock_diameter_cm, stock_length_cm = self._turning_stock_dims(
+                inputs.bbox_x_cm, inputs.bbox_y_cm, inputs.bbox_z_cm
+            )
+            bar_volume_cm3 = math.pi / 4.0 * stock_diameter_cm**2 * stock_length_cm
+            # Parting/facing allowance on bar stock.
+            stock_volume_cm3 = max(bar_volume_cm3, inputs.volume_cm3) * 1.05
+            buy_weight_kg = (stock_volume_cm3 * inputs.material_density) / 1000.0
+            wastage_pct = (buy_weight_kg / raw_weight_kg - 1.0) if raw_weight_kg > 0 else 0.0
+            stock_dimensions = {
+                "form": "round_bar",
+                "diameter_mm": round(stock_diameter_cm * 10.0, 2),
+                "length_mm": round(stock_length_cm * 10.0, 2),
+            }
+        else:
+            wastage_range = (0.10, 0.25)
+            wastage_pct = wastage_range[0] + (wastage_range[1] - wastage_range[0]) * complexity_norm
+            buy_weight_kg = raw_weight_kg * (1.0 + wastage_pct)
+            stock_dimensions = {
+                "form": "rectangular_block",
+                "x": round(inputs.bbox_x_cm * 10.0, 2),
+                "y": round(inputs.bbox_y_cm * 10.0, 2),
+                "z": round(inputs.bbox_z_cm * 10.0, 2),
+            }
+
         effective_material_rate = self._normalized_material_rate(
             inputs.material_cost_per_kg,
             inputs.material_name,
@@ -209,11 +289,8 @@ class PricingEngine:
         }
 
         details["raw_material"] = {
-            "raw_material_stock_dimensions_mm": {
-                "x": round(inputs.bbox_x_cm * 10.0, 2),
-                "y": round(inputs.bbox_y_cm * 10.0, 2),
-                "z": round(inputs.bbox_z_cm * 10.0, 2),
-            },
+            "raw_material_stock_dimensions_mm": stock_dimensions,
+            "stock_form": stock_dimensions["form"],
             "raw_material_mass_kg": round(raw_weight_kg, 4),
             "raw_material_rate_per_kg": float(effective_material_rate),
             "scrap_weight_kg": round(scrap_weight_kg, 4),
@@ -233,7 +310,9 @@ class PricingEngine:
 
         removal_time_min = removal_cm3 / adjusted_mrr if adjusted_mrr > 0 else 0.0
 
-        hole_seconds = inputs.hole_count * (5.0 + (15.0 - 5.0) * complexity_norm)
+        hole_seconds, hole_time_breakdown = self._hole_feature_seconds(
+            inputs.hole_count, inputs.hole_diameters_mm, complexity_norm
+        )
         thread_estimate = max(0, int(round(inputs.hole_count * 0.2)))
         thread_seconds = thread_estimate * (20.0 + (60.0 - 20.0) * complexity_norm)
 
@@ -251,7 +330,18 @@ class PricingEngine:
         tool_change_time_per_event_min = 0.8 + 0.7 * complexity_norm
         tool_change_time_min = tool_change_count * tool_change_time_per_event_min
 
-        cycle_time_min = removal_time_min + feature_time_min + tool_change_time_min
+        base_cycle_time_min = removal_time_min + feature_time_min + tool_change_time_min
+
+        # Tolerance tier slows cutting; DFM issues (thin walls, tool access)
+        # slow it further via per-rule adjustments instead of a flat surcharge.
+        tolerance = self.TOLERANCE_TIERS.get(
+            (inputs.tolerance_tier or "general").lower(), self.TOLERANCE_TIERS["general"]
+        )
+        dfm_adjustments = self._dfm_cost_adjustments(dfm_analysis["issues"])
+
+        tolerance_time_multiplier = float(tolerance["machining_time_multiplier"])
+        dfm_cycle_multiplier = 1.0 + _clamp(dfm_adjustments["cycle_time_pct"], 0.0, 40.0) / 100.0
+        cycle_time_min = base_cycle_time_min * tolerance_time_multiplier * dfm_cycle_multiplier
 
         machine_rate_per_hour = self._normalized_machine_rate(inputs.hourly_rate, machine_type)
         machining_cost = _to_decimal(cycle_time_min) * machine_rate_per_hour / _to_decimal(60)
@@ -266,8 +356,12 @@ class PricingEngine:
             "tool_change_count": tool_change_count,
             "tool_change_time_min": round(tool_change_time_min, 4),
             "hole_seconds": round(hole_seconds, 2),
+            "hole_time_breakdown": hole_time_breakdown,
             "thread_seconds": round(thread_seconds, 2),
             "pocket_time_min": round(pocket_time_min, 4),
+            "base_cycle_time_min": round(base_cycle_time_min, 4),
+            "tolerance_time_multiplier": round(tolerance_time_multiplier, 4),
+            "dfm_cycle_multiplier": round(dfm_cycle_multiplier, 4),
             "cycle_time_min": round(cycle_time_min, 4),
             "machine_rate_per_hour": float(machine_rate_per_hour),
             "machining_cost_per_part": float(machining_cost),
@@ -275,7 +369,7 @@ class PricingEngine:
 
         # C. Setup cost
         setup_time_hours = _clamp(inputs.setup_time_hours, 0.1, 2.0)
-        number_of_setups = max(1, int(round(1 + complexity_norm * 1.5)))
+        number_of_setups = max(1, int(round(1 + complexity_norm * 1.5))) + int(dfm_adjustments["extra_setups"])
         setup_time_total_hours = setup_time_hours * number_of_setups
         setup_hour_rate_per_hour = max(inputs.setup_hour_rate, _to_decimal(0))
         if setup_hour_rate_per_hour <= 0:
@@ -316,6 +410,10 @@ class PricingEngine:
         # D. Tooling cost allocation
         tooling_base = self._tooling_total_cost(material_key)
         tooling_feature_add = inputs.hole_count * 2.0 + complexity_norm * 40.0
+        # Large bores need boring bars / interpolation tooling.
+        large_hole_count = len([d for d in (inputs.hole_diameters_mm or []) if d > 12.0])
+        tooling_feature_add += large_hole_count * 15.0
+        tooling_feature_add += dfm_adjustments["tooling_add"]
         tooling_total = _to_decimal(tooling_base + tooling_feature_add)
         tooling_per_part = tooling_total / _to_decimal(max(inputs.quantity, 1))
 
@@ -364,14 +462,30 @@ class PricingEngine:
             base_for_pct = material_cost + machining_cost + setup_cost_per_part
             quality_with_config += base_for_pct * _to_decimal(inputs.inspection_percentage_cost / 100.0)
 
-        inspection_cost = quality_with_config
+        tolerance_inspection_multiplier = float(tolerance["inspection_multiplier"])
+        dfm_inspection_multiplier = 1.0 + _clamp(dfm_adjustments["inspection_pct"], 0.0, 25.0) / 100.0
+        inspection_cost = (
+            quality_with_config
+            * _to_decimal(tolerance_inspection_multiplier)
+            * _to_decimal(dfm_inspection_multiplier)
+        )
 
         details["quality"] = {
             "inspection_level": inputs.inspection_name,
             "base_quality_cost_per_part": float(quality_base),
             "inspection_fixed_cost_allocated": float(inputs.inspection_fixed_cost / _to_decimal(max(inputs.quantity, 1))),
             "inspection_percentage_cost": inputs.inspection_percentage_cost,
+            "tolerance_inspection_multiplier": round(tolerance_inspection_multiplier, 4),
+            "dfm_inspection_multiplier": round(dfm_inspection_multiplier, 4),
             "inspection_cost_per_part": float(inspection_cost),
+        }
+
+        details["tolerance"] = {
+            "tier": (inputs.tolerance_tier or "general").lower(),
+            "label": tolerance["label"],
+            "machining_time_multiplier": round(tolerance_time_multiplier, 4),
+            "inspection_multiplier": round(tolerance_inspection_multiplier, 4),
+            "lead_time_add_days": float(tolerance["lead_time_add_days"]),
         }
 
         # Core manufacturing subtotal per part
@@ -414,11 +528,37 @@ class PricingEngine:
         risk_multiplier = 1.0 + (_clamp(inputs.risk_factor_pct, 5.0, 20.0) / 100.0)
         risk_adjusted_cost = after_overhead_cost * _to_decimal(risk_multiplier)
 
-        dfm_penalty_pct = _clamp(dfm_analysis["total_penalty"] * 0.25, 0.0, 20.0)
+        # Most DFM consequences are already priced in as cycle time, tooling,
+        # setups and inspection above; only hard-to-model residual risk stays
+        # as a percentage surcharge.
+        dfm_penalty_pct = _clamp(dfm_adjustments["risk_pct"], 0.0, 10.0)
         if dfm_analysis["has_blocking_issue"]:
-            dfm_penalty_pct = max(dfm_penalty_pct, 8.0)
+            dfm_penalty_pct = max(dfm_penalty_pct, 3.0)
         dfm_multiplier = 1.0 + (dfm_penalty_pct / 100.0)
         dfm_adjusted_cost = risk_adjusted_cost * _to_decimal(dfm_multiplier)
+
+        # Per-issue cost attribution so customers can see what fixing each
+        # DFM issue would roughly save (per part).
+        base_cycle_cost = base_cycle_time_min * tolerance_time_multiplier * float(machine_rate_per_hour) / 60.0
+        setup_cost_per_setup = setup_time_hours * float(setup_hour_rate_per_hour) / max(inputs.quantity, 1)
+        issue_cost_impacts: List[Dict[str, Any]] = []
+        for impact in dfm_adjustments["per_issue"]:
+            estimated_cost = (
+                base_cycle_cost * impact["cycle_time_pct"] / 100.0
+                + impact["tooling_add"] / max(inputs.quantity, 1)
+                + impact["extra_setups"] * setup_cost_per_setup
+                + float(quality_with_config) * impact["inspection_pct"] / 100.0
+                + float(risk_adjusted_cost) * impact["risk_pct"] / 100.0
+            )
+            issue_cost_impacts.append(
+                {
+                    "code": impact["code"],
+                    "title": impact["title"],
+                    "severity": impact["severity"],
+                    "reason": impact["reason"],
+                    "estimated_cost_per_part": round(estimated_cost, 2),
+                }
+            )
 
         details["overheads_and_risk"] = {
             "vendor_overhead_pct": round(vendor_oh * 100, 2),
@@ -431,6 +571,11 @@ class PricingEngine:
             "analysis": dfm_analysis,
             "penalty_pct": round(dfm_penalty_pct, 2),
             "penalty_multiplier": round(dfm_multiplier, 4),
+            "cycle_time_pct": round(_clamp(dfm_adjustments["cycle_time_pct"], 0.0, 40.0), 2),
+            "tooling_add": round(dfm_adjustments["tooling_add"], 2),
+            "extra_setups": int(dfm_adjustments["extra_setups"]),
+            "inspection_pct": round(_clamp(dfm_adjustments["inspection_pct"], 0.0, 25.0), 2),
+            "issue_cost_impacts": issue_cost_impacts,
             "cost_after_dfm_per_part": float(dfm_adjusted_cost),
         }
 
@@ -500,6 +645,7 @@ class PricingEngine:
             + machining_days
             + inputs.finish_lead_time_days
             + inputs.inspection_lead_time_days
+            + float(tolerance["lead_time_add_days"])
         )
 
         dfm_lead_time_add = 0.0
@@ -538,6 +684,111 @@ class PricingEngine:
             estimated_lead_time_days=estimated_lead_time,
             details=details,
         )
+
+    def _turning_stock_dims(self, bbox_x_cm: float, bbox_y_cm: float, bbox_z_cm: float) -> tuple:
+        """
+        Round bar stock for a turned part: the turning axis is the dimension
+        whose two perpendicular dimensions are most similar (round
+        cross-section). Returns (diameter_cm, length_cm).
+        """
+        dims = [max(bbox_x_cm, 0.01), max(bbox_y_cm, 0.01), max(bbox_z_cm, 0.01)]
+        best_axis = 0
+        best_mismatch = float("inf")
+        for axis in range(3):
+            cross = [dims[i] for i in range(3) if i != axis]
+            mismatch = abs(cross[0] - cross[1]) / max(cross[0], cross[1])
+            if mismatch < best_mismatch:
+                best_mismatch = mismatch
+                best_axis = axis
+
+        length_cm = dims[best_axis]
+        diameter_cm = max(d for i, d in enumerate(dims) if i != best_axis)
+        return diameter_cm, length_cm
+
+    def _hole_feature_seconds(
+        self,
+        hole_count: int,
+        hole_diameters_mm: Optional[List[float]],
+        complexity_norm: float,
+    ) -> tuple:
+        """
+        Drilling/boring time per hole, sized by fitted diameter when known.
+        Small drills are delicate (pecking), large bores need interpolation
+        or boring bars; mid-range twist drills are fastest.
+        """
+        default_seconds = 5.0 + (15.0 - 5.0) * complexity_norm
+        if not hole_diameters_mm:
+            return hole_count * default_seconds, {
+                "small": 0,
+                "medium": hole_count,
+                "large": 0,
+                "sized_from_cad": False,
+            }
+
+        small = medium = large = 0
+        total_seconds = 0.0
+        for diameter in hole_diameters_mm:
+            if diameter < 3.0:
+                small += 1
+                total_seconds += 12.0 + 10.0 * complexity_norm
+            elif diameter <= 12.0:
+                medium += 1
+                total_seconds += 5.0 + 10.0 * complexity_norm
+            else:
+                large += 1
+                total_seconds += 25.0 + 35.0 * complexity_norm
+
+        # Holes counted but without a fitted diameter get the default time.
+        unsized = max(hole_count - len(hole_diameters_mm), 0)
+        medium += unsized
+        total_seconds += unsized * default_seconds
+
+        return total_seconds, {
+            "small": small,
+            "medium": medium,
+            "large": large,
+            "sized_from_cad": True,
+        }
+
+    def _dfm_cost_adjustments(self, issues: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Convert DFM issues into concrete cost adjustments per rule."""
+        totals = {
+            "cycle_time_pct": 0.0,
+            "tooling_add": 0.0,
+            "extra_setups": 0,
+            "inspection_pct": 0.0,
+            "risk_pct": 0.0,
+        }
+        per_issue: List[Dict[str, Any]] = []
+
+        for issue in issues:
+            rule = self.DFM_COST_RULES.get(issue["code"])
+            if rule is None:
+                # Unmapped rules fall back to a small residual surcharge.
+                rule = {"risk_pct": min(issue.get("penalty", 5) * 0.15, 3.0), "reason": issue.get("recommendation", "")}
+
+            entry = {
+                "code": issue["code"],
+                "title": issue.get("title", issue["code"]),
+                "severity": issue.get("severity", "info"),
+                "reason": rule.get("reason", ""),
+                "cycle_time_pct": float(rule.get("cycle_time_pct", 0.0)),
+                "tooling_add": float(rule.get("tooling_add", 0.0)),
+                "extra_setups": int(rule.get("extra_setups", 0)),
+                "inspection_pct": float(rule.get("inspection_pct", 0.0)),
+                "risk_pct": float(rule.get("risk_pct", 0.0)),
+            }
+            per_issue.append(entry)
+
+            totals["cycle_time_pct"] += entry["cycle_time_pct"]
+            totals["tooling_add"] += entry["tooling_add"]
+            totals["extra_setups"] += entry["extra_setups"]
+            totals["inspection_pct"] += entry["inspection_pct"]
+            totals["risk_pct"] += entry["risk_pct"]
+
+        totals["extra_setups"] = min(totals["extra_setups"], 2)
+        totals["per_issue"] = per_issue
+        return totals
 
     def _infer_machine_type(self, machine_name: str) -> str:
         name = (machine_name or "").lower()
@@ -667,6 +918,8 @@ async def calculate_pricing(
     quantity: int = 1,
     margin_factor: Optional[float] = None,
     pricing_overrides: Optional[Dict[str, Any]] = None,
+    tolerance_tier: str = "general",
+    include_quantity_breaks: bool = True,
 ) -> PricingResult:
     """Calculate pricing for a CNC job and return a detailed breakdown."""
     default_query = (
@@ -852,6 +1105,10 @@ async def calculate_pricing(
             machine_name = str(pricing_overrides["machine_name"])
             applied_overrides["machine_name"] = machine_name
 
+        if pricing_overrides.get("tolerance_tier"):
+            tolerance_tier = str(pricing_overrides["tolerance_tier"]).lower()
+            applied_overrides["tolerance_tier"] = tolerance_tier
+
     # Optional explicit margin_factor function arg, preserved for compatibility.
     if margin_factor is not None:
         vendor_margin_pct = max(0.0, (float(margin_factor) - 1.0) * 100.0)
@@ -867,6 +1124,7 @@ async def calculate_pricing(
         complexity_score=geometry.complexity_score,
         removal_ratio=geometry.removal_ratio,
         hole_count=geometry.hole_count,
+        hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
         min_wall_thickness_mm=geometry.min_wall_thickness,
         triangle_count=geometry.triangle_count,
         material_name=material.name,
@@ -904,10 +1162,38 @@ async def calculate_pricing(
         urgent_factor_pct=urgent_factor_pct,
         negotiation_buffer_pct=negotiation_buffer_pct,
         min_order_value=min_order_value,
+        tolerance_tier=(tolerance_tier or "general").lower(),
     )
 
     result = pricing_engine.calculate_price(inputs)
     if applied_overrides:
         result.details["pricing_overrides"] = applied_overrides
+
+    if include_quantity_breaks:
+        # Fixed costs (setup, CAM, tooling) amortize with quantity; expose
+        # the standard break points so customers can compare unit economics.
+        break_quantities = sorted({1, 10, 50, 100, quantity})
+        quantity_breaks: List[Dict[str, Any]] = []
+        for break_qty in break_quantities:
+            break_result = (
+                result
+                if break_qty == quantity
+                else pricing_engine.calculate_price(replace(inputs, quantity=break_qty))
+            )
+            quantity_breaks.append(
+                {
+                    "quantity": break_qty,
+                    "unit_price": float(break_result.unit_price),
+                    "total_price": float(break_result.total_price),
+                    "lead_time_days": float(break_result.estimated_lead_time_days),
+                    "is_selected": break_qty == quantity,
+                }
+            )
+        base_unit = quantity_breaks[0]["unit_price"] if quantity_breaks else 0.0
+        for entry in quantity_breaks:
+            entry["savings_pct_vs_single"] = (
+                round((1.0 - entry["unit_price"] / base_unit) * 100.0, 1) if base_unit > 0 else 0.0
+            )
+        result.details["quantity_breaks"] = quantity_breaks
 
     return result

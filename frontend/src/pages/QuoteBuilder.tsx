@@ -10,11 +10,13 @@ import FilePreviewModal from '@/components/FilePreviewModal';
 import { useAuth } from '@/components/AuthProvider';
 import type {
   CADFile,
+  DFMIssueCostImpact,
   GeometryAnalysis,
   PricingResponse,
   PricingOverrides,
   ProcessRoutingOperation,
   QuoteConfiguration,
+  ToleranceTier,
 } from '@/types';
 import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile } from '@/services/api';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
@@ -256,6 +258,7 @@ const QuoteBuilder = () => {
   const [error, setError] = useState<string | null>(null);
   const [useQuoteSpecificPricing, setUseQuoteSpecificPricing] = useState(false);
   const [pricingOverrides, setPricingOverrides] = useState<PricingOverrides>({});
+  const [toleranceTier, setToleranceTier] = useState<ToleranceTier>('general');
   const [rfqCommercialForm, setRfqCommercialForm] = useState<RFQCommercialFormState>(
     createDefaultRFQCommercialState(),
   );
@@ -266,10 +269,14 @@ const QuoteBuilder = () => {
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
   );
 
-  const pricingOverridesPayload = useMemo(
-    () => buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides),
-    [useQuoteSpecificPricing, pricingOverrides]
-  );
+  const pricingOverridesPayload = useMemo(() => {
+    const base = buildPricingOverridesPayload(useQuoteSpecificPricing, pricingOverrides);
+    // Tolerance always applies to pricing, independent of the override toggle.
+    if (toleranceTier === 'general') {
+      return base;
+    }
+    return { ...(base ?? {}), tolerance_tier: toleranceTier };
+  }, [useQuoteSpecificPricing, pricingOverrides, toleranceTier]);
 
   const handlePricingOverridePatch = useCallback((patch: PricingOverrides) => {
     setUseQuoteSpecificPricing(true);
@@ -883,6 +890,7 @@ const QuoteBuilder = () => {
     setActiveMultiFileId(null);
     setUseQuoteSpecificPricing(false);
     setPricingOverrides({});
+    setToleranceTier('general');
     setRfqCommercialForm(createDefaultRFQCommercialState());
     setProcessRouting([{ ...emptyRoutingRow }]);
     setShowProcessRouting(false);
@@ -1209,7 +1217,13 @@ const QuoteBuilder = () => {
             {config.geometry && (
               <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">DFX Analysis</h2>
-                <DFXAnalysis geometry={config.geometry} />
+                <DFXAnalysis
+                  geometry={config.geometry}
+                  costImpacts={
+                    ((pricing?.pricing_explanation as Record<string, any> | undefined)?.dfm
+                      ?.issue_cost_impacts as DFMIssueCostImpact[] | undefined) ?? undefined
+                  }
+                />
               </div>
             )}
 
@@ -1220,6 +1234,8 @@ const QuoteBuilder = () => {
                 surfaceFinishId={config.surfaceFinishId}
                 inspectionLevelId={config.inspectionLevelId}
                 quantity={config.quantity}
+                toleranceTier={toleranceTier}
+                onToleranceTierChange={setToleranceTier}
                 quoteSpecificPricingEnabled={useQuoteSpecificPricing}
                 onQuoteSpecificPricingEnabledChange={setUseQuoteSpecificPricing}
                 pricingOverrides={pricingOverrides}
@@ -1491,6 +1507,8 @@ const QuoteBuilder = () => {
                 surfaceFinishId={configureIndividually ? (activeMultiFile?.surfaceFinishId ?? null) : surfaceFinishId}
                 inspectionLevelId={configureIndividually ? (activeMultiFile?.inspectionLevelId ?? null) : inspectionLevelId}
                 quantity={configureIndividually ? (activeMultiFile?.quantity ?? 1) : quantity}
+                toleranceTier={toleranceTier}
+                onToleranceTierChange={setToleranceTier}
                 quoteSpecificPricingEnabled={useQuoteSpecificPricing}
                 onQuoteSpecificPricingEnabledChange={setUseQuoteSpecificPricing}
                 pricingOverrides={pricingOverrides}

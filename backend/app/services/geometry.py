@@ -102,14 +102,15 @@ class GeometryProcessor:
             # Removal ratio (how much material needs to be removed)
             removal_ratio = volume_cm3 / bounding_box_volume if bounding_box_volume > 0 else 0
             
-            # Hole detection (simplified - count vertices with high curvature)
-            hole_count = self._estimate_hole_count(mesh)
-            
+            # Hole detection: cluster boundary loops and fit circle radii,
+            # falling back to genus for watertight meshes.
+            hole_count, hole_diameters_mm = self._detect_holes(mesh)
+
             # Wall thickness estimation (simplified)
             min_wall_thickness = self._estimate_min_wall_thickness(mesh, scale_factor)
-            
+
             analysis_time = time.time() - start_time
-            
+
             return {
                 "volume": round(volume_cm3, 4),
                 "surface_area": round(surface_area_cm2, 4),
@@ -119,6 +120,7 @@ class GeometryProcessor:
                 "bounding_box_volume": round(bounding_box_volume, 4),
                 "min_wall_thickness": round(min_wall_thickness, 2) if min_wall_thickness else None,
                 "hole_count": hole_count,
+                "hole_diameters_mm": hole_diameters_mm,
                 "complexity_score": round(complexity_score, 4),
                 "removal_ratio": round(removal_ratio, 4),
                 "triangle_count": len(mesh.faces),
@@ -176,33 +178,83 @@ class GeometryProcessor:
                 "Please install with: pip install cascadio"
             )
     
-    def _estimate_hole_count(self, mesh) -> int:
+    def _detect_holes(self, mesh) -> tuple:
         """
-        Estimate number of holes using Euler characteristic.
-        
-        For a mesh: V - E + F = 2 - 2g - b
-        where g = genus (handles), b = boundary loops (holes)
+        Detect holes and estimate their diameters.
+
+        Two complementary signals:
+        - Open boundary loops: clustered into connected loops; near-circular
+          loops are fit with a radius so hole size can drive drilling cost.
+        - Genus (for watertight meshes): through-holes in a closed mesh show
+          up as handles (V - E + F = 2 - 2g), not boundary loops.
+
+        Returns (hole_count, hole_diameters_mm or None).
         """
+        hole_count = 0
+        diameters_mm: list = []
         try:
-            # Simple estimation based on mesh topology
-            euler = mesh.euler_number
-            # For a closed mesh, euler = 2 - 2g
-            # Holes would show as additional boundary loops
-            
-            # Count boundary edges
-            edges = mesh.edges_unique
-            edges_per_face = mesh.edges_face
-            
-            # Edges that appear only once are boundary edges
-            edge_counts = np.bincount(edges_per_face.flatten())
-            boundary_edges = np.sum(edge_counts == 1)
-            
-            # Rough estimate: each hole has ~8-16 boundary edges on average
-            estimated_holes = max(0, boundary_edges // 12)
-            
-            return min(estimated_holes, 50)  # Cap at reasonable number
+            loops = self._boundary_loops(mesh)
+            for loop_vertices in loops:
+                points = mesh.vertices[loop_vertices]
+                center = points.mean(axis=0)
+                radii = np.linalg.norm(points - center, axis=1)
+                mean_radius = float(radii.mean())
+                if mean_radius <= 0:
+                    continue
+                # Near-circular loop => treat as a drilled/bored hole.
+                if float(radii.std()) / mean_radius < 0.25:
+                    hole_count += 1
+                    diameters_mm.append(round(mean_radius * 2.0, 2))
+                else:
+                    # Irregular opening still costs a machining feature.
+                    hole_count += 1
         except Exception:
-            return 0
+            logger.debug("Boundary-loop hole detection failed", exc_info=True)
+
+        try:
+            if mesh.is_watertight:
+                genus = max(0, int(round((2 - mesh.euler_number) / 2)))
+                hole_count += genus
+        except Exception:
+            pass
+
+        hole_count = min(hole_count, 50)
+        diameters_mm = sorted(diameters_mm)[:50]
+        return hole_count, (diameters_mm if diameters_mm else None)
+
+    def _boundary_loops(self, mesh) -> list:
+        """Group open boundary edges into connected vertex loops."""
+        # Edges referenced by exactly one face are boundary edges.
+        edges = mesh.edges_sorted
+        unique_edges, counts = np.unique(edges, axis=0, return_counts=True)
+        boundary = unique_edges[counts == 1]
+        if len(boundary) < 3:
+            return []
+
+        # Union-find over boundary vertices to split edges into loops.
+        parent: dict = {}
+
+        def find(v):
+            root = v
+            while parent.get(root, root) != root:
+                root = parent[root]
+            while parent.get(v, v) != v:
+                parent[v], v = root, parent[v]
+            return root
+
+        for a, b in boundary:
+            a, b = int(a), int(b)
+            parent.setdefault(a, a)
+            parent.setdefault(b, b)
+            parent[find(a)] = find(b)
+
+        clusters: dict = {}
+        for a, b in boundary:
+            root = find(int(a))
+            clusters.setdefault(root, set()).update((int(a), int(b)))
+
+        # A closed loop needs at least 3 vertices.
+        return [np.array(sorted(vs)) for vs in clusters.values() if len(vs) >= 3]
     
     def _estimate_min_wall_thickness(
         self, 
@@ -211,13 +263,14 @@ class GeometryProcessor:
     ) -> Optional[float]:
         """
         Estimate minimum wall thickness using ray casting.
-        
-        This is a simplified estimation - full analysis would require
-        more sophisticated algorithms.
+
+        Sampling is seeded so re-processing the same file always yields the
+        same thickness (and therefore the same DFM penalties and price).
         """
         try:
-            # Sample points on surface
-            points, face_idx = mesh.sample(500, return_index=True)
+            trimesh = self._get_trimesh()
+            # Seeded surface sampling keeps quotes reproducible.
+            points, face_idx = trimesh.sample.sample_surface(mesh, 500, seed=42)
             normals = mesh.face_normals[face_idx]
             
             # Cast rays inward from surface points
@@ -317,6 +370,7 @@ async def process_cad_file(
         bounding_box_volume=analysis_data["bounding_box_volume"],
         min_wall_thickness=analysis_data.get("min_wall_thickness"),
         hole_count=analysis_data.get("hole_count", 0),
+        hole_diameters_mm=analysis_data.get("hole_diameters_mm"),
         complexity_score=analysis_data["complexity_score"],
         removal_ratio=analysis_data["removal_ratio"],
         triangle_count=analysis_data.get("triangle_count"),

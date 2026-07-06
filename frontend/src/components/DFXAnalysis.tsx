@@ -1,14 +1,24 @@
-import { AlertCircle, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react';
-import type { GeometryAnalysis } from '@/types';
+import { AlertCircle, CheckCircle, AlertTriangle, TrendingUp, PiggyBank } from 'lucide-react';
+import type { DFMIssueCostImpact, GeometryAnalysis } from '@/types';
 import { analyzeDFM } from '@/services/dfm';
 
 interface DFXAnalysisProps {
   geometry: GeometryAnalysis;
   complexity?: 'low' | 'medium' | 'high';
+  /** Per-issue cost attribution from the pricing engine (keyed by issue code). */
+  costImpacts?: DFMIssueCostImpact[];
 }
 
-const DFXAnalysis = ({ geometry }: DFXAnalysisProps) => {
+const formatINR = (value: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+
+const DFXAnalysis = ({ geometry, costImpacts }: DFXAnalysisProps) => {
   const analysis = analyzeDFM(geometry);
+  const impactByCode = new Map((costImpacts ?? []).map((impact) => [impact.code, impact]));
+  const totalPotentialSavings = (costImpacts ?? []).reduce(
+    (sum, impact) => sum + Math.max(impact.estimated_cost_per_part, 0),
+    0,
+  );
   const issues = analysis.issues;
   const manufactScore = analysis.score;
   const scoreColor =
@@ -81,6 +91,21 @@ const DFXAnalysis = ({ geometry }: DFXAnalysisProps) => {
         </div>
       </div>
 
+      {/* Cost optimization summary */}
+      {totalPotentialSavings > 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 flex items-center gap-3">
+          <PiggyBank className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">
+              Up to {formatINR(totalPotentialSavings)}/part in potential savings
+            </p>
+            <p className="text-xs text-emerald-700">
+              Resolving the design issues below removes their estimated cost impact from your quote.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Issues & Recommendations */}
       {issues.length > 0 && (
         <div className="space-y-2">
@@ -132,6 +157,16 @@ const DFXAnalysis = ({ geometry }: DFXAnalysisProps) => {
                   }`}>
                     💡 {issue.recommendation}
                   </p>
+                  {(() => {
+                    const impact = impactByCode.get(issue.code);
+                    if (!impact || impact.estimated_cost_per_part <= 0) return null;
+                    return (
+                      <p className="text-xs mt-1.5 font-semibold text-emerald-700">
+                        Est. savings if resolved: {formatINR(impact.estimated_cost_per_part)}/part
+                        {impact.reason ? ` — ${impact.reason.toLowerCase()}` : ''}
+                      </p>
+                    );
+                  })()}
                   <p className="text-xs mt-1 text-gray-600">
                     Confidence: {(issue.confidence * 100).toFixed(0)}%
                   </p>

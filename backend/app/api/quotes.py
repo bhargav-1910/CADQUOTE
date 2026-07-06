@@ -27,7 +27,7 @@ from app.schemas.schemas import (
     CADFileResponse,
 )
 from app.services.pricing import calculate_pricing
-from app.services.vendor_matching import match_vendor_for_quote
+from app.services.vendor_matching import match_vendor_for_quote, vendor_match_to_pricing_overrides
 from app.services.quote import (
     create_quote,
     get_quote,
@@ -94,6 +94,24 @@ async def preview_vendor_match(
     )
 
 
+def _effective_quote_status(quote: Quote) -> QuoteStatus:
+    """Quotes past their validity window are reported (and treated) as expired."""
+    if (
+        quote.status != QuoteStatus.EXPIRED
+        and quote.valid_until is not None
+        and quote.valid_until < datetime.utcnow()
+    ):
+        return QuoteStatus.EXPIRED
+    return quote.status
+
+
+async def _mark_expired_if_needed(db: AsyncSession, quote: Quote) -> None:
+    """Persist the expired state lazily when a stale quote is read."""
+    if quote.status != QuoteStatus.EXPIRED and _effective_quote_status(quote) == QuoteStatus.EXPIRED:
+        quote.status = QuoteStatus.EXPIRED
+        await db.commit()
+
+
 async def _auto_send_quote_email_if_requested(
     *,
     db: AsyncSession,
@@ -141,6 +159,29 @@ def _serialize_pricing_overrides(overrides: Any) -> Optional[Dict[str, Any]]:
         return None
     payload = overrides.model_dump(exclude_none=True)
     return payload or None
+
+
+async def _vendor_matched_overrides(
+    db: AsyncSession,
+    geometry: GeometryAnalysis,
+    material: Material,
+    overrides: Optional[Dict[str, Any]],
+):
+    """
+    Merge the matched vendor's real load and machine rate into pricing
+    overrides so instant pricing uses live marketplace data instead of a
+    hardcoded default. Explicit user overrides win over matched values.
+    """
+    match_result = await match_vendor_for_quote(
+        db=db,
+        geometry=geometry,
+        material=material,
+        pricing_overrides=overrides,
+    )
+    effective = dict(overrides or {})
+    for key, value in vendor_match_to_pricing_overrides(match_result).items():
+        effective.setdefault(key, value)
+    return (effective or None), match_result
 
 
 def _pricing_result_to_response(
@@ -233,7 +274,10 @@ async def get_instant_pricing(
     if not inspection_level:
         raise HTTPException(status_code=404, detail="Inspection level not found")
     
-    # Calculate pricing
+    # Calculate pricing with the matched vendor's real load/rate wired in
+    effective_overrides, vendor_match = await _vendor_matched_overrides(
+        db, geometry, material, _serialize_pricing_overrides(request.pricing_overrides)
+    )
     pricing_result = await calculate_pricing(
         db=db,
         geometry=geometry,
@@ -241,9 +285,10 @@ async def get_instant_pricing(
         surface_finish=surface_finish,
         inspection_level=inspection_level,
         quantity=request.quantity,
-        pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
+        pricing_overrides=effective_overrides,
     )
-    
+    pricing_result.details["vendor_match"] = vendor_match.details
+
     return _pricing_result_to_response(
         cad_file=cad_file,
         geometry=geometry,
@@ -311,6 +356,9 @@ async def get_batch_pricing(
     for cad_file_id in request.cad_file_ids:
         cad_file = cad_file_map[cad_file_id]
         geometry = geometry_map[cad_file_id]
+        effective_overrides, vendor_match = await _vendor_matched_overrides(
+            db, geometry, material, serialized_overrides
+        )
         pricing_result = await calculate_pricing(
             db=db,
             geometry=geometry,
@@ -318,8 +366,9 @@ async def get_batch_pricing(
             surface_finish=surface_finish,
             inspection_level=inspection_level,
             quantity=request.quantity,
-            pricing_overrides=serialized_overrides,
+            pricing_overrides=effective_overrides,
         )
+        pricing_result.details["vendor_match"] = vendor_match.details
         responses.append(
             _pricing_result_to_response(
                 cad_file=cad_file,
@@ -726,7 +775,7 @@ async def list_quotations(
             quote_number=q.quote_number,
             customer_name=q.customer_name,
             total_price=q.total_price,
-            status=q.status.value,
+            status=_effective_quote_status(q).value,
             valid_until=q.valid_until,
             created_at=q.created_at,
         )
@@ -744,7 +793,8 @@ async def get_quotation(
     quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
-    
+
+    await _mark_expired_if_needed(db, quote)
     return _quote_to_response(quote)
 
 
@@ -758,7 +808,8 @@ async def get_quotation_by_number(
     quote = await get_quote_by_number(db, current_user.id, quote_number)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
-    
+
+    await _mark_expired_if_needed(db, quote)
     return _quote_to_response(quote)
 
 
@@ -847,6 +898,13 @@ async def email_quote_to_customer(
     quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
+
+    if _effective_quote_status(quote) == QuoteStatus.EXPIRED:
+        await _mark_expired_if_needed(db, quote)
+        raise HTTPException(
+            status_code=400,
+            detail="This quote has expired. Re-quote the part to get current pricing before sending.",
+        )
 
     if not request.mailbox_access_consent:
         raise HTTPException(
@@ -974,7 +1032,7 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
         total_price=quote.total_price,
         unit_price=quote.unit_price,
         estimated_lead_time_days=quote.estimated_lead_time_days,
-        status=quote.status.value,
+        status=_effective_quote_status(quote).value,
         valid_until=quote.valid_until,
         pdf_path=quote.pdf_path,
         price_validity=quote.price_validity,

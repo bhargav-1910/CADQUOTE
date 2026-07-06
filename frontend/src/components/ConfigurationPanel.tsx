@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, Palette, ClipboardCheck, Loader2, Minus, Plus } from 'lucide-react';
-import type { Material, SurfaceFinish, InspectionLevel, PricingOverrides } from '@/types';
+import { Box, Palette, ClipboardCheck, Loader2, Minus, Plus, Ruler } from 'lucide-react';
+import type { Material, SurfaceFinish, InspectionLevel, PricingOverrides, ToleranceTier } from '@/types';
 import { getMaterials, getSurfaceFinishes, getInspectionLevels, getMachineRates, type MachineRate } from '@/services/api';
 
 const formatINR = (value: number) =>
@@ -8,11 +8,19 @@ const formatINR = (value: number) =>
 
 type OverrideKey = keyof PricingOverrides;
 
+const TOLERANCE_OPTIONS: { value: ToleranceTier; label: string; spec: string; hint: string }[] = [
+  { value: 'general', label: 'General', spec: '±0.10 mm', hint: 'Standard machining, no price impact' },
+  { value: 'precision', label: 'Precision', spec: '±0.05 mm', hint: 'Slower feeds + extra inspection' },
+  { value: 'tight', label: 'Tight', spec: '±0.01 mm', hint: 'Finishing passes, CMM-level checks' },
+];
+
 interface ConfigurationPanelProps {
   materialId: string | null;
   surfaceFinishId: string | null;
   inspectionLevelId: string | null;
   quantity: number;
+  toleranceTier?: ToleranceTier;
+  onToleranceTierChange?: (tier: ToleranceTier) => void;
   quoteSpecificPricingEnabled?: boolean;
   onQuoteSpecificPricingEnabledChange?: (enabled: boolean) => void;
   pricingOverrides?: PricingOverrides;
@@ -29,6 +37,8 @@ const ConfigurationPanel = ({
   surfaceFinishId,
   inspectionLevelId,
   quantity,
+  toleranceTier = 'general',
+  onToleranceTierChange,
   quoteSpecificPricingEnabled = false,
   onQuoteSpecificPricingEnabledChange,
   pricingOverrides = {},
@@ -599,6 +609,43 @@ const ConfigurationPanel = ({
         )}
       </div>
 
+      {onToleranceTierChange && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+            <Ruler className="w-4 h-4" />
+            Tolerance Requirement
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {TOLERANCE_OPTIONS.map((option) => {
+              const active = toleranceTier === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onToleranceTierChange(option.value)}
+                  className={`rounded-lg border px-2 py-2.5 text-left transition-colors disabled:opacity-50 ${
+                    active
+                      ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className={`text-sm font-semibold ${active ? 'text-primary-800' : 'text-gray-800'}`}>
+                    {option.label}
+                  </p>
+                  <p className={`text-xs font-medium ${active ? 'text-primary-600' : 'text-gray-500'}`}>
+                    {option.spec}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            {TOLERANCE_OPTIONS.find((option) => option.value === toleranceTier)?.hint}
+          </p>
+        </div>
+      )}
+
       {quoteSpecificPricingEnabled && (
         <div className="rounded-lg border border-primary-200 bg-primary-50/40 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -897,7 +944,8 @@ const ConfigurationPanel = ({
           <span className="text-sm text-gray-500">units</span>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          Volume discounts: 5+ (5%), 10+ (10%), 25+ (15%), 50+ (20%), 100+ (25%)
+          Setup, programming and tooling costs are shared across the batch — see the quantity
+          breaks table in the price panel for unit prices at 1 / 10 / 50 / 100 pcs.
         </p>
       </div>
     </div>

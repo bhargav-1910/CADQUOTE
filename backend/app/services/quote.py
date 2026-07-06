@@ -108,8 +108,11 @@ async def create_quote(
         required_certifications=required_certifications,
     )
 
+    # Explicit user overrides win over vendor-derived values, matching the
+    # instant-pricing preview behaviour.
     effective_overrides = dict(pricing_overrides or {})
-    effective_overrides.update(vendor_match_to_pricing_overrides(vendor_match))
+    for key, value in vendor_match_to_pricing_overrides(vendor_match).items():
+        effective_overrides.setdefault(key, value)
 
     # Calculate pricing
     pricing_result = await calculate_pricing(

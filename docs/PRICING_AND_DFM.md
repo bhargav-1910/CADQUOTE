@@ -488,3 +488,14 @@ Implemented in:
   - `docker-compose up -d --build`
 
 This ensures configured defaults and engine code are aligned.
+
+## 13) Engine Updates (2026-07-06)
+
+1. **Round-bar stock for turned parts** — when the inferred process is turning, raw stock is priced as a cylinder (`pi/4 * d^2 * L`, +5% parting/facing allowance) instead of a rectangular billet. The turning axis is the bbox dimension whose two perpendicular dimensions are most similar, so both shafts and discs resolve correctly. Stock is reported as `round_bar` (`diameter_mm` × `length_mm`) in `details.raw_material`.
+2. **Deterministic geometry analysis** — wall-thickness sampling is seeded (`seed=42`), so re-processing the same file always yields the same thickness, DFM result and price.
+3. **Real hole detection** — boundary edges are clustered into loops; near-circular loops get fitted diameters (`geometry_analyses.hole_diameters_mm`, migration `20260706_0012`). Watertight meshes contribute through-holes via genus. Drilling time is sized per hole (small <3 mm, medium, large >12 mm bores), and large bores add tooling cost.
+4. **Tolerance tiers** — `tolerance_tier` (`general` ±0.10 / `precision` ±0.05 / `tight` ±0.01) scales machining time (×1.0/×1.35/×2.0), inspection cost (×1.0/×1.5/×2.5) and lead time. Sent via `pricing_overrides.tolerance_tier`; selectable in the configuration panel.
+5. **Per-rule DFM economics** — the single `total_penalty * 0.25` surcharge is replaced by `DFM_COST_RULES`: each issue code maps to concrete cycle-time %, tooling adds, extra setups and inspection load. Only residual risk stays a percentage. Per-issue `estimated_cost_per_part` is exposed in `details.dfm.issue_cost_impacts` and surfaced in the UI as "estimated savings if resolved".
+6. **Live vendor load in instant pricing** — `/api/pricing` and `/api/pricing/batch` now run vendor matching and feed the matched vendor's `current_load_pct` / machine rate into the engine (explicit user overrides win). Section 6.1 dynamic load pricing is therefore live end-to-end; match details appear in `pricing_explanation.vendor_match`.
+7. **Quantity breaks** — every pricing response includes `details.quantity_breaks` (qty 1/10/50/100 + requested) with unit price, total and savings vs single-part price; rendered as a table in the price panel.
+8. **Quote expiry enforcement** — quotes past `valid_until` are reported and lazily persisted as `expired`; emailing an expired quote is blocked with a re-quote prompt.

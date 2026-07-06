@@ -1,7 +1,7 @@
 """Pydantic schemas for API validation and serialization."""
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List
+from typing import Literal, Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -333,6 +333,7 @@ class GeometryAnalysisResponse(BaseSchema):
     bounding_box: BoundingBox
     min_wall_thickness: Optional[float] = Field(None, description="Minimum wall thickness in mm")
     hole_count: int = Field(default=0)
+    hole_diameters_mm: Optional[List[float]] = Field(None, description="Fitted diameters of detected circular holes")
     complexity_score: float
     removal_ratio: float
     triangle_count: Optional[int] = None
@@ -376,6 +377,7 @@ class PricingOverrides(BaseModel):
     urgent_factor_pct: Optional[float] = Field(None, ge=0, le=40)
     min_order_value: Optional[Decimal] = Field(None, ge=0)
     negotiation_buffer_pct: Optional[float] = Field(None, ge=0, le=100)
+    tolerance_tier: Optional[Literal["general", "precision", "tight"]] = None
 
 class PricingRequest(BaseModel):
     """Request for instant pricing."""

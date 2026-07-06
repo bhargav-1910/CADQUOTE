@@ -384,6 +384,8 @@ class GeometryAnalysis(Base):
     # Advanced metrics
     min_wall_thickness = Column(Float, nullable=True)  # mm
     hole_count = Column(Integer, default=0)
+    # Fitted diameters (mm) of circular hole loops; None for legacy analyses.
+    hole_diameters_mm = Column(JSON, nullable=True)
     
     # Computed scores
     complexity_score = Column(Float, nullable=False)  # surface_area / volume

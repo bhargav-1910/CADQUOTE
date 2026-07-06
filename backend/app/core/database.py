@@ -11,7 +11,8 @@ def _get_postgres_connect_args(database_url: str) -> dict:
     """Return SSL connect args for hosted Postgres services."""
     hostname = database_url.split("@", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
 
-    if hostname in {"localhost", "127.0.0.1", "::1"}:
+    # Docker Compose and local dev Postgres services do not expose SSL.
+    if hostname in {"localhost", "127.0.0.1", "::1", "postgres", "db"}:
         return {}
 
     ssl_context = ssl.create_default_context()
