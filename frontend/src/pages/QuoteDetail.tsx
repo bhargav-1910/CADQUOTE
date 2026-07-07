@@ -253,8 +253,27 @@ const QuoteDetail = () => {
     );
   }
 
-  const isExpired = new Date(quote.valid_until) < new Date();
+  const isExpired = quote.status === 'expired' || new Date(quote.valid_until) < new Date();
   const combinedQuote = parseCombinedNotes(quote.notes);
+
+  // Lifecycle: created -> generated -> sent -> valid/expired
+  const lifecycleSteps = [
+    { key: 'created', label: 'Created', detail: formatDate(quote.created_at), done: true },
+    { key: 'generated', label: 'Generated', detail: 'Priced & saved', done: true },
+    {
+      key: 'sent',
+      label: 'Sent',
+      detail: quote.status === 'sent' ? 'Emailed to customer' : 'Not sent yet',
+      done: quote.status === 'sent',
+    },
+    {
+      key: 'validity',
+      label: isExpired ? 'Expired' : 'Valid',
+      detail: `${isExpired ? 'Expired on' : 'Until'} ${formatDate(quote.valid_until)}`,
+      done: !isExpired,
+      danger: isExpired,
+    },
+  ];
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -319,16 +338,62 @@ const QuoteDetail = () => {
         </div>
       </div>
 
-      {/* Validity warning */}
+      {/* Lifecycle timeline */}
+      <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+        <div className="flex items-center">
+          {lifecycleSteps.map((step, index) => (
+            <div key={step.key} className={`flex items-center ${index < lifecycleSteps.length - 1 ? 'flex-1' : ''}`}>
+              <div className="flex items-center gap-2.5 shrink-0">
+                <span
+                  className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
+                    step.danger
+                      ? 'bg-red-50 border-red-400 text-red-600'
+                      : step.done
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-600'
+                      : 'bg-gray-50 border-gray-300 text-gray-400'
+                  }`}
+                >
+                  {step.danger ? (
+                    <Clock className="w-3.5 h-3.5" />
+                  ) : step.done ? (
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                  )}
+                </span>
+                <div className="hidden sm:block">
+                  <p className={`text-xs font-semibold ${step.danger ? 'text-red-700' : step.done ? 'text-gray-900' : 'text-gray-400'}`}>
+                    {step.label}
+                  </p>
+                  <p className="text-[10px] text-gray-400">{step.detail}</p>
+                </div>
+              </div>
+              {index < lifecycleSteps.length - 1 && (
+                <div className={`flex-1 h-px mx-3 ${step.done ? 'bg-emerald-300' : 'bg-gray-200'}`} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Validity warning + re-quote action */}
       {isExpired && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
-          <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-amber-800 font-medium">Quote Expired</p>
-            <p className="text-sm text-amber-600">
-              This quote expired on {formatDate(quote.valid_until)}. Prices may have changed.
-            </p>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-start gap-3 flex-1">
+            <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-amber-800 font-medium">Quote Expired</p>
+              <p className="text-sm text-amber-600">
+                This quote expired on {formatDate(quote.valid_until)}. Material and machine rates may have moved — re-quote to get current pricing.
+              </p>
+            </div>
           </div>
+          <Link
+            to={`/quote/${quote.id}/edit`}
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors"
+          >
+            Re-quote at current prices
+          </Link>
         </div>
       )}
 

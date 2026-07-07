@@ -14,6 +14,7 @@ import {
   Ruler,
 } from 'lucide-react';
 import type { PricingResponse, PricingOverrides, QuantityBreak } from '@/types';
+import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 
 interface PricingDisplayProps {
   pricing: PricingResponse | null;
@@ -92,6 +93,8 @@ const PricingDisplay = ({
 }: PricingDisplayProps) => {
   const [editingField, setEditingField] = useState<EditableField | null>(null);
   const [editDraft, setEditDraft] = useState<string>('');
+  const animatedTotal = useAnimatedNumber(Number(pricing?.price_breakdown.total_price ?? 0));
+  const animatedUnit = useAnimatedNumber(Number(pricing?.price_breakdown.unit_price ?? 0));
 
   if (loading) {
     return (
@@ -226,12 +229,12 @@ const PricingDisplay = ({
         <div className="flex justify-between items-start mb-4">
           <div>
             <p className="text-primary-100 text-sm font-medium">Total Price</p>
-            <p className="text-3xl font-bold tracking-tight">{formatCurrency(breakdown.total_price)}</p>
+            <p className="text-3xl font-bold tracking-tight tabular-nums">{formatCurrency(animatedTotal)}</p>
           </div>
           <div className="text-right">
             <p className="text-primary-100 text-sm">Unit Price</p>
-            <p className="text-xl font-semibold">
-              {formatCurrency(breakdown.unit_price)}
+            <p className="text-xl font-semibold tabular-nums">
+              {formatCurrency(animatedUnit)}
               <span className="text-sm font-normal text-primary-200">/unit</span>
             </p>
           </div>

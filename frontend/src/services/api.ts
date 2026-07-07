@@ -246,6 +246,17 @@ export const fetchFilePreviewBlob = async (fileId: string): Promise<Blob> => {
   }
 };
 
+export const fetchFileDownloadBlob = async (fileId: string): Promise<Blob> => {
+  try {
+    const response = await api.get<Blob>(`/files/${fileId}/download`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
 const triggerBlobDownload = (blob: Blob, filename: string): void => {
   const objectUrl = window.URL.createObjectURL(blob);
   const link = document.createElement('a');

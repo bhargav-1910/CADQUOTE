@@ -105,3 +105,97 @@ body {
 .animate-fade-up {
   animation: fade-up 0.6s ease-out both;
 }
+
+/* ============================================================
+   Dark mode (class strategy) — utility remap layer.
+   Keeps every screen usable in dark without per-component edits.
+   ============================================================ */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  color: #e2e8f0;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(14, 165, 233, 0.10), transparent 38%),
+    radial-gradient(circle at 88% 0%, rgba(251, 146, 60, 0.06), transparent 32%),
+    linear-gradient(180deg, #0b1220 0%, #0e1627 52%, #0b1220 100%);
+}
+
+.dark .surface-panel { background: rgba(13, 20, 34, 0.82); }
+.dark .surface-strong { background: rgba(15, 23, 42, 0.92); }
+
+.dark .bg-white { background-color: #111a2c !important; }
+.dark .bg-gray-50, .dark .bg-slate-50 { background-color: #0d1524 !important; }
+.dark .bg-gray-100, .dark .bg-slate-100 { background-color: #17233a !important; }
+.dark .bg-gray-200, .dark .bg-slate-200 { background-color: #1e2c46 !important; }
+.dark .bg-primary-50 { background-color: rgba(59, 130, 246, 0.13) !important; }
+.dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.13) !important; }
+.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.12) !important; }
+.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.12) !important; }
+.dark .bg-green-50, .dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.12) !important; }
+.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.13) !important; }
+.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.13) !important; }
+.dark .bg-purple-50 { background-color: rgba(168, 85, 247, 0.13) !important; }
+.dark .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.13) !important; }
+.dark .bg-primary-100 { background-color: rgba(59, 130, 246, 0.22) !important; }
+.dark .bg-green-100, .dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.2) !important; }
+.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
+.dark .bg-yellow-100, .dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.18) !important; }
+.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.2) !important; }
+
+.dark .text-gray-900, .dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-gray-800, .dark .text-slate-800 { color: #e2e8f0 !important; }
+.dark .text-gray-700, .dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-gray-600, .dark .text-slate-600 { color: #9fb0c5 !important; }
+.dark .text-gray-500, .dark .text-slate-500 { color: #8395ac !important; }
+.dark .text-gray-400, .dark .text-slate-400 { color: #64748b !important; }
+.dark .text-primary-900 { color: #bfdbfe !important; }
+.dark .text-primary-700, .dark .text-primary-800 { color: #93c5fd !important; }
+.dark .text-green-700, .dark .text-green-800, .dark .text-green-900,
+.dark .text-emerald-700, .dark .text-emerald-800, .dark .text-emerald-900 { color: #6ee7b7 !important; }
+.dark .text-amber-700, .dark .text-amber-800, .dark .text-amber-900 { color: #fcd34d !important; }
+.dark .text-red-600, .dark .text-red-700, .dark .text-red-800, .dark .text-red-900 { color: #fca5a5 !important; }
+.dark .text-blue-600, .dark .text-blue-700, .dark .text-blue-900 { color: #93c5fd !important; }
+.dark .text-sky-600, .dark .text-sky-700 { color: #7dd3fc !important; }
+.dark .text-yellow-700, .dark .text-yellow-800, .dark .text-yellow-900 { color: #fde68a !important; }
+.dark .text-purple-600, .dark .text-purple-900 { color: #d8b4fe !important; }
+.dark .text-cyan-700 { color: #67e8f9 !important; }
+.dark .text-orange-700 { color: #fdba74 !important; }
+
+.dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300,
+.dark .border-slate-200, .dark .border-slate-300, .dark .border-slate-200\/70 { border-color: #24334d !important; }
+.dark .border-primary-200, .dark .border-primary-300 { border-color: rgba(59, 130, 246, 0.35) !important; }
+.dark .border-green-200, .dark .border-emerald-200 { border-color: rgba(16, 185, 129, 0.3) !important; }
+.dark .border-amber-200, .dark .border-amber-300 { border-color: rgba(245, 158, 11, 0.3) !important; }
+.dark .border-red-200 { border-color: rgba(239, 68, 68, 0.32) !important; }
+.dark .border-blue-200 { border-color: rgba(59, 130, 246, 0.3) !important; }
+.dark .border-sky-200 { border-color: rgba(14, 165, 233, 0.3) !important; }
+.dark .border-purple-200 { border-color: rgba(168, 85, 247, 0.3) !important; }
+.dark .border-cyan-200 { border-color: rgba(6, 182, 212, 0.3) !important; }
+
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #1c2942 !important; }
+
+.dark input, .dark select, .dark textarea {
+  background-color: #0d1524;
+  color: #e2e8f0;
+  border-color: #24334d;
+}
+.dark input::placeholder, .dark textarea::placeholder { color: #5b6b82; }
+
+.dark .hover\:bg-gray-50:hover, .dark .hover\:bg-slate-50:hover { background-color: #16213a !important; }
+.dark .hover\:bg-white:hover { background-color: #17233a !important; }
+.dark .hover\:bg-gray-100:hover, .dark .hover\:bg-slate-100:hover { background-color: #1c2942 !important; }
+.dark .hover\:bg-primary-50:hover { background-color: rgba(59, 130, 246, 0.18) !important; }
+.dark .hover\:bg-primary-100:hover { background-color: rgba(59, 130, 246, 0.25) !important; }
+.dark .hover\:bg-amber-100:hover { background-color: rgba(245, 158, 11, 0.22) !important; }
+
+.dark ::-webkit-scrollbar-track { background: #0d1524; }
+.dark ::-webkit-scrollbar-thumb { background: #2a3a58; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #38507a; }
+
+.dark .shadow-sm, .dark .shadow, .dark .shadow-lg, .dark .shadow-xl, .dark .shadow-2xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.55);
+  --tw-shadow: var(--tw-shadow-colored);
+}

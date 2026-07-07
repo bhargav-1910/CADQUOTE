@@ -1,397 +1,535 @@
-import { Suspense, useRef, useEffect, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Environment, Center, Grid, PerspectiveCamera } from '@react-three/drei';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
+import {
+  OrbitControls,
+  Environment,
+  Grid,
+  PerspectiveCamera,
+  GizmoHelper,
+  GizmoViewcube,
+} from '@react-three/drei';
 import * as THREE from 'three';
-import { STLLoader, GLTFLoader } from 'three-stdlib';
+import {
+  Maximize2,
+  Camera,
+  Loader2,
+  RotateCw,
+  Scissors,
+  Box as BoxIcon,
+  Grid3x3,
+  Hexagon,
+  Thermometer,
+} from 'lucide-react';
 import type { GeometryAnalysis } from '@/types';
-import { fetchFilePreviewBlob } from '@/services/api';
-import { ZoomIn, Move } from 'lucide-react';
+import { fetchFilePreviewBlob, fetchFileDownloadBlob } from '@/services/api';
+import {
+  parseStepBuffer,
+  parseStlBuffer,
+  parseGlbBuffer,
+  disposeShapes,
+  computeThicknessHeatmap,
+  type ParsedShape,
+} from '@/services/cadGeometry';
 
 interface ModelViewerProps {
   fileId: string;
   fileFormat: string;
   geometry?: GeometryAnalysis;
+  /** Override the default fixed height (e.g. "h-full" inside a modal). */
+  className?: string;
 }
 
-interface SceneProps {
-  fileFormat: string;
-  geometry?: GeometryAnalysis;
-  previewUrl: string | null;
-  previewBlob: Blob | null;
-}
+type DisplayMode = 'shaded' | 'wireframe';
+type SectionAxis = 'x' | 'y' | 'z';
+type ModelSource = 'exact-cad' | 'mesh' | null;
 
-// STL Model Component
-const STLModel = ({ blob }: { blob: Blob }) => {
-  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const meshRef = useRef<THREE.Mesh>(null);
+/** Normalized model max dimension in scene units. */
+const MODEL_SIZE = 4;
 
-  useEffect(() => {
-    let mounted = true;
-
-    const loadGeometry = async () => {
-      try {
-        const loader = new STLLoader();
-        const buffer = await blob.arrayBuffer();
-        if (!mounted) {
-          return;
-        }
-
-        const geo = loader.parse(buffer);
-        setLoadFailed(false);
-        geo.computeVertexNormals();
-        geo.center();
-
-        // Scale to reasonable size
-        geo.computeBoundingBox();
-        const box = geo.boundingBox!;
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const safeMax = maxDim > 0 ? maxDim : 1;
-        const scale = 4 / safeMax;
-        geo.scale(scale, scale, scale);
-
-        setGeometry(geo);
-      } catch (error) {
-        console.error('Error loading STL:', error);
-        if (mounted) {
-          setLoadFailed(true);
-        }
-      }
-    };
-
-    loadGeometry();
-
-    return () => {
-      mounted = false;
-      if (geometry) {
-        geometry.dispose();
-      }
-    };
-  }, [blob]);
-
-  // Slow rotation
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.1;
-    }
-  });
-
-  if (!geometry) {
-    if (loadFailed) {
-      return (
-        <Center>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[2.5, 1.6, 2]} />
-            <meshStandardMaterial color="#94a3b8" metalness={0.15} roughness={0.65} />
-          </mesh>
-        </Center>
-      );
-    }
-    return null;
-  }
-
-  return (
-    <Center>
-      <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
-        <meshStandardMaterial
-          color="#6366f1"
-          metalness={0.3}
-          roughness={0.5}
-        />
-      </mesh>
-    </Center>
-  );
+const VIEW_PRESETS: Record<string, [number, number, number]> = {
+  iso: [4.4, 3.4, 4.4],
+  front: [0, 0, 6.5],
+  top: [0, 6.5, 0.001],
+  right: [6.5, 0, 0],
 };
 
-// GLB Model Component (for STEP files converted to GLB)
-const GLBModel = ({ url }: { url: string }) => {
-  const [scene, setScene] = useState<THREE.Group | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const groupRef = useRef<THREE.Group>(null);
+const AXIS_NORMALS: Record<SectionAxis, THREE.Vector3> = {
+  x: new THREE.Vector3(-1, 0, 0),
+  y: new THREE.Vector3(0, -1, 0),
+  z: new THREE.Vector3(0, 0, -1),
+};
+
+/** Applies camera view presets; re-fires when `seq` changes. */
+const ViewController = ({
+  request,
+}: {
+  request: { position: [number, number, number]; seq: number } | null;
+}) => {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as any;
 
   useEffect(() => {
-    const loader = new GLTFLoader();
-    let mounted = true;
-
-    loader.load(
-      url,
-      (gltf) => {
-        if (!mounted) {
-          return;
-        }
-        setLoadFailed(false);
-        const loadedScene = gltf.scene.clone();
-        
-        // Center the model
-        const box = new THREE.Box3().setFromObject(loadedScene);
-        const center = box.getCenter(new THREE.Vector3());
-        loadedScene.position.sub(center);
-        
-        // Scale to reasonable size
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 4 / maxDim;
-        loadedScene.scale.setScalar(scale);
-        
-        // Apply default material if meshes don't have one
-        loadedScene.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            if (!child.material || (child.material instanceof THREE.MeshBasicMaterial)) {
-              child.material = new THREE.MeshStandardMaterial({
-                color: '#6366f1',
-                metalness: 0.3,
-                roughness: 0.5,
-              });
-            }
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        
-        setScene(loadedScene);
-      },
-      undefined,
-      (error) => {
-        console.error('Error loading GLB:', error);
-        if (mounted) {
-          setLoadFailed(true);
-        }
-      }
-    );
-
-    return () => {
-      mounted = false;
-      if (scene) {
-        scene.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.geometry?.dispose();
-            if (Array.isArray(child.material)) {
-              child.material.forEach(m => m.dispose());
-            } else {
-              child.material?.dispose();
-            }
-          }
-        });
-      }
-    };
-  }, [url]);
-
-  // Slow rotation
-  useFrame((_, delta) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.1;
+    if (!request) return;
+    camera.position.set(...request.position);
+    camera.up.set(0, 1, 0);
+    if (controls) {
+      controls.target.set(0, 0, 0);
+      controls.update();
     }
-  });
+  }, [request, camera, controls]);
 
-  if (!scene) {
-    if (loadFailed) {
-      return (
-        <Center>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[2.5, 1.6, 2]} />
-            <meshStandardMaterial color="#94a3b8" metalness={0.15} roughness={0.65} />
-          </mesh>
-        </Center>
-      );
-    }
-    return null;
-  }
+  return null;
+};
+
+/** Renders parsed shapes normalized to a fixed size, with edges + clipping. */
+const ShapesGroup = ({
+  shapes,
+  displayMode,
+  showEdges,
+  clippingPlane,
+  heatmap = false,
+}: {
+  shapes: ParsedShape[];
+  displayMode: DisplayMode;
+  showEdges: boolean;
+  clippingPlane: THREE.Plane | null;
+  heatmap?: boolean;
+}) => {
+  const { scale, offset } = useMemo(() => {
+    const box = new THREE.Box3();
+    shapes.forEach((shape) => {
+      shape.geometry.computeBoundingBox();
+      if (shape.geometry.boundingBox) {
+        box.union(shape.geometry.boundingBox);
+      }
+    });
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const nextScale = MODEL_SIZE / maxDim;
+    return { scale: nextScale, offset: center.multiplyScalar(-nextScale) };
+  }, [shapes]);
+
+  const edgeGeometries = useMemo(
+    () => (showEdges ? shapes.map((shape) => new THREE.EdgesGeometry(shape.geometry, 25)) : []),
+    [shapes, showEdges],
+  );
+
+  useEffect(
+    () => () => {
+      edgeGeometries.forEach((geometry) => geometry.dispose());
+    },
+    [edgeGeometries],
+  );
+
+  const clippingPlanes = clippingPlane ? [clippingPlane] : [];
 
   return (
-    <group ref={groupRef}>
-      <primitive object={scene} />
+    <group position={offset} scale={scale}>
+      {shapes.map((shape, index) => (
+        <mesh key={index} geometry={shape.geometry} castShadow receiveShadow>
+          <meshStandardMaterial
+            color={heatmap ? '#ffffff' : shape.color ?? '#8b93a7'}
+            vertexColors={heatmap}
+            metalness={heatmap ? 0.1 : 0.35}
+            roughness={heatmap ? 0.7 : 0.45}
+            wireframe={displayMode === 'wireframe'}
+            clippingPlanes={clippingPlanes}
+            clipShadows
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+      {showEdges &&
+        displayMode === 'shaded' &&
+        edgeGeometries.map((geometry, index) => (
+          <lineSegments key={`edge-${index}`} geometry={geometry}>
+            <lineBasicMaterial color="#1e293b" clippingPlanes={clippingPlanes} />
+          </lineSegments>
+        ))}
     </group>
   );
 };
 
-// Placeholder box (when file can't be loaded)
-const PlaceholderBox = ({ dimensions }: { dimensions?: { x: number; y: number; z: number } }) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  
-  // Default dimensions if not provided
-  const size = dimensions || { x: 2, y: 1, z: 1.5 };
-  
-  // Normalize to reasonable scale
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const scale = 3 / maxDim;
+const ToolbarButton = ({
+  title,
+  active = false,
+  onClick,
+  children,
+}: {
+  title: string;
+  active?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) => (
+  <button
+    type="button"
+    title={title}
+    onClick={onClick}
+    className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+      active
+        ? 'bg-primary-600 text-white'
+        : 'bg-white/90 text-gray-600 hover:bg-white hover:text-gray-900'
+    } shadow-sm backdrop-blur-sm`}
+  >
+    {children}
+  </button>
+);
 
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.15;
-    }
-  });
+const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerProps) => {
+  const [shapes, setShapes] = useState<ParsedShape[] | null>(null);
+  const [source, setSource] = useState<ModelSource>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  return (
-    <Center>
-      <mesh ref={meshRef} castShadow receiveShadow>
-        <boxGeometry args={[size.x * scale, size.y * scale, size.z * scale]} />
-        <meshStandardMaterial
-          color="#6366f1"
-          metalness={0.3}
-          roughness={0.5}
-          transparent
-          opacity={0.9}
-        />
-      </mesh>
-    </Center>
-  );
-};
-
-// Scene component
-const Scene = ({ fileFormat, geometry, previewUrl, previewBlob }: SceneProps) => {
-  const isSTL = fileFormat.toLowerCase() === 'stl';
-  const isSTEP = fileFormat.toLowerCase() === 'step';
-
-  return (
-    <>
-      <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={50} />
-      <OrbitControls
-        enableDamping
-        dampingFactor={0.05}
-        minDistance={2}
-        maxDistance={20}
-        maxPolarAngle={Math.PI / 2 + 0.1}
-      />
-      
-      {/* Lighting */}
-      <ambientLight intensity={0.4} />
-      <directionalLight
-        position={[10, 10, 5]}
-        intensity={1}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-      />
-      <directionalLight position={[-10, 5, -5]} intensity={0.5} />
-      
-      {/* Model */}
-      <Suspense fallback={null}>
-        {isSTL ? (
-          previewBlob ? (
-            <STLModel blob={previewBlob} />
-          ) : (
-            <PlaceholderBox
-              dimensions={geometry && {
-                x: geometry.bounding_box.x,
-                y: geometry.bounding_box.y,
-                z: geometry.bounding_box.z,
-              }}
-            />
-          )
-        ) : isSTEP ? (
-          previewUrl ? (
-            <GLBModel url={previewUrl} />
-          ) : (
-            <PlaceholderBox
-              dimensions={geometry && {
-                x: geometry.bounding_box.x,
-                y: geometry.bounding_box.y,
-                z: geometry.bounding_box.z,
-              }}
-            />
-          )
-        ) : (
-          <PlaceholderBox
-            dimensions={geometry && {
-              x: geometry.bounding_box.x,
-              y: geometry.bounding_box.y,
-              z: geometry.bounding_box.z,
-            }}
-          />
-        )}
-      </Suspense>
-      
-      {/* Grid floor */}
-      <Grid
-        position={[0, -2, 0]}
-        args={[20, 20]}
-        cellSize={0.5}
-        cellColor="#d1d5db"
-        sectionSize={2}
-        sectionColor="#9ca3af"
-        fadeDistance={30}
-        fadeStrength={1}
-      />
-      
-      {/* Environment */}
-      <Environment preset="studio" />
-    </>
-  );
-};
-
-const ModelViewer = ({ fileId, fileFormat, geometry }: ModelViewerProps) => {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('shaded');
+  const [showEdges, setShowEdges] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [heatmapShapes, setHeatmapShapes] = useState<ParsedShape[] | null>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [sectionEnabled, setSectionEnabled] = useState(false);
+  const [sectionAxis, setSectionAxis] = useState<SectionAxis>('x');
+  const [sectionOffset, setSectionOffset] = useState(0);
+  const [viewRequest, setViewRequest] = useState<{
+    position: [number, number, number];
+    seq: number;
+  } | null>(null);
+  const viewSeq = useRef(0);
+  const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let activeUrl: string | null = null;
+    let loadedShapes: ParsedShape[] | null = null;
 
-    const loadPreview = async () => {
+    const load = async () => {
+      setLoading(true);
+      setLoadError(false);
+      setShapes(null);
+      setSource(null);
+      setHeatmapEnabled(false);
+      setHeatmapShapes((prev) => {
+        if (prev) disposeShapes(prev);
+        return null;
+      });
+
+      const format = fileFormat.toLowerCase();
       try {
-        const blob = await fetchFilePreviewBlob(fileId);
-        if (cancelled) {
-          return;
-        }
-
-        setPreviewBlob(blob);
-        if (fileFormat.toLowerCase() !== 'stl') {
-          activeUrl = URL.createObjectURL(blob);
-          setPreviewUrl(activeUrl);
+        if (format === 'stl') {
+          const blob = await fetchFilePreviewBlob(fileId);
+          if (cancelled) return;
+          loadedShapes = parseStlBuffer(await blob.arrayBuffer());
+          if (cancelled) return;
+          setShapes(loadedShapes);
+          setSource('mesh');
+        } else if (format === 'step') {
+          // Preferred: parse the original STEP exactly in the browser (OCCT WASM).
+          try {
+            const blob = await fetchFileDownloadBlob(fileId);
+            if (cancelled) return;
+            loadedShapes = await parseStepBuffer(await blob.arrayBuffer());
+            if (cancelled) return;
+            setShapes(loadedShapes);
+            setSource('exact-cad');
+          } catch (stepError) {
+            console.warn('Client-side STEP parsing failed, falling back to GLB preview:', stepError);
+            const blob = await fetchFilePreviewBlob(fileId);
+            if (cancelled) return;
+            loadedShapes = await parseGlbBuffer(await blob.arrayBuffer());
+            if (cancelled) return;
+            setShapes(loadedShapes);
+            setSource('mesh');
+          }
         } else {
-          setPreviewUrl(null);
+          setLoadError(true);
         }
       } catch (error) {
+        console.error('Failed to load 3D preview:', error);
         if (!cancelled) {
-          console.error('Failed to load authenticated preview:', error);
-          setPreviewUrl(null);
-          setPreviewBlob(null);
+          setLoadError(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     };
 
-    loadPreview();
+    load();
 
     return () => {
       cancelled = true;
-      if (activeUrl) {
-        URL.revokeObjectURL(activeUrl);
+      if (loadedShapes) {
+        disposeShapes(loadedShapes);
       }
     };
   }, [fileId, fileFormat]);
 
+  const clippingPlane = useMemo(() => {
+    if (!sectionEnabled) return null;
+    const normal = AXIS_NORMALS[sectionAxis].clone();
+    // Model is normalized to ±MODEL_SIZE/2 around the origin.
+    const constant = sectionOffset * (MODEL_SIZE / 2 + 0.2);
+    return new THREE.Plane(normal, constant);
+  }, [sectionEnabled, sectionAxis, sectionOffset]);
+
+  const requestView = useCallback((preset: keyof typeof VIEW_PRESETS) => {
+    viewSeq.current += 1;
+    setViewRequest({ position: VIEW_PRESETS[preset], seq: viewSeq.current });
+  }, []);
+
+  const toggleHeatmap = useCallback(async () => {
+    if (heatmapEnabled) {
+      setHeatmapEnabled(false);
+      return;
+    }
+    if (heatmapShapes) {
+      setHeatmapEnabled(true);
+      return;
+    }
+    if (!shapes || heatmapLoading) return;
+
+    setHeatmapLoading(true);
+    try {
+      const computed = await computeThicknessHeatmap(shapes);
+      setHeatmapShapes(computed);
+      setHeatmapEnabled(true);
+    } catch (error) {
+      console.error('Wall-thickness heatmap failed:', error);
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, [heatmapEnabled, heatmapShapes, shapes, heatmapLoading]);
+
+  const takeScreenshot = useCallback(() => {
+    const gl = glRef.current;
+    if (!gl) return;
+    const link = document.createElement('a');
+    link.href = gl.domElement.toDataURL('image/png');
+    link.download = 'part-preview.png';
+    link.click();
+  }, []);
+
+  const dims = geometry
+    ? {
+        x: (geometry.bounding_box.x * 10).toFixed(1),
+        y: (geometry.bounding_box.y * 10).toFixed(1),
+        z: (geometry.bounding_box.z * 10).toFixed(1),
+      }
+    : null;
+
   return (
-    <div className="relative bg-gray-100 rounded-lg overflow-hidden h-[280px] sm:h-[400px]">
-      {/* Controls hint */}
-      <div className="absolute top-3 left-3 z-10 flex gap-2 flex-wrap max-w-[70%]">
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 sm:px-3 py-1.5 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-600 shadow-sm">
-          <Move className="w-3.5 h-3.5" />
-          <span>Drag to rotate</span>
-        </div>
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 sm:px-3 py-1.5 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-600 shadow-sm">
-          <ZoomIn className="w-3.5 h-3.5" />
-          <span>Scroll to zoom</span>
-        </div>
+    <div
+      className={`relative w-full bg-gradient-to-b from-slate-100 via-gray-100 to-slate-200 rounded-xl overflow-hidden border border-slate-200/70 shadow-inner ${
+        className ?? 'h-[400px] sm:h-[560px]'
+      }`}
+    >
+      {/* Toolbar */}
+      <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
+        <ToolbarButton title="Fit to view (ISO)" onClick={() => requestView('iso')}>
+          <Maximize2 className="w-4 h-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          title={displayMode === 'shaded' ? 'Wireframe view' : 'Shaded view'}
+          active={displayMode === 'wireframe'}
+          onClick={() => setDisplayMode((prev) => (prev === 'shaded' ? 'wireframe' : 'shaded'))}
+        >
+          {displayMode === 'shaded' ? <Grid3x3 className="w-4 h-4" /> : <BoxIcon className="w-4 h-4" />}
+        </ToolbarButton>
+        <ToolbarButton
+          title="Toggle edge lines"
+          active={showEdges}
+          onClick={() => setShowEdges((prev) => !prev)}
+        >
+          <Hexagon className="w-4 h-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Section view"
+          active={sectionEnabled}
+          onClick={() => setSectionEnabled((prev) => !prev)}
+        >
+          <Scissors className="w-4 h-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Wall-thickness heatmap (DFM)"
+          active={heatmapEnabled}
+          onClick={toggleHeatmap}
+        >
+          {heatmapLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Thermometer className="w-4 h-4" />}
+        </ToolbarButton>
+        <ToolbarButton
+          title="Auto-rotate"
+          active={autoRotate}
+          onClick={() => setAutoRotate((prev) => !prev)}
+        >
+          <RotateCw className="w-4 h-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Screenshot (PNG)" onClick={takeScreenshot}>
+          <Camera className="w-4 h-4" />
+        </ToolbarButton>
       </div>
 
-      {/* File format badge */}
-      <div className="absolute top-3 right-3 z-10">
+      {/* View presets */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex rounded-lg overflow-hidden shadow-sm">
+        {(['front', 'top', 'right', 'iso'] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => requestView(view)}
+            className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide bg-white/90 text-gray-600 hover:bg-white hover:text-gray-900 backdrop-blur-sm border-r border-gray-200 last:border-r-0"
+          >
+            {view}
+          </button>
+        ))}
+      </div>
+
+      {/* Format + source badges */}
+      <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1.5">
         <span className="bg-primary-100 text-primary-700 text-xs font-medium px-2.5 py-1 rounded-full">
           {fileFormat.toUpperCase()}
         </span>
+        {source && (
+          <span
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+              source === 'exact-cad'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-gray-200 text-gray-600'
+            }`}
+          >
+            {source === 'exact-cad' ? 'Exact CAD geometry' : 'Mesh preview'}
+          </span>
+        )}
       </div>
 
-      {/* 3D Canvas */}
-      <Canvas shadows>
-        <Suspense fallback={null}>
-          <Scene
-            fileFormat={fileFormat}
-            geometry={geometry}
-            previewUrl={previewUrl}
-            previewBlob={previewBlob}
+      {/* Section controls */}
+      {sectionEnabled && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3 py-2 flex items-center gap-2.5">
+          {(['x', 'y', 'z'] as const).map((axis) => (
+            <button
+              key={axis}
+              type="button"
+              onClick={() => setSectionAxis(axis)}
+              className={`w-6 h-6 rounded text-xs font-bold uppercase ${
+                sectionAxis === axis
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {axis}
+            </button>
+          ))}
+          <input
+            type="range"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={sectionOffset}
+            onChange={(e) => setSectionOffset(Number(e.target.value))}
+            className="w-36 accent-primary-600"
           />
-        </Suspense>
+        </div>
+      )}
+
+      {/* Heatmap legend */}
+      {heatmapEnabled && (
+        <div className="absolute bottom-24 right-3 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Wall thickness</p>
+          <div className="flex items-center gap-2.5 text-[10px] text-gray-600">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt;1.5</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-orange-400" /> &lt;2.5</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-300" /> &lt;4</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-slate-400" /> ok</span>
+            <span className="text-gray-400">mm</span>
+          </div>
+        </div>
+      )}
+
+      {/* Dimensions readout */}
+      {dims && !sectionEnabled && (
+        <div className="absolute bottom-3 left-3 z-10 bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1.5 text-[11px] text-gray-700 shadow-sm font-medium">
+          {dims.x} × {dims.y} × {dims.z} mm
+        </div>
+      )}
+
+      {/* Loading / error states */}
+      {loading && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-gray-100/70 backdrop-blur-[1px]">
+          <Loader2 className="w-7 h-7 text-primary-600 animate-spin" />
+          <p className="text-xs text-gray-500">
+            {fileFormat.toLowerCase() === 'step' ? 'Reading exact CAD geometry…' : 'Loading model…'}
+          </p>
+        </div>
+      )}
+      {!loading && loadError && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center">
+          <p className="text-sm text-gray-500 bg-white/90 rounded-lg px-4 py-2 shadow-sm">
+            3D preview unavailable for this file
+          </p>
+        </div>
+      )}
+
+      {/* 3D Canvas */}
+      <Canvas
+        shadows
+        gl={{ preserveDrawingBuffer: true, antialias: true }}
+        onCreated={({ gl }) => {
+          gl.localClippingEnabled = true;
+          glRef.current = gl;
+        }}
+        onDoubleClick={() => requestView('iso')}
+      >
+        <PerspectiveCamera makeDefault position={VIEW_PRESETS.iso} fov={45} />
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          minDistance={1.5}
+          maxDistance={25}
+          autoRotate={autoRotate}
+          autoRotateSpeed={1.2}
+        />
+        <ViewController request={viewRequest} />
+
+        <ambientLight intensity={0.35} />
+        <directionalLight
+          position={[10, 12, 6]}
+          intensity={1}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+        />
+        <directionalLight position={[-8, 4, -6]} intensity={0.4} />
+
+        {shapes && (
+          <ShapesGroup
+            shapes={heatmapEnabled && heatmapShapes ? heatmapShapes : shapes}
+            displayMode={displayMode}
+            showEdges={showEdges}
+            clippingPlane={clippingPlane}
+            heatmap={heatmapEnabled && Boolean(heatmapShapes)}
+          />
+        )}
+
+        <Grid
+          position={[0, -MODEL_SIZE / 2 - 0.35, 0]}
+          args={[24, 24]}
+          cellSize={0.5}
+          cellColor="#cbd5e1"
+          sectionSize={2}
+          sectionColor="#94a3b8"
+          fadeDistance={28}
+          fadeStrength={1}
+        />
+
+        <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
+          <GizmoViewcube
+            color="#f8fafc"
+            strokeColor="#94a3b8"
+            textColor="#334155"
+            hoverColor="#c7d2fe"
+          />
+        </GizmoHelper>
+
+        <Environment preset="studio" />
       </Canvas>
     </div>
   );

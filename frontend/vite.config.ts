@@ -10,6 +10,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    // Emscripten CJS module: prebundle so dev-server ESM imports work.
+    include: ['occt-import-js'],
+  },
   server: {
     port: 5173,
     proxy: {

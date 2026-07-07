@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2 } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2, Maximize2 } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
@@ -19,6 +19,7 @@ import type {
   ToleranceTier,
 } from '@/types';
 import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile } from '@/services/api';
+import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 import { analyzeDFM } from '@/services/dfm';
 
@@ -196,6 +197,46 @@ const buildPricingOverridesPayload = (
   return Object.fromEntries(filteredEntries) as PricingOverrides;
 };
 
+/** Desktop-only sticky bar with the running total and primary CTA. */
+const StickyPriceBar = ({
+  total,
+  subLabel,
+  ctaLabel,
+  busy,
+  disabled,
+  onClick,
+}: {
+  total: number;
+  subLabel: string;
+  ctaLabel: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) => {
+  const animatedTotal = useAnimatedNumber(total);
+  return (
+    <div className="hidden lg:flex fixed bottom-0 right-0 left-60 z-30 items-center justify-between gap-6 border-t border-gray-200 surface-strong px-8 py-3.5 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.25)]">
+      <div className="flex items-baseline gap-4 min-w-0">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Total</p>
+          <p className="font-display text-2xl font-bold text-gray-900 tabular-nums leading-tight">
+            {formatINR(animatedTotal)}
+          </p>
+        </div>
+        <p className="text-xs text-gray-500 truncate">{subLabel}</p>
+      </div>
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        className="shrink-0 flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-600/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+      >
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+        {ctaLabel}
+      </button>
+    </div>
+  );
+};
+
 const QuoteBuilder = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -251,6 +292,7 @@ const QuoteBuilder = () => {
     initialMultiFiles.length > 1 ? initialMultiFiles[0].cadFile.id : null
   );
   const [previewFile, setPreviewFile] = useState<MultiFileEntry | null>(null);
+  const [singlePreviewOpen, setSinglePreviewOpen] = useState(false);
   const isMultiMode = multiFiles.length > 1;
   const pricingRequestVersion = useRef(0);
 
@@ -1058,14 +1100,17 @@ const QuoteBuilder = () => {
   const anyMultiLoading = selectedMultiFiles.some((f) => f.pricingLoading);
   const allSelected = multiFiles.length > 0 && multiFiles.every((file) => file.selected);
   const pricedSelectedMultiFiles = selectedMultiFiles.filter((file) => file.pricing !== null);
+  // Component costs are per part; extend by quantity so the columns visibly
+  // relate to each line's total and the grand total.
   const bulkBreakdown = pricedSelectedMultiFiles.reduce(
     (acc, file) => {
       const breakdown = file.pricing!.price_breakdown;
-      acc.material += Number(breakdown.material_cost);
-      acc.machining += Number(breakdown.machining_cost);
-      acc.finish += Number(breakdown.finish_cost);
-      acc.inspection += Number(breakdown.inspection_cost);
-      acc.subtotal += Number(breakdown.subtotal);
+      const qty = Number(file.pricing!.quantity) || 1;
+      acc.material += Number(breakdown.material_cost) * qty;
+      acc.machining += Number(breakdown.machining_cost) * qty;
+      acc.finish += Number(breakdown.finish_cost) * qty;
+      acc.inspection += Number(breakdown.inspection_cost) * qty;
+      acc.subtotal += Number(breakdown.subtotal) * qty;
       acc.total += Number(breakdown.total_price);
       return acc;
     },
@@ -1081,7 +1126,7 @@ const QuoteBuilder = () => {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:pb-28">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-500">
         <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
@@ -1175,10 +1220,26 @@ const QuoteBuilder = () => {
 
       {/* Single-file configure */}
       {step === 'configure' && !isMultiMode && config.cadFile && (
-        <div className="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)] gap-6 items-start">
+        <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(380px,0.85fr)] gap-6 items-start">
           <div className="space-y-6">
             <div className="surface-strong rounded-xl border border-gray-200 p-4 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">3D Preview</h2>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h2 className="text-lg font-semibold text-gray-900">3D Preview</h2>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-1 truncate" title={config.cadFile.original_filename}>
+                    {config.cadFile.original_filename}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSinglePreviewOpen(true)}
+                    className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors"
+                    title="Open large preview with fullscreen"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    Expand
+                  </button>
+                </div>
+              </div>
               <ModelViewer
                 fileId={config.cadFile.id}
                 fileFormat={config.cadFile.file_format}
@@ -1261,13 +1322,36 @@ const QuoteBuilder = () => {
             <button
               onClick={handleCreateSingleQuote}
               disabled={!pricing || creating}
-              className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-600/25 hover:shadow-primary-600/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {creating
                 ? <><Loader2 className="w-5 h-5 animate-spin" />Generating Quote...</>
                 : <><FileText className="w-5 h-5" />Generate Quote</>}
             </button>
           </div>
+
+          <StickyPriceBar
+            total={Number(pricing?.price_breakdown.total_price ?? 0)}
+            subLabel={
+              pricing
+                ? `${pricing.quantity} unit${pricing.quantity > 1 ? 's' : ''} · ${Number(pricing.estimated_lead_time_days).toFixed(1)} days lead time · ${formatINR(Number(pricing.price_breakdown.unit_price))}/unit`
+                : pricingLoading
+                ? 'Calculating price…'
+                : 'Configure options to price this part'
+            }
+            ctaLabel={creating ? 'Generating Quote…' : 'Generate Quote'}
+            busy={creating || pricingLoading}
+            disabled={!pricing || creating}
+            onClick={handleCreateSingleQuote}
+          />
+
+          {singlePreviewOpen && (
+            <FilePreviewModal
+              cadFile={config.cadFile}
+              geometry={config.geometry ?? undefined}
+              onClose={() => setSinglePreviewOpen(false)}
+            />
+          )}
         </div>
       )}
 
@@ -1409,27 +1493,37 @@ const QuoteBuilder = () => {
                   </div>
 
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="grid grid-cols-[1.8fr_repeat(5,minmax(0,1fr))] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                    <div className="grid grid-cols-[1.6fr_0.5fr_repeat(5,minmax(0,1fr))] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
                       <span>File</span>
+                      <span className="text-right">Qty</span>
                       <span className="text-right">Material</span>
                       <span className="text-right">Machining</span>
                       <span className="text-right">Finish</span>
                       <span className="text-right">Inspection</span>
-                      <span className="text-right">Total</span>
+                      <span className="text-right">Line Total</span>
                     </div>
                     <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
-                      {pricedSelectedMultiFiles.map((file) => (
-                        <div key={file.cadFile.id} className="grid grid-cols-[1.8fr_repeat(5,minmax(0,1fr))] gap-2 px-3 py-2 text-xs text-gray-700">
-                          <span className="truncate" title={file.cadFile.original_filename}>{file.cadFile.original_filename}</span>
-                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.material_cost)}</span>
-                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.machining_cost)}</span>
-                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.finish_cost)}</span>
-                          <span className="text-right">{formatINR(file.pricing!.price_breakdown.inspection_cost)}</span>
-                          <span className="text-right font-semibold text-gray-900">{formatINR(file.pricing!.price_breakdown.total_price)}</span>
-                        </div>
-                      ))}
+                      {pricedSelectedMultiFiles.map((file) => {
+                        const qty = Number(file.pricing!.quantity) || 1;
+                        const b = file.pricing!.price_breakdown;
+                        return (
+                          <div key={file.cadFile.id} className="grid grid-cols-[1.6fr_0.5fr_repeat(5,minmax(0,1fr))] gap-2 px-3 py-2 text-xs text-gray-700">
+                            <span className="truncate" title={file.cadFile.original_filename}>{file.cadFile.original_filename}</span>
+                            <span className="text-right">{qty}</span>
+                            <span className="text-right">{formatINR(Number(b.material_cost) * qty)}</span>
+                            <span className="text-right">{formatINR(Number(b.machining_cost) * qty)}</span>
+                            <span className="text-right">{formatINR(Number(b.finish_cost) * qty)}</span>
+                            <span className="text-right">{formatINR(Number(b.inspection_cost) * qty)}</span>
+                            <span className="text-right font-semibold text-gray-900">{formatINR(Number(b.total_price))}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    Component columns are direct costs × quantity; line totals additionally include
+                    overheads, margin and marketplace factors.
+                  </p>
                 </>
               )}
             </div>
@@ -1551,9 +1645,29 @@ const QuoteBuilder = () => {
 
             {activeMultiFile && (
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-gray-900">
-                  Selected File Detailed Pricing: {activeMultiFile.cadFile.original_filename}
-                </p>
+                <p className="text-sm font-semibold text-gray-900">Detailed Pricing per File</p>
+                {selectedMultiFiles.length > 1 && (
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+                    {selectedMultiFiles.map((file, index) => {
+                      const active = file.cadFile.id === activeMultiFileId;
+                      return (
+                        <button
+                          key={file.cadFile.id}
+                          type="button"
+                          onClick={() => setActiveMultiFileId(file.cadFile.id)}
+                          title={file.cadFile.original_filename}
+                          className={`shrink-0 max-w-[180px] px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors truncate ${
+                            active
+                              ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-900'
+                          }`}
+                        >
+                          {index + 1}. {file.cadFile.original_filename}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <PricingDisplay
                   pricing={activeMultiFile.pricing}
                   loading={activeMultiFile.pricingLoading}
@@ -1567,7 +1681,7 @@ const QuoteBuilder = () => {
             <button
               onClick={handleCreateBatchQuotes}
               disabled={!allMultiPriced || anyMultiLoading || creating}
-              className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-600/25 hover:shadow-primary-600/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {creating ? (
                 <><Loader2 className="w-5 h-5 animate-spin" />Generating Combined Quote...</>
@@ -1578,6 +1692,23 @@ const QuoteBuilder = () => {
               )}
             </button>
           </div>
+
+          <StickyPriceBar
+            total={multiTotal}
+            subLabel={
+              anyMultiLoading
+                ? 'Calculating prices…'
+                : `${pricedFileCount}/${selectedMultiFiles.length} files priced · combined quote`
+            }
+            ctaLabel={
+              creating
+                ? 'Generating Combined Quote…'
+                : `Generate One Quote (${selectedMultiFiles.length} Files)`
+            }
+            busy={creating || anyMultiLoading}
+            disabled={!allMultiPriced || anyMultiLoading || creating}
+            onClick={handleCreateBatchQuotes}
+          />
 
           {previewFile && (
             <FilePreviewModal

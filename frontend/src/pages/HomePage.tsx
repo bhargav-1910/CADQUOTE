@@ -21,7 +21,7 @@ const HomePage = () => {
   const [quotesLoading, setQuotesLoading] = useState(true);
 
   useEffect(() => {
-    listQuotes(0, 5)
+    listQuotes(0, 50)
       .then(setQuotes)
       .catch(() => {})
       .finally(() => setQuotesLoading(false));
@@ -67,16 +67,29 @@ const HomePage = () => {
 
   // Stats derived from quotes
   const totalParts = quotes.length;
-  const mostActiveWeek = quotes.length
-    ? (() => {
-        const d = new Date(quotes[0].created_at);
-        const end = d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        const start = new Date(d.getTime() - 6 * 86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        return `${start} — ${end}`;
-      })()
-    : '—';
-
   const totalValue = quotes.reduce((sum, quote) => sum + Number(quote.total_price || 0), 0);
+  const now = Date.now();
+  const sentCount = quotes.filter((quote) => quote.status === 'sent').length;
+  const expiringSoon = quotes.filter((quote) => {
+    const validUntil = new Date(quote.valid_until).getTime();
+    return quote.status !== 'expired' && validUntil > now && validUntil - now < 3 * 86400000;
+  }).length;
+  const expiredCount = quotes.filter(
+    (quote) => quote.status === 'expired' || new Date(quote.valid_until).getTime() < now,
+  ).length;
+
+  const statusPill = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return 'bg-sky-50 text-sky-700 border-sky-200';
+      case 'expired':
+        return 'bg-red-50 text-red-700 border-red-200';
+      case 'generated':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      default:
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -107,16 +120,16 @@ const HomePage = () => {
                 <p className="font-display text-2xl text-slate-900">{totalParts}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] text-slate-500">Total Value</p>
+                <p className="text-[11px] text-slate-500">Quoted Value</p>
                 <p className="font-display text-2xl text-slate-900">{formatCurrency(totalValue)}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] text-slate-500">Avg Costing</p>
-                <p className="font-display text-2xl text-slate-900">~8s</p>
+                <p className="text-[11px] text-slate-500">Sent to Customers</p>
+                <p className="font-display text-2xl text-slate-900">{sentCount}</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] text-slate-500">Time Saved</p>
-                <p className="font-display text-2xl text-slate-900">{totalParts > 0 ? `${(totalParts * 0.48).toFixed(1)}h` : '—'}</p>
+              <div className={`rounded-2xl border p-3 ${expiringSoon > 0 ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                <p className={`text-[11px] ${expiringSoon > 0 ? 'text-amber-700' : 'text-slate-500'}`}>Expiring in 3 days</p>
+                <p className="font-display text-2xl text-slate-900">{expiringSoon}</p>
               </div>
             </div>
 
@@ -234,7 +247,12 @@ const HomePage = () => {
                         <p className="text-xs text-slate-500">{new Date(quote.created_at).toLocaleDateString('en-IN')}</p>
                       </div>
                     </div>
-                    <span className="text-sm font-semibold text-slate-700 ml-3">{formatCurrency(quote.total_price)}</span>
+                    <div className="flex items-center gap-2.5 ml-3 shrink-0">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize border ${statusPill(quote.status)}`}>
+                        {quote.status}
+                      </span>
+                      <span className="text-sm font-semibold font-mono text-slate-700">{formatCurrency(quote.total_price)}</span>
+                    </div>
                   </Link>
                 </li>
               ))}
@@ -251,20 +269,20 @@ const HomePage = () => {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-sky-50 border border-sky-100 p-3">
-                <p className="text-[11px] text-sky-700">Total Parts</p>
+                <p className="text-[11px] text-sky-700">Total Quotes</p>
                 <p className="font-display text-2xl text-slate-900">{totalParts}</p>
               </div>
-              <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                <p className="text-[11px] text-amber-700">Most Active Week</p>
-                <p className="text-xs font-semibold text-slate-900 mt-1">{mostActiveWeek}</p>
-              </div>
               <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
-                <p className="text-[11px] text-emerald-700">Time Saved</p>
-                <p className="font-display text-2xl text-slate-900">{totalParts > 0 ? `${(totalParts * 0.48).toFixed(2)}h` : '—'}</p>
+                <p className="text-[11px] text-emerald-700">Sent</p>
+                <p className="font-display text-2xl text-slate-900">{sentCount}</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                <p className="text-[11px] text-amber-700">Expiring Soon</p>
+                <p className="font-display text-2xl text-slate-900">{expiringSoon}</p>
               </div>
               <div className="rounded-xl bg-orange-50 border border-orange-100 p-3">
-                <p className="text-[11px] text-orange-700">Avg Costing Time</p>
-                <p className="font-display text-2xl text-slate-900">{totalParts > 0 ? '~8s' : '—'}</p>
+                <p className="text-[11px] text-orange-700">Expired</p>
+                <p className="font-display text-2xl text-slate-900">{expiredCount}</p>
               </div>
             </div>
           </section>

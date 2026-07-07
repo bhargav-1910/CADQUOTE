@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { X, Eye, BarChart3 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Eye, BarChart3, Maximize, Minimize } from 'lucide-react';
 import ModelViewer from './ModelViewer';
 import DFXAnalysis from './DFXAnalysis';
 import type { CADFile, GeometryAnalysis } from '@/types';
@@ -14,25 +15,65 @@ type Tab = 'preview' | 'dfx' | 'specs';
 
 const FilePreviewModal = ({ cadFile, geometry, onClose }: FilePreviewModalProps) => {
   const [activeTab, setActiveTab] = useState<Tab>('preview');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const modalRef = useRef<HTMLDivElement | null>(null);
   const hasGeometry = Boolean(geometry);
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !document.fullscreenElement) {
+        onClose();
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => undefined);
+    } else {
+      modalRef.current?.requestFullscreen().catch(() => undefined);
+    }
+  };
+
+  // Portal to <body>: escapes the page's stacking contexts so the sticky
+  // header can never paint over the modal.
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-2 sm:p-4">
+      <div
+        ref={modalRef}
+        className="bg-white rounded-xl shadow-2xl w-full max-w-[1600px] h-[94vh] overflow-hidden flex flex-col"
+      >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-gray-200 p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 sm:px-6 py-3">
           <div className="min-w-0">
-            <h2 className="text-lg sm:text-2xl font-bold text-gray-900 break-words">{cadFile.original_filename}</h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <h2 className="text-base sm:text-xl font-bold text-gray-900 truncate">{cadFile.original_filename}</h2>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
               {(cadFile.file_size / 1024 / 1024).toFixed(2)} MB • {cadFile.file_format.toUpperCase()}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            >
+              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={onClose}
+              title="Close"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -77,21 +118,22 @@ const FilePreviewModal = ({ cadFile, geometry, onClose }: FilePreviewModalProps)
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className={`flex-1 min-h-0 ${activeTab === 'preview' ? 'flex flex-col p-3 sm:p-4' : 'overflow-y-auto p-4 sm:p-6'}`}>
           {activeTab === 'preview' && (
-            <div className="space-y-3">
+            <div className="flex-1 min-h-0 flex flex-col gap-2">
               {!hasGeometry && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs sm:text-sm text-amber-800">
                   Geometry analysis is still running for this file. 3D preview is available now, and DFX/spec details will unlock once processing finishes.
                 </div>
               )}
-              <div className="flex items-start justify-center min-h-[280px] sm:min-h-[400px] bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg overflow-hidden">
-              <ModelViewer
-                fileId={cadFile.id}
-                fileFormat={cadFile.file_format}
-                geometry={geometry}
-              />
-            </div>
+              <div className="flex-1 min-h-0">
+                <ModelViewer
+                  fileId={cadFile.id}
+                  fileFormat={cadFile.file_format}
+                  geometry={geometry}
+                  className="h-full"
+                />
+              </div>
             </div>
           )}
 
@@ -201,17 +243,9 @@ const FilePreviewModal = ({ cadFile, geometry, onClose }: FilePreviewModalProps)
           )}
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-gray-200 bg-gray-50 px-4 sm:px-6 py-4">
-          <button
-            onClick={onClose}
-            className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Close
-          </button>
-        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
