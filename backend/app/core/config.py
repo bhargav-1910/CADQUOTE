@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     FRONTEND_BASE_URL: str = "http://localhost"
 
     # Billing and points
+    # Master switch: when False, no action consumes points (dev/testing mode).
+    POINTS_SYSTEM_ENABLED: bool = False
     STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
     BILLING_CURRENCY: str = "inr"

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import PointsWallet, PointsLedgerEntry, StripeCheckoutCredit, PointsPackage
+from app.core.config import settings
 
 
 class InsufficientPointsError(ValueError):
@@ -122,6 +123,12 @@ async def consume_points(
         raise ValueError("Points to consume must be positive")
 
     wallet = await get_or_create_wallet(db, user_id)
+
+    # Points system disabled (dev/testing): every action is free, nothing is
+    # deducted and no ledger entry is written.
+    if not settings.POINTS_SYSTEM_ENABLED:
+        return wallet
+
     if wallet.balance_points < points:
         raise InsufficientPointsError("Insufficient points balance")
 

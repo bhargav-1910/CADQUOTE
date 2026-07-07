@@ -553,6 +553,11 @@ async def create_combined_quotation(
                 raise HTTPException(status_code=404, detail="Inspection level not found")
             inspection_cache[item.inspection_level_id] = inspection_level
 
+        # Match vendors exactly like the pricing preview so the combined
+        # quote total equals the grand total shown on screen.
+        effective_overrides, _ = await _vendor_matched_overrides(
+            db, geometry, material, serialized_overrides
+        )
         pricing_result = await calculate_pricing(
             db=db,
             geometry=geometry,
@@ -560,7 +565,7 @@ async def create_combined_quotation(
             surface_finish=surface_finish,
             inspection_level=inspection_level,
             quantity=item.quantity,
-            pricing_overrides=serialized_overrides,
+            pricing_overrides=effective_overrides,
         )
 
         total_material_cost += Decimal(str(pricing_result.material_cost))
