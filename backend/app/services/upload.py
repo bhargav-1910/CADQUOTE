@@ -39,6 +39,38 @@ def validate_file_size(size: int) -> None:
         )
 
 
+def validate_file_content(content: bytes, file_format: str) -> None:
+    """Reject files whose bytes don't match the claimed CAD format.
+
+    Extension checks alone let any renamed file through to the geometry
+    parsers; these signature checks cut that off at upload time.
+    """
+    if file_format == 'step':
+        # STEP (ISO 10303-21) files must open with the part-21 header keyword.
+        head = content[:256].lstrip()
+        if not head.startswith(b'ISO-10303-21'):
+            raise HTTPException(
+                status_code=400,
+                detail="File content is not a valid STEP file (missing ISO-10303-21 header)",
+            )
+    elif file_format == 'stl':
+        if len(content) < 15:
+            raise HTTPException(status_code=400, detail="File is too small to be a valid STL")
+        # ASCII STL starts with "solid"; binary STL declares its triangle count
+        # at byte 80 and the payload length must match.
+        if content[:16].lstrip().lower().startswith(b'solid'):
+            return
+        if len(content) < 84:
+            raise HTTPException(status_code=400, detail="File content is not a valid STL file")
+        import struct
+        (triangle_count,) = struct.unpack('<I', content[80:84])
+        if triangle_count == 0 or len(content) < 84 + triangle_count * 50:
+            raise HTTPException(
+                status_code=400,
+                detail="File content is not a valid STL file (triangle count mismatch)",
+            )
+
+
 def normalize_file_format(ext: str) -> str:
     """Normalize file extension to format name."""
     ext_map = {
@@ -79,6 +111,7 @@ async def upload_cad_file(
     validate_file_size(file_size)
     extension = validate_file_extension(file.filename)
     file_format = normalize_file_format(extension)
+    validate_file_content(content, file_format)
     
     # Compute hash
     file_hash = compute_file_hash(content)

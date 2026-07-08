@@ -3,6 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import {
   OrbitControls,
   Environment,
+  Lightformer,
   Grid,
   PerspectiveCamera,
   GizmoHelper,
@@ -682,7 +683,12 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
           />
         </GizmoHelper>
 
-        <Environment preset="studio" />
+        {/* Local light rig — no runtime HDRI download (CSP-safe, offline-safe). */}
+        <Environment resolution={256} frames={1}>
+          <Lightformer intensity={3} position={[0, 6, -2]} scale={[9, 3, 1]} rotation-x={Math.PI / 2} />
+          <Lightformer intensity={1.6} position={[-6, 2, 4]} scale={[6, 3, 1]} rotation-y={Math.PI / 3} />
+          <Lightformer intensity={1.1} position={[7, 3, 2]} scale={[5, 4, 1]} rotation-y={-Math.PI / 3} />
+        </Environment>
       </Canvas>
     </div>
   );

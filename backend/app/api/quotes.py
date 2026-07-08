@@ -37,7 +37,7 @@ from app.services.quote import (
     generate_quote_number,
     update_quote_status,
 )
-from app.services.document import generate_quote_document
+from app.services.document import generate_quote_document, ensure_quote_document
 from app.services.email import send_quote_email
 from app.core.config import settings
 from app.services.billing import consume_points, InsufficientPointsError
@@ -128,10 +128,7 @@ async def _auto_send_quote_email_if_requested(
     if not recipient_email:
         return
 
-    if not quote.pdf_path:
-        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
-    else:
-        pdf_path = quote.pdf_path
+    pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
 
     try:
         await consume_points(
@@ -852,15 +849,14 @@ async def download_quote_pdf(
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
 
-    # Always regenerate to ensure latest template updates are reflected.
     try:
-        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
+        pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"PDF generation failed: {str(e)}"
         )
-    
+
     return FileResponse(
         path=pdf_path,
         filename=f"{quote.quote_number}.pdf",
@@ -880,7 +876,7 @@ async def preview_quote_pdf(
         raise HTTPException(status_code=404, detail="Quote not found")
 
     try:
-        pdf_path = await generate_quote_document(db, quote, issuer=current_user)
+        pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -942,16 +938,13 @@ async def email_quote_to_customer(
     if not recipient_email:
         raise HTTPException(status_code=400, detail="Customer email is required to send quote")
 
-    if not quote.pdf_path:
-        try:
-            pdf_path = await generate_quote_document(db, quote, issuer=current_user)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"PDF generation failed: {str(e)}",
-            )
-    else:
-        pdf_path = quote.pdf_path
+    try:
+        pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF generation failed: {str(e)}",
+        )
 
     try:
         try:

@@ -8,6 +8,7 @@ import {
   Environment,
   Float,
   Html,
+  Lightformer,
   OrbitControls,
   PerspectiveCamera,
 } from '@react-three/drei';
@@ -246,13 +247,19 @@ const HeroViewport = ({ animate }: { animate: boolean }) => (
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={(2 * Math.PI) / 3}
       />
-      <ambientLight intensity={0.35} />
+      <ambientLight intensity={0.55} />
       <directionalLight position={[8, 10, 6]} intensity={1.1} castShadow shadow-mapSize={[1024, 1024]} />
-      <directionalLight position={[-6, 4, -8]} intensity={0.35} />
+      <directionalLight position={[-6, 4, -8]} intensity={0.55} />
+      <directionalLight position={[-4, -3, 6]} intensity={0.4} />
       <Suspense fallback={null}>
         <MachinedAssembly animate={animate} />
         <ContactShadows position={[0, -2.15, 0]} opacity={0.4} scale={11} blur={2.6} color="#020617" />
-        <Environment preset="city" />
+        {/* Local light rig — no runtime HDRI download (CSP-safe, offline-safe). */}
+        <Environment resolution={256} frames={1}>
+          <Lightformer intensity={3} position={[0, 6, -2]} scale={[9, 3, 1]} rotation-x={Math.PI / 2} />
+          <Lightformer intensity={1.6} position={[-6, 2, 4]} scale={[6, 3, 1]} rotation-y={Math.PI / 3} />
+          <Lightformer intensity={1.1} position={[7, 3, 2]} scale={[5, 4, 1]} rotation-y={-Math.PI / 3} />
+        </Environment>
       </Suspense>
     </Canvas>
 

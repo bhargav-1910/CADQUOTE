@@ -1,4 +1,5 @@
 """CNC Quote Platform - Main FastAPI Application."""
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -41,8 +42,14 @@ async def lifespan(app: FastAPI):
         logger.info("Redis cache connected")
     except Exception as e:
         logger.warning(f"Redis connection failed: {e}. Caching disabled.")
-    
+
+    # Requeue geometry processing interrupted by a previous crash/restart.
+    from app.services.geometry import recover_interrupted_processing
+    recovery_task = asyncio.create_task(recover_interrupted_processing())
+
     yield
+
+    recovery_task.cancel()
     
     # Shutdown
     logger.info("Shutting down...")

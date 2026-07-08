@@ -21,7 +21,7 @@ from app.schemas.schemas import (
     PublicQuoteResponse,
     PublicSellerInfo,
 )
-from app.services.document import generate_quote_document, pdf_generator
+from app.services.document import ensure_quote_document, pdf_generator
 
 router = APIRouter(tags=["Public Quotes"], prefix="/public")
 
@@ -159,7 +159,7 @@ async def download_public_quote_pdf(
     quote = await _get_shared_quote(db, share_token)
 
     try:
-        pdf_path = await generate_quote_document(db, quote, issuer=quote.user)
+        pdf_path = await ensure_quote_document(db, quote, issuer=quote.user)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 

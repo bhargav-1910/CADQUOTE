@@ -405,3 +405,57 @@ async def get_geometry_analysis(
 
 # Import at end to avoid circular import
 from datetime import datetime
+
+
+async def recover_interrupted_processing() -> None:
+    """Requeue CAD files stranded mid-processing by a crash or restart.
+
+    Geometry analysis runs as an in-process background task; if the server
+    dies while a file is PROCESSING (or before a PENDING task ever ran), the
+    file would otherwise stay stuck forever. Called once at startup.
+    """
+    from datetime import timedelta
+    from sqlalchemy import or_, and_
+    from app.core.database import get_db_session
+
+    try:
+        async with get_db_session() as db:
+            stale_cutoff = datetime.utcnow() - timedelta(minutes=10)
+            result = await db.execute(
+                select(CADFile).where(
+                    or_(
+                        CADFile.processing_status == ProcessingStatus.PROCESSING,
+                        and_(
+                            CADFile.processing_status == ProcessingStatus.PENDING,
+                            CADFile.created_at < stale_cutoff,
+                        ),
+                    )
+                )
+            )
+            stuck_ids = [cad.id for cad in result.scalars().all()]
+    except Exception:
+        logger.exception("Stuck-processing recovery scan failed")
+        return
+
+    if not stuck_ids:
+        return
+
+    logger.warning("Recovering %d CAD file(s) interrupted mid-processing", len(stuck_ids))
+    for file_id in stuck_ids:
+        try:
+            async with get_db_session() as db:
+                cad = await db.get(CADFile, file_id)
+                if cad:
+                    await process_cad_file(db, cad)
+                    logger.info("Recovered geometry processing for file %s", file_id)
+        except Exception as exc:
+            logger.error("Recovery failed for file %s: %s", file_id, exc)
+            try:
+                async with get_db_session() as db:
+                    cad = await db.get(CADFile, file_id)
+                    if cad:
+                        cad.processing_status = ProcessingStatus.FAILED
+                        cad.processing_error = f"Processing interrupted by restart; retry failed: {exc}"
+                        await db.commit()
+            except Exception:
+                logger.exception("Could not mark file %s as failed", file_id)

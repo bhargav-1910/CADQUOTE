@@ -1,4 +1,5 @@
 """PDF quotation document generation service."""
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -14,6 +15,8 @@ from app.models.models import Quote, GeometryAnalysis, User
 from app.services.storage import storage
 from app.services.dfm import DFMAnalysis, analyze_dfm_from_geometry, summarize_dfm
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Template directory
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
@@ -143,7 +146,9 @@ class PDFGenerator:
         filename = f"{quote.quote_number}.pdf"
         output_path = output_dir / filename
         
-        # Try WeasyPrint first, fall back to reportlab on any error
+        # Try WeasyPrint first, fall back to reportlab on any error.
+        # The fallback must be LOUD: a silent fallback previously hid a broken
+        # WeasyPrint install for months while every quote shipped the crude layout.
         if WEASYPRINT_AVAILABLE:
             try:
                 html_content = self._render_quote_html(quote, geometry, dfm_analysis, issuer_profile)
@@ -151,10 +156,19 @@ class PDFGenerator:
                 html = wp["HTML"](string=html_content)
                 html.write_pdf(str(output_path))
             except Exception:
-                # Fall back to reportlab on WeasyPrint error
+                logger.exception(
+                    "WeasyPrint failed for quote %s — falling back to the reportlab "
+                    "layout. The delivered PDF will NOT use the branded template; "
+                    "investigate this error.",
+                    quote.quote_number,
+                )
                 self._generate_pdf_reportlab(quote, geometry, str(output_path), dfm_analysis, issuer_profile)
         else:
-            # Use reportlab fallback
+            logger.warning(
+                "WeasyPrint is not installed — generating quote %s with the "
+                "reportlab fallback layout.",
+                quote.quote_number,
+            )
             self._generate_pdf_reportlab(quote, geometry, str(output_path), dfm_analysis, issuer_profile)
         
         return str(output_path)
@@ -954,8 +968,9 @@ async def generate_quote_document(
             "company_name": issuer.company_name,
             "company_address": issuer.company_address,
             "company_email": issuer.email,
-            "company_phone": "N/A",
+            "company_phone": issuer.phone_number or "N/A",
             "company_logo_abs_path": logo_abs,
+            "brand_color": issuer.brand_color,
         }
 
     dfm_analysis = analyze_dfm_from_geometry(geometry)
@@ -971,7 +986,30 @@ async def generate_quote_document(
     # Update quote with PDF path
     from app.services.quote import update_quote_pdf_path
     await update_quote_pdf_path(db, quote.id, pdf_path)
-    
+
     return pdf_path
+
+
+async def ensure_quote_document(
+    db: AsyncSession,
+    quote: Quote,
+    issuer: Optional[User] = None,
+) -> str:
+    """Return the quote PDF path, regenerating only when it is stale.
+
+    WeasyPrint rendering costs ~1s of CPU per document; reuse the file on
+    disk when it is newer than the quote's last update. Template changes are
+    picked up whenever the quote itself is touched (or via the explicit
+    regenerate endpoint).
+    """
+    path = quote.pdf_path
+    if path:
+        pdf_file = Path(path)
+        if pdf_file.exists():
+            file_mtime = datetime.utcfromtimestamp(pdf_file.stat().st_mtime)
+            if quote.updated_at is None or file_mtime >= quote.updated_at:
+                return path
+
+    return await generate_quote_document(db, quote, issuer=issuer)
 
 

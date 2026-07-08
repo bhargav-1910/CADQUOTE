@@ -3,6 +3,12 @@ from functools import lru_cache
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Placeholder secrets that must never reach production.
+INSECURE_JWT_SECRETS = {
+    "change-me-in-production",
+    "change-this-in-production-use-a-long-random-string",
+}
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -18,6 +24,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "CNC Quote Platform"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    ENVIRONMENT: str = "development"  # "development" | "production"
     
     # Server
     HOST: str = "0.0.0.0"
@@ -96,6 +103,15 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: object) -> None:
         """Normalize database URL for async SQLAlchemy drivers."""
+        if (
+            self.ENVIRONMENT.lower() == "production"
+            and self.JWT_SECRET_KEY in INSECURE_JWT_SECRETS
+        ):
+            raise RuntimeError(
+                "JWT_SECRET_KEY is still the insecure default. Set a strong random "
+                "value in the environment before running in production."
+            )
+
         self.DATABASE_URL = self._strip_wrapping_quotes(self.DATABASE_URL.strip())
         if self.REDIS_URL:
             self.REDIS_URL = self._strip_wrapping_quotes(self.REDIS_URL.strip())

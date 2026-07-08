@@ -10,7 +10,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Loopback only — never publish the database to the network.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quote_user} -d ${POSTGRES_DB:-quote_db}"]
       interval: 10s
@@ -27,7 +28,8 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      # Loopback only — never publish Redis to the network.
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -48,8 +50,8 @@ services:
       - ENVIRONMENT=production
       - DEBUG=false
       - AUTO_CREATE_TABLES=false
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-this-in-production-use-a-long-random-string}
-      - SECRET_KEY=${SECRET_KEY:-change-this-in-production-use-a-long-random-string}
+      # No insecure fallback: compose fails loudly if the secret is missing.
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
       - ALLOWED_HOSTS=*
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -62,7 +64,8 @@ services:
     volumes:
       - uploads_data:/app/uploads
     ports:
-      - "8000:8000"
+      # Loopback only — external traffic must go through the nginx frontend.
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
