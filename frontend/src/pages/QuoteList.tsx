@@ -4,12 +4,14 @@ import { FileText, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, Home, 
 import type { QuoteListItem } from '@/types';
 import { listQuotes, downloadQuotePDF } from '@/services/api';
 
-type StatusFilter = 'all' | 'generated' | 'sent' | 'expired' | 'draft';
+type StatusFilter = 'all' | 'generated' | 'sent' | 'accepted' | 'declined' | 'expired' | 'draft';
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'generated', label: 'Generated' },
   { value: 'sent', label: 'Sent' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'declined', label: 'Declined' },
   { value: 'expired', label: 'Expired' },
   { value: 'draft', label: 'Draft' },
 ];
@@ -23,13 +25,17 @@ const formatDate = (dateString: string) =>
 const statusPillClass = (status: string) => {
   switch (status) {
     case 'generated':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      return 'bg-primary-50 text-primary-700 border-primary-200';
     case 'sent':
       return 'bg-sky-50 text-sky-700 border-sky-200';
-    case 'expired':
+    case 'accepted':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case 'declined':
       return 'bg-red-50 text-red-700 border-red-200';
-    default:
+    case 'expired':
       return 'bg-amber-50 text-amber-700 border-amber-200';
+    default:
+      return 'bg-gray-100 text-gray-700 border-gray-200';
   }
 };
 
@@ -37,6 +43,9 @@ const statusPillClass = (status: string) => {
 const ValidityCell = ({ validUntil, status }: { validUntil: string; status: string }) => {
   const expiry = new Date(validUntil).getTime();
   const daysLeft = Math.ceil((expiry - Date.now()) / 86400000);
+  if (status === 'accepted' || status === 'declined') {
+    return <span className="text-sm text-gray-600">{formatDate(validUntil)}</span>;
+  }
   const expired = status === 'expired' || daysLeft <= 0;
 
   if (expired) {

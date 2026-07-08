@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.cache import cache
-from app.api import files, config, quotes, auth, billing
+from app.api import files, config, quotes, auth, billing, public
 from app.seed import seed_if_empty
 
 # Configure logging
@@ -97,6 +97,7 @@ app.include_router(billing.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
+app.include_router(public.router, prefix="/api")
 
 # Serve user-uploaded assets such as company logos and generated PDFs
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

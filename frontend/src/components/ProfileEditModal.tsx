@@ -13,6 +13,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   const [companyName, setCompanyName] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [brandColor, setBrandColor] = useState('#0284c7');
   const [logo, setLogo] = useState<File | undefined>(undefined);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -26,6 +27,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
     setCompanyName(user.company_name ?? '');
     setCompanyAddress(user.company_address ?? '');
     setPhoneNumber(user.phone_number ?? '');
+    setBrandColor(user.brand_color ?? '#0284c7');
     setLogo(undefined);
     setLogoPreviewUrl(null);
     setError(null);
@@ -60,6 +62,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
         company_name: companyName.trim(),
         company_address: companyAddress.trim(),
         phone_number: phoneNumber.trim() || undefined,
+        brand_color: brandColor,
         logo,
       });
       onClose();
@@ -143,6 +146,34 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
                   placeholder="+91 98765 43210"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
                 />
+              </label>
+
+              <label className="text-sm text-slate-700 block">
+                <span className="font-medium">Brand accent color</span>
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Used on your quote PDFs and the customer quote page.
+                </span>
+                <span className="mt-2 flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={brandColor}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+                  />
+                  <span className="font-mono text-xs text-slate-600">{brandColor}</span>
+                  {['#0284c7', '#1d4ed8', '#0f766e', '#b91c1c', '#7c3aed', '#0f172a'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setBrandColor(preset)}
+                      className={`h-6 w-6 rounded-full border-2 ${
+                        brandColor === preset ? 'border-slate-900' : 'border-white shadow'
+                      }`}
+                      style={{ backgroundColor: preset }}
+                      title={preset}
+                    />
+                  ))}
+                </span>
               </label>
             </div>
 

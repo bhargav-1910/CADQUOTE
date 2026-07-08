@@ -32,10 +32,10 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-[100dvh] overflow-x-hidden bg-gradient-to-b from-sky-50 via-white to-amber-50 p-4 sm:p-6">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-gradient-to-b from-slate-100 via-slate-100 to-slate-200 p-4 sm:p-6">
       <div className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60 md:grid-cols-2">
         <aside className="relative hidden p-8 md:flex md:flex-col md:justify-between">
-          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-sky-100 via-white to-amber-100" />
+          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-sky-100/60 via-white to-slate-100" />
           <div>
             <p className="font-display text-3xl text-slate-900">ForgeQuote</p>
             <p className="mt-2 max-w-sm text-sm text-slate-600">Secure access to your CNC quotation workspace.</p>

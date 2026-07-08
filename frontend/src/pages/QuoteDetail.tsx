@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { 
+import {
   ChevronRight, Download, FileText, Mail, Loader2, Home,
-  AlertCircle, CheckCircle, Package, Clock, User, Pencil, Eye 
+  AlertCircle, CheckCircle, Package, Clock, User, Pencil, Eye,
+  Link2, Check,
 } from 'lucide-react';
 import type { Quote } from '@/types';
-import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail, fetchQuotePDFPreviewBlob } from '@/services/api';
+import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail, fetchQuotePDFPreviewBlob, shareQuote } from '@/services/api';
 import { useAuth } from '@/components/AuthProvider';
+import { StatusPill } from '@/components/ui';
 
 interface CombinedFileLine {
   fileName: string;
@@ -71,6 +73,8 @@ const QuoteDetail = () => {
   const [generating, setGenerating] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -149,6 +153,24 @@ const QuoteDetail = () => {
       setActionError(err instanceof Error ? err.message : 'Failed to generate PDF');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleShareQuote = async () => {
+    if (!quote) return;
+
+    setActionError(null);
+    setSharing(true);
+    try {
+      const { share_token: shareToken } = await shareQuote(quote.id);
+      const shareUrl = `${window.location.origin}/q/${shareToken}`;
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to create share link');
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -294,17 +316,7 @@ const QuoteDetail = () => {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-gray-900">{quote.quote_number}</h1>
-            <span
-              className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${
-                quote.status === 'generated'
-                  ? 'bg-green-100 text-green-700'
-                  : quote.status === 'sent'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-gray-100 text-gray-700'
-              }`}
-            >
-              {quote.status}
-            </span>
+            <StatusPill status={quote.status} />
           </div>
           <p className="text-gray-500 text-sm mt-0.5">Created {formatDate(quote.created_at)}</p>
         </div>
@@ -323,6 +335,20 @@ const QuoteDetail = () => {
           >
             All Quotes
           </Link>
+          <button
+            onClick={handleShareQuote}
+            disabled={sharing}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 text-sm"
+          >
+            {sharing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : shareCopied ? (
+              <Check className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Link2 className="w-4 h-4" />
+            )}
+            {shareCopied ? 'Link copied' : 'Share with customer'}
+          </button>
           <button
             onClick={handleDownloadPDF}
             disabled={generating}

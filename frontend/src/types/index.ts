@@ -4,7 +4,52 @@
 
 // Enums
 export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
-export type QuoteStatus = 'draft' | 'generated' | 'sent' | 'expired';
+export type QuoteStatus = 'draft' | 'generated' | 'sent' | 'expired' | 'accepted' | 'declined';
+
+export interface QuoteShareResponse {
+  quote_id: string;
+  share_token: string;
+}
+
+export interface PublicQuoteLineItem {
+  part_name: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+}
+
+export interface PublicSellerInfo {
+  company_name: string;
+  company_address?: string | null;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  brand_color?: string | null;
+}
+
+export interface PublicQuote {
+  quote_number: string;
+  status: QuoteStatus;
+  customer_name?: string | null;
+  customer_company?: string | null;
+  part_name?: string | null;
+  material_name?: string | null;
+  surface_finish_name?: string | null;
+  inspection_level_name?: string | null;
+  tolerance_notes?: string | null;
+  line_items: PublicQuoteLineItem[];
+  total_price: number;
+  estimated_lead_time_days: number;
+  valid_until: string;
+  created_at: string;
+  payment_terms?: string | null;
+  delivery?: string | null;
+  gst?: string | null;
+  price_validity?: string | null;
+  responded_at?: string | null;
+  customer_response_note?: string | null;
+  seller: PublicSellerInfo;
+}
 
 // Base types
 export interface BoundingBox {
@@ -532,6 +577,7 @@ export interface UserProfile {
   company_address: string;
   phone_number: string | null;
   company_logo_url: string | null;
+  brand_color: string | null;
   created_at: string;
 }
 
@@ -540,6 +586,7 @@ export interface UpdateProfileRequest {
   company_name: string;
   company_address: string;
   phone_number?: string;
+  brand_color?: string;
   logo?: File;
 }
 

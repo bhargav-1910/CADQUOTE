@@ -7,6 +7,8 @@ import {
   PerspectiveCamera,
   GizmoHelper,
   GizmoViewcube,
+  Html,
+  Line,
 } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -19,6 +21,8 @@ import {
   Grid3x3,
   Hexagon,
   Thermometer,
+  Ruler,
+  Boxes,
 } from 'lucide-react';
 import type { GeometryAnalysis } from '@/types';
 import { fetchFilePreviewBlob, fetchFileDownloadBlob } from '@/services/api';
@@ -81,6 +85,22 @@ const ViewController = ({
   return null;
 };
 
+/** Normalization for a shape set: scene scale + centering offset. */
+const computeNormalization = (shapes: ParsedShape[]) => {
+  const box = new THREE.Box3();
+  shapes.forEach((shape) => {
+    shape.geometry.computeBoundingBox();
+    if (shape.geometry.boundingBox) {
+      box.union(shape.geometry.boundingBox);
+    }
+  });
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const scale = MODEL_SIZE / maxDim;
+  return { scale, offset: center.clone().multiplyScalar(-scale), center };
+};
+
 /** Renders parsed shapes normalized to a fixed size, with edges + clipping. */
 const ShapesGroup = ({
   shapes,
@@ -88,27 +108,31 @@ const ShapesGroup = ({
   showEdges,
   clippingPlane,
   heatmap = false,
+  explode = 0,
+  onSurfaceClick,
 }: {
   shapes: ParsedShape[];
   displayMode: DisplayMode;
   showEdges: boolean;
   clippingPlane: THREE.Plane | null;
   heatmap?: boolean;
+  explode?: number;
+  onSurfaceClick?: (point: THREE.Vector3) => void;
 }) => {
-  const { scale, offset } = useMemo(() => {
-    const box = new THREE.Box3();
-    shapes.forEach((shape) => {
+  const { scale, offset, center } = useMemo(() => computeNormalization(shapes), [shapes]);
+
+  // Exploded view: push each body away from the assembly center (model units).
+  const explodeOffsets = useMemo(() => {
+    return shapes.map((shape) => {
       shape.geometry.computeBoundingBox();
-      if (shape.geometry.boundingBox) {
-        box.union(shape.geometry.boundingBox);
-      }
+      const shapeCenter = shape.geometry.boundingBox
+        ? shape.geometry.boundingBox.getCenter(new THREE.Vector3())
+        : center.clone();
+      const direction = shapeCenter.clone().sub(center);
+      if (direction.lengthSq() < 1e-10) return new THREE.Vector3();
+      return direction;
     });
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const nextScale = MODEL_SIZE / maxDim;
-    return { scale: nextScale, offset: center.multiplyScalar(-nextScale) };
-  }, [shapes]);
+  }, [shapes, center]);
 
   const edgeGeometries = useMemo(
     () => (showEdges ? shapes.map((shape) => new THREE.EdgesGeometry(shape.geometry, 25)) : []),
@@ -127,27 +151,82 @@ const ShapesGroup = ({
   return (
     <group position={offset} scale={scale}>
       {shapes.map((shape, index) => (
-        <mesh key={index} geometry={shape.geometry} castShadow receiveShadow>
-          <meshStandardMaterial
-            color={heatmap ? '#ffffff' : shape.color ?? '#8b93a7'}
-            vertexColors={heatmap}
-            metalness={heatmap ? 0.1 : 0.35}
-            roughness={heatmap ? 0.7 : 0.45}
-            wireframe={displayMode === 'wireframe'}
-            clippingPlanes={clippingPlanes}
-            clipShadows
-            side={THREE.DoubleSide}
-          />
+        <group key={index} position={explodeOffsets[index].clone().multiplyScalar(explode * 0.8)}>
+          <mesh
+            geometry={shape.geometry}
+            castShadow
+            receiveShadow
+            onClick={
+              onSurfaceClick
+                ? (event) => {
+                    event.stopPropagation();
+                    onSurfaceClick(event.point.clone());
+                  }
+                : undefined
+            }
+          >
+            <meshStandardMaterial
+              color={heatmap ? '#ffffff' : shape.color ?? '#8b93a7'}
+              vertexColors={heatmap}
+              metalness={heatmap ? 0.1 : 0.35}
+              roughness={heatmap ? 0.7 : 0.45}
+              wireframe={displayMode === 'wireframe'}
+              clippingPlanes={clippingPlanes}
+              clipShadows
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          {showEdges && displayMode === 'shaded' && edgeGeometries[index] && (
+            <lineSegments geometry={edgeGeometries[index]}>
+              <lineBasicMaterial color="#1e293b" clippingPlanes={clippingPlanes} />
+            </lineSegments>
+          )}
+        </group>
+      ))}
+    </group>
+  );
+};
+
+/** Two-point distance measurement overlay (world-space points). */
+const MeasureOverlay = ({
+  points,
+  modelScale,
+}: {
+  points: THREE.Vector3[];
+  modelScale: number;
+}) => {
+  if (points.length === 0) return null;
+  const midpoint =
+    points.length === 2
+      ? points[0].clone().add(points[1]).multiplyScalar(0.5)
+      : null;
+  const distanceMm = points.length === 2 ? points[0].distanceTo(points[1]) / modelScale : null;
+
+  return (
+    <>
+      {points.map((point, index) => (
+        <mesh key={index} position={point} renderOrder={10}>
+          <sphereGeometry args={[0.055, 16, 16]} />
+          <meshBasicMaterial color="#e11d48" depthTest={false} />
         </mesh>
       ))}
-      {showEdges &&
-        displayMode === 'shaded' &&
-        edgeGeometries.map((geometry, index) => (
-          <lineSegments key={`edge-${index}`} geometry={geometry}>
-            <lineBasicMaterial color="#1e293b" clippingPlanes={clippingPlanes} />
-          </lineSegments>
-        ))}
-    </group>
+      {points.length === 2 && (
+        <Line
+          points={[points[0], points[1]]}
+          color="#e11d48"
+          lineWidth={2}
+          depthTest={false}
+          renderOrder={10}
+        />
+      )}
+      {midpoint && distanceMm !== null && (
+        <Html position={midpoint} center zIndexRange={[15, 0]} style={{ pointerEvents: 'none' }}>
+          <div className="whitespace-nowrap rounded-md bg-rose-600 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-lg">
+            {distanceMm.toFixed(2)} mm
+          </div>
+        </Html>
+      )}
+    </>
   );
 };
 
@@ -191,6 +270,10 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
   const [sectionEnabled, setSectionEnabled] = useState(false);
   const [sectionAxis, setSectionAxis] = useState<SectionAxis>('x');
   const [sectionOffset, setSectionOffset] = useState(0);
+  const [measureEnabled, setMeasureEnabled] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState<THREE.Vector3[]>([]);
+  const [explodeEnabled, setExplodeEnabled] = useState(false);
+  const [explode, setExplode] = useState(0.6);
   const [viewRequest, setViewRequest] = useState<{
     position: [number, number, number];
     seq: number;
@@ -212,6 +295,9 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
         if (prev) disposeShapes(prev);
         return null;
       });
+      setMeasureEnabled(false);
+      setMeasurePoints([]);
+      setExplodeEnabled(false);
 
       const format = fileFormat.toLowerCase();
       try {
@@ -264,6 +350,28 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
       }
     };
   }, [fileId, fileFormat]);
+
+  const modelScale = useMemo(
+    () => (shapes && shapes.length > 0 ? computeNormalization(shapes).scale : 1),
+    [shapes],
+  );
+
+  const handleSurfaceClick = useCallback((point: THREE.Vector3) => {
+    setMeasurePoints((prev) => (prev.length >= 2 ? [point] : [...prev, point]));
+  }, []);
+
+  const toggleMeasure = useCallback(() => {
+    setMeasureEnabled((prev) => {
+      if (prev) setMeasurePoints([]);
+      return !prev;
+    });
+  }, []);
+
+  const toggleExplode = useCallback(() => {
+    setExplodeEnabled((prev) => !prev);
+    // Exploded distances are not physical — drop any active measurement.
+    setMeasurePoints([]);
+  }, []);
 
   const clippingPlane = useMemo(() => {
     if (!sectionEnabled) return null;
@@ -320,9 +428,9 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
   return (
     <div
-      className={`relative w-full bg-gradient-to-b from-slate-100 via-gray-100 to-slate-200 rounded-xl overflow-hidden border border-slate-200/70 shadow-inner ${
-        className ?? 'h-[400px] sm:h-[560px]'
-      }`}
+      className={`relative w-full bg-slate-400 rounded-xl overflow-hidden border border-slate-400/60 shadow-inner ${
+        measureEnabled ? 'cursor-crosshair' : ''
+      } ${className ?? 'h-[400px] sm:h-[560px]'}`}
     >
       {/* Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
@@ -357,6 +465,22 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
         >
           {heatmapLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Thermometer className="w-4 h-4" />}
         </ToolbarButton>
+        <ToolbarButton
+          title="Measure distance (click two points)"
+          active={measureEnabled}
+          onClick={toggleMeasure}
+        >
+          <Ruler className="w-4 h-4" />
+        </ToolbarButton>
+        {shapes && shapes.length > 1 && (
+          <ToolbarButton
+            title="Exploded view (assemblies)"
+            active={explodeEnabled}
+            onClick={toggleExplode}
+          >
+            <Boxes className="w-4 h-4" />
+          </ToolbarButton>
+        )}
         <ToolbarButton
           title="Auto-rotate"
           active={autoRotate}
@@ -400,6 +524,31 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
           </span>
         )}
       </div>
+
+      {/* Measure hint */}
+      {measureEnabled && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 rounded-full bg-rose-600/95 px-3 py-1 text-[11px] font-medium text-white shadow backdrop-blur-sm">
+          {measurePoints.length < 2
+            ? `Click ${measurePoints.length === 0 ? 'first' : 'second'} point on the model`
+            : 'Click again to start a new measurement'}
+        </div>
+      )}
+
+      {/* Explode slider */}
+      {explodeEnabled && (
+        <div className={`absolute ${sectionEnabled ? 'bottom-14' : 'bottom-3'} left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3 py-2 flex items-center gap-2.5`}>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Explode</span>
+          <input
+            type="range"
+            min={0}
+            max={1.5}
+            step={0.01}
+            value={explode}
+            onChange={(e) => setExplode(Number(e.target.value))}
+            className="w-36 accent-primary-600"
+          />
+        </div>
+      )}
 
       {/* Section controls */}
       {sectionEnabled && (
@@ -506,16 +655,20 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
             showEdges={showEdges}
             clippingPlane={clippingPlane}
             heatmap={heatmapEnabled && Boolean(heatmapShapes)}
+            explode={explodeEnabled ? explode : 0}
+            onSurfaceClick={measureEnabled ? handleSurfaceClick : undefined}
           />
         )}
+
+        <MeasureOverlay points={measurePoints} modelScale={modelScale} />
 
         <Grid
           position={[0, -MODEL_SIZE / 2 - 0.35, 0]}
           args={[24, 24]}
           cellSize={0.5}
-          cellColor="#cbd5e1"
+          cellColor="#64748b"
           sectionSize={2}
-          sectionColor="#94a3b8"
+          sectionColor="#475569"
           fadeDistance={28}
           fadeStrength={1}
         />

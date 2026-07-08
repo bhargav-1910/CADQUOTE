@@ -153,11 +153,20 @@ const Layout = ({ children }: LayoutProps) => {
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col bg-slate-950 border-r border-slate-800/80">
         <Link to="/workspace" className="flex items-center gap-3 px-4 py-5 group">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center shadow-lg shadow-sky-900/40 group-hover:scale-105 transition-transform">
+          <div
+            className="w-10 h-10 rounded-xl text-white flex items-center justify-center shadow-lg shadow-sky-900/40 group-hover:scale-105 transition-transform"
+            style={
+              user?.brand_color
+                ? { backgroundColor: user.brand_color }
+                : { background: 'linear-gradient(to bottom right, #0ea5e9, #0369a1)' }
+            }
+          >
             <Box className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-display font-semibold text-white leading-none">ForgeQuote</p>
+            <p className="font-display font-semibold text-white leading-none">
+              {user?.company_name || 'ForgeQuote'}
+            </p>
             <p className="text-[11px] text-slate-500 leading-none mt-1">CNC Cost Studio</p>
           </div>
         </Link>

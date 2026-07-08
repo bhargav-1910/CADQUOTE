@@ -62,6 +62,8 @@ class QuoteStatus(str, enum.Enum):
     GENERATED = "generated"
     SENT = "sent"
     EXPIRED = "expired"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
 
 
 class User(Base):
@@ -77,6 +79,7 @@ class User(Base):
     company_address = Column(Text, nullable=False)
     phone_number = Column(String(30), nullable=True)
     company_logo_path = Column(String(500), nullable=True)
+    brand_color = Column(String(7), nullable=True)  # hex accent, e.g. #0284c7
     refresh_token_hash = Column(String(128), nullable=True)
     refresh_token_expires_at = Column(DateTime, nullable=True)
 
@@ -477,6 +480,11 @@ class Quote(Base):
     # Status and validity
     status = Column(SQLEnum(QuoteStatus), default=QuoteStatus.DRAFT)
     valid_until = Column(DateTime, nullable=False)
+
+    # Customer-facing share link and response
+    share_token = Column(String(64), unique=True, nullable=True, index=True)
+    customer_response_note = Column(Text, nullable=True)
+    responded_at = Column(DateTime, nullable=True)
 
     # Commercial terms
     price_validity = Column(String(100), nullable=True)

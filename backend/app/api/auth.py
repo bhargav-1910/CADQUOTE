@@ -1,5 +1,6 @@
 """Authentication endpoints for signup/login/profile."""
 from pathlib import Path
+import re
 import uuid
 from datetime import datetime
 from jose import JWTError, jwt
@@ -51,6 +52,7 @@ def _profile_from_user(user: User) -> UserProfileResponse:
         company_address=user.company_address,
         phone_number=user.phone_number,
         company_logo_url=_build_logo_url(user.company_logo_path),
+        brand_color=user.brand_color,
         created_at=user.created_at,
     )
 
@@ -239,6 +241,7 @@ async def update_me(
     company_name: str | None = Form(None),
     company_address: str | None = Form(None),
     phone_number: str | None = Form(None),
+    brand_color: str | None = Form(None),
     logo: UploadFile | None = File(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -264,6 +267,15 @@ async def update_me(
 
     if phone_number is not None:
         current_user.phone_number = _normalize_phone(phone_number)
+
+    if brand_color is not None:
+        value = brand_color.strip().lower()
+        if not value:
+            current_user.brand_color = None
+        else:
+            if not re.fullmatch(r"#[0-9a-f]{6}", value):
+                raise HTTPException(status_code=400, detail="Brand color must be a hex value like #0284c7")
+            current_user.brand_color = value
 
     logo_relative_path = await _store_logo_file(logo)
     if logo_relative_path is not None:

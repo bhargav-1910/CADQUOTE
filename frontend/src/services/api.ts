@@ -34,6 +34,8 @@ import type {
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
   VendorMatchSummary,
+  QuoteShareResponse,
+  PublicQuote,
 } from '@/types';
 
 const AUTH_TOKEN_KEY = 'forgequote.auth.token';
@@ -377,6 +379,9 @@ export const updateCurrentUser = async (payload: UpdateProfileRequest): Promise<
     formData.append('company_name', payload.company_name);
     formData.append('company_address', payload.company_address);
     formData.append('phone_number', payload.phone_number ?? '');
+    if (payload.brand_color !== undefined) {
+      formData.append('brand_color', payload.brand_color);
+    }
     if (payload.logo) {
       formData.append('logo', payload.logo);
     }
@@ -555,6 +560,48 @@ export const sendQuoteEmail = async (
   } catch (error) {
     return handleError(error as AxiosError);
   }
+};
+
+// ============================================================================
+// Quote Sharing (customer-facing) API
+// ============================================================================
+
+export const shareQuote = async (quoteId: string): Promise<QuoteShareResponse> => {
+  try {
+    const response = await api.post<QuoteShareResponse>(`/quotes/${quoteId}/share`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getPublicQuote = async (shareToken: string): Promise<PublicQuote> => {
+  try {
+    const response = await api.get<PublicQuote>(`/public/quotes/${shareToken}`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const respondToPublicQuote = async (
+  shareToken: string,
+  action: 'accept' | 'decline',
+  note?: string,
+): Promise<PublicQuote> => {
+  try {
+    const response = await api.post<PublicQuote>(`/public/quotes/${shareToken}/respond`, {
+      action,
+      note: note || null,
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getPublicQuotePdfUrl = (shareToken: string): string => {
+  return `${apiBaseUrl}/public/quotes/${shareToken}/pdf`;
 };
 
 // ============================================================================

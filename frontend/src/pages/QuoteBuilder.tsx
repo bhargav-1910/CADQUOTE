@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2, Maximize2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
@@ -1119,8 +1120,16 @@ const QuoteBuilder = () => {
 
   if (editLoading) {
     return (
-      <div className="p-6 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <Skeleton className="h-5 w-64" />
+        <Skeleton className="h-10 w-80" />
+        <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(380px,0.85fr)] gap-6 items-start">
+          <div className="space-y-6">
+            <Skeleton className="h-[420px] w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+          <Skeleton className="h-[520px] w-full" />
+        </div>
       </div>
     );
   }
@@ -1166,45 +1175,52 @@ const QuoteBuilder = () => {
         )}
       </div>
 
-      {/* Progress steps — single-file only */}
-      {!isMultiMode && (
-        <div className="flex items-center gap-2">
-          {(['upload', 'configure'] as const).map((s, i) => {
-            const steps = ['upload', 'configure'] as const;
-            const currentIdx = steps.indexOf(step);
-            const isDone = i < currentIdx;
-            const isCurrentStep = step === s;
-            const labels = ['Upload File', 'Configure & Price'];
-            return (
-              <div key={s} className="flex items-center gap-2">
+      {/* Progress: Upload → Configure → Price → Generate, derived from live state */}
+      {(() => {
+        const hasPricing = isMultiMode
+          ? multiFiles.some((f) => f.pricing)
+          : Boolean(pricing);
+        const isPricing = isMultiMode
+          ? multiFiles.some((f) => f.pricingLoading)
+          : pricingLoading;
+        const stages = [
+          { label: isMultiMode ? `Upload files (${multiFiles.length})` : 'Upload file', done: step === 'configure', current: step === 'upload' },
+          { label: 'Configure', done: hasPricing, current: step === 'configure' && !hasPricing && !isPricing },
+          { label: 'Review price', done: creating, current: (hasPricing || isPricing) && !creating },
+          { label: 'Generate quote', done: false, current: creating },
+        ];
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            {stages.map((stage, i) => (
+              <div key={stage.label} className="flex items-center gap-2">
                 <div className="flex items-center gap-2">
                   <div
                     className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
-                      isDone
-                        ? 'bg-green-500 text-white'
-                        : isCurrentStep
+                      stage.done
+                        ? 'bg-emerald-500 text-white'
+                        : stage.current
                         ? 'bg-primary-600 text-white'
                         : 'bg-gray-100 text-gray-400'
                     }`}
                   >
-                    {isDone ? <CheckCircle className="w-4 h-4" /> : i + 1}
+                    {stage.done ? <CheckCircle className="w-4 h-4" /> : i + 1}
                   </div>
                   <span
                     className={`text-sm font-medium ${
-                      isCurrentStep ? 'text-primary-700' : isDone ? 'text-green-600' : 'text-gray-400'
+                      stage.current ? 'text-primary-700' : stage.done ? 'text-emerald-600' : 'text-gray-400'
                     }`}
                   >
-                    {labels[i]}
+                    {stage.label}
                   </span>
                 </div>
-                {i < 1 && (
-                  <div className={`h-px w-10 mx-1 ${isDone ? 'bg-green-400' : 'bg-gray-200'}`} />
+                {i < stages.length - 1 && (
+                  <div className={`h-px w-8 mx-1 ${stage.done ? 'bg-emerald-400' : 'bg-gray-200'}`} />
                 )}
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        );
+      })()}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">{error}</div>

@@ -28,6 +28,58 @@ except (ImportError, OSError):
     pass
 
 
+_ONES = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+    "Seventeen", "Eighteen", "Nineteen",
+]
+_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _two_digits_words(n: int) -> str:
+    if n < 20:
+        return _ONES[n]
+    return (_TENS[n // 10] + (" " + _ONES[n % 10] if n % 10 else "")).strip()
+
+
+def _three_digits_words(n: int) -> str:
+    hundreds, rest = divmod(n, 100)
+    parts = []
+    if hundreds:
+        parts.append(f"{_ONES[hundreds]} Hundred")
+    if rest:
+        parts.append(_two_digits_words(rest))
+    return " ".join(parts)
+
+
+def inr_in_words(amount: float) -> str:
+    """Amount in words using the Indian numbering system (crore/lakh)."""
+    rupees = int(amount)
+    paise = int(round((amount - rupees) * 100))
+
+    if rupees == 0:
+        words = "Zero"
+    else:
+        crore, rem = divmod(rupees, 10_000_000)
+        lakh, rem = divmod(rem, 100_000)
+        thousand, hundreds = divmod(rem, 1_000)
+        parts = []
+        if crore:
+            parts.append(f"{_two_digits_words(crore) if crore < 100 else _three_digits_words(crore)} Crore")
+        if lakh:
+            parts.append(f"{_two_digits_words(lakh)} Lakh")
+        if thousand:
+            parts.append(f"{_two_digits_words(thousand)} Thousand")
+        if hundreds:
+            parts.append(_three_digits_words(hundreds))
+        words = " ".join(parts)
+
+    result = f"Rupees {words}"
+    if paise:
+        result += f" and {_two_digits_words(paise)} Paise"
+    return result + " Only"
+
+
 class PDFGenerator:
     """Generate PDF quotation documents."""
     
@@ -241,46 +293,44 @@ class PDFGenerator:
                 line_total = float(item["line_total"])
                 line_rows.append([
                     str(idx),
-                    "CAD",
-                    Paragraph(f"{item['file_name']}<br/><font size='8'>Bulk quote item</font>", base_style),
-                    escape(quote.hsn_code or "NA"),
-                    f"{qty:.1f}",
-                    "Pcs",
+                    Paragraph(f"<b>{escape(item['file_name'])}</b><br/><font size='7.5' color='#64748b'>CNC machined part - combined quote line</font>", base_style),
+                    escape(quote.hsn_code or "-"),
+                    f"{qty:,} pcs",
                     f"{(line_total / qty):,.2f}",
                     f"{line_total:,.2f}",
                 ])
         else:
             line_rows = [[
                 "1",
-                "CAD",
                 Paragraph(
-                    f"{quote.cad_file.original_filename}<br/><font size='8'>"
-                    f"Material: {quote.material.name} | Finish: {quote.surface_finish.name} | Inspection: {quote.inspection_level.name}"
+                    f"<b>{escape(quote.cad_file.original_filename)}</b><br/><font size='7.5' color='#64748b'>"
+                    f"Material: {escape(quote.material.name)} | Finish: {escape(quote.surface_finish.name)} | Inspection: {escape(quote.inspection_level.name)}"
                     f"</font>",
                     base_style,
                 ),
-                escape(quote.hsn_code or "NA"),
-                f"{max(int(quote.quantity), 1):.1f}",
-                "Pcs",
+                escape(quote.hsn_code or "-"),
+                f"{max(int(quote.quantity), 1):,} pcs",
                 f"{float(quote.unit_price):,.2f}",
                 f"{float(quote.total_price):,.2f}",
             ]]
 
         items = Table(
-            [["SN", "Image", "Description", "HSN Code", "Qty", "UOM", "Price", "Total"]] + line_rows,
-            colWidths=[8 * mm, 20 * mm, 55 * mm, 20 * mm, 14 * mm, 14 * mm, 24 * mm, 35 * mm],
+            [["#", "Part & Specification", "HSN", "Qty", "Unit Price (Rs.)", "Amount (Rs.)"]] + line_rows,
+            colWidths=[9 * mm, 89 * mm, 18 * mm, 22 * mm, 26 * mm, 26 * mm],
         )
         items.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.8, line_color),
-            ("BACKGROUND", (0, 0), (-1, 0), light_gray),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.6, HexColor("#e2e8f0")),
+            ("BACKGROUND", (0, 0), (-1, 0), slate_ink),
+            ("TEXTCOLOR", (0, 0), (-1, 0), HexColor("#ffffff")),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("ALIGN", (0, 1), (1, -1), "CENTER"),
-            ("ALIGN", (3, 1), (5, -1), "CENTER"),
-            ("ALIGN", (6, 1), (7, -1), "RIGHT"),
+            ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"),
+            ("ALIGN", (2, 0), (2, -1), "CENTER"),
+            ("ALIGN", (3, 0), (5, -1), "RIGHT"),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("TOPPADDING", (0, 1), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [HexColor("#ffffff"), HexColor("#f8fafc")]),
         ]))
         content.append(items)
 
@@ -288,7 +338,10 @@ class PDFGenerator:
         gst_display = quote.gst or "As applicable"
         grand_total = subtotal
 
-        lower_left = Paragraph(f"<b>Amount in Words</b><br/>INR {grand_total:,.2f} only.", base_style)
+        lower_left = Paragraph(
+            f"<b>Amount in Words</b><br/><i>{escape(inr_in_words(grand_total))}</i>",
+            base_style,
+        )
         totals_rows = [
             ["Sub Total", ":", f"{subtotal:,.2f}"],
             [f"GST ({gst_display})", ":", "Included/As applicable"],
@@ -404,26 +457,32 @@ class PDFGenerator:
                 qty = max(int(item["quantity"]), 1)
                 line_total = float(item["line_total"])
                 line_items.append({
-                    "description": f"{escape(item['file_name'])}<br><span class=\"desc-meta\">Bulk quote item</span>",
-                    "hsn_code": escape(quote.hsn_code or "NA"),
+                    "description": (
+                        f"<span class=\"part-name\">{escape(item['file_name'])}</span>"
+                        f"<span class=\"desc-meta\">CNC machined part · combined quote line</span>"
+                    ),
+                    "hsn_code": escape(quote.hsn_code or "—"),
                     "qty": qty,
-                    "uom": "Pcs",
                     "unit_price": line_total / qty,
                     "line_total": line_total,
                 })
         else:
+            spec_bits = [
+                f"Material: {escape(quote.material.name)}",
+                f"Finish: {escape(quote.surface_finish.name)}",
+                f"Inspection: {escape(quote.inspection_level.name)}",
+            ]
+            if quote.tolerance_notes:
+                spec_bits.append(f"Tolerance: {escape(quote.tolerance_notes)}")
             line_items = [{
                 "description": (
-                    f"{quote.cad_file.original_filename}<br>"
-                    f"<span class=\"desc-meta\">Material: {escape(quote.material.name)} | "
-                    f"Finish: {escape(quote.surface_finish.name)} | "
-                    f"Inspection: {escape(quote.inspection_level.name)}</span><br>"
-                    f"<span class=\"desc-meta\">Volume: {geometry.volume:.2f} cm3 | "
-                    f"Weight: {weight_kg:.3f} kg</span>"
+                    f"<span class=\"part-name\">{escape(quote.cad_file.original_filename)}</span>"
+                    f"<span class=\"desc-meta\">{' &nbsp;·&nbsp; '.join(spec_bits)}</span>"
+                    f"<span class=\"desc-meta\">Volume: {geometry.volume:.2f} cm³ &nbsp;·&nbsp; "
+                    f"Est. weight: {weight_kg:.3f} kg</span>"
                 ),
-                "hsn_code": escape(quote.hsn_code or "NA"),
+                "hsn_code": escape(quote.hsn_code or "—"),
                 "qty": max(int(quote.quantity), 1),
-                "uom": "Pcs",
                 "unit_price": float(quote.unit_price),
                 "line_total": float(quote.total_price),
             }]
@@ -432,14 +491,12 @@ class PDFGenerator:
         for idx, item in enumerate(line_items, start=1):
             line_items_html += (
                 "<tr>"
-                f"<td class=\"center\">{idx}</td>"
-                "<td class=\"image-cell\"><div class=\"img-ph\">CAD</div></td>"
+                f"<td class=\"center muted\">{idx}</td>"
                 f"<td>{item['description']}</td>"
                 f"<td class=\"center\">{item['hsn_code']}</td>"
-                f"<td class=\"right\">{item['qty']:.1f}</td>"
-                f"<td class=\"center\">{item['uom']}</td>"
-                f"<td class=\"right\">{item['unit_price']:,.2f}</td>"
-                f"<td class=\"right\">{item['line_total']:,.2f}</td>"
+                f"<td class=\"right num\">{item['qty']:,} pcs</td>"
+                f"<td class=\"right num\">{item['unit_price']:,.2f}</td>"
+                f"<td class=\"right num strong\">{item['line_total']:,.2f}</td>"
                 "</tr>"
             )
 
@@ -447,7 +504,7 @@ class PDFGenerator:
         gst_display = quote.gst or "As applicable"
         grand_total = subtotal
 
-        subject_line = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quote for CNC machining"
+        subject_line = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quotation for CNC machined components"
         client_lines = [
             quote.customer_name or "Valued Customer",
             quote.customer_company or "",
@@ -458,32 +515,47 @@ class PDFGenerator:
         logo_html = ""
         logo_abs_path = (issuer_profile or {}).get("company_logo_abs_path")
         if logo_abs_path and Path(logo_abs_path).exists():
-            logo_uri = Path(logo_abs_path).as_uri()
+            # UPLOAD_DIR may be relative; as_uri() requires an absolute path.
+            logo_uri = Path(logo_abs_path).resolve().as_uri()
             logo_html = f'<img src="{escape(logo_uri)}" alt="Company logo" class="logo-img">'
 
+        lead_time_days = float(quote.estimated_lead_time_days or 0)
+        lead_time_display = (
+            f"{lead_time_days:g} working day{'s' if lead_time_days != 1 else ''}"
+            if lead_time_days > 0
+            else "To be confirmed"
+        )
+
+        brand_accent = (issuer_profile or {}).get("brand_color") or "{accent}"
+
         context = {
+            "accent": brand_accent,
             "company_name": escape((issuer_profile or {}).get("company_name") or "CNC Quote Platform"),
             "company_address": escape((issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345").replace("\n", "<br>"),
             "company_phone": escape((issuer_profile or {}).get("company_phone") or "N/A"),
             "company_email": escape((issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"),
             "company_logo_html": logo_html,
             "quote_number": quote.quote_number,
-            "quote_date": quote.created_at.strftime("%d-%m-%Y"),
+            "quote_date": quote.created_at.strftime("%d %b %Y"),
+            "valid_until": quote.valid_until.strftime("%d %b %Y") if quote.valid_until else "—",
+            "lead_time": escape(lead_time_display),
             "terms_of_payment": escape(quote.payment_terms or "Not specified"),
             "client_id": str(quote.id).split("-")[0].upper(),
             "client_block": client_block,
             "subject": escape(subject_line),
+            "item_count": len(line_items),
             "line_items_html": line_items_html,
             "subtotal": subtotal,
             "gst_display": escape(gst_display),
             "grand_total": grand_total,
+            "amount_in_words": escape(inr_in_words(grand_total)),
             "delivery": escape(quote.delivery or "Not specified"),
             "price_validity": escape(quote.price_validity or "Not specified"),
             "signature_name": escape((issuer_profile or {}).get("company_name") or "Authorized Signatory"),
             "dfm_summary_html": self._build_dfm_summary_html(dfm_analysis),
-            "prepared_date": datetime.utcnow().strftime("%d-%m-%Y"),
+            "prepared_date": datetime.utcnow().strftime("%d %b %Y"),
         }
-        
+
         return self._get_inline_template().format(**context)
 
     def _build_dfm_summary_html(self, dfm_analysis: Optional[DFMAnalysis]) -> str:
@@ -503,14 +575,14 @@ class PDFGenerator:
             issue_html = "<li>No notable DFM issues.</li>"
 
         return (
-            "<table><tr><td>"
-            "<div class=\"terms-title\">DFM Summary</div>"
-            f"<div>Score: <strong>{summary['score']}/100 ({escape(summary['label'])})</strong></div>"
-            f"<div>Total Findings: {summary['issue_count']}</div>"
-            "<ul style=\"margin:6px 0 0 18px; padding:0;\">"
+            "<div class=\"dfm-callout\">"
+            "<div class=\"dfm-title\">Manufacturability (DFM) Summary</div>"
+            f"<div class=\"dfm-score\">Score: <strong>{summary['score']}/100 — {escape(summary['label'])}</strong>"
+            f" &nbsp;·&nbsp; {summary['issue_count']} finding{'s' if summary['issue_count'] != 1 else ''}</div>"
+            "<ul class=\"dfm-list\">"
             f"{issue_html}"
             "</ul>"
-            "</td></tr></table>"
+            "</div>"
         )
 
     def _parse_combined_items(self, notes: Optional[str]) -> list[dict]:
@@ -587,149 +659,260 @@ class PDFGenerator:
     <meta charset="UTF-8">
     <title>Quotation {quote_number}</title>
     <style>
-        @page {{ size: A4; margin: 10mm; }}
-        body {{
-            font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-            font-size: 10.5px;
-            color: #0f172a;
-            margin: 0;
-            line-height: 1.35;
+        @page {{
+            size: A4;
+            margin: 12mm 12mm 20mm 12mm;
+            @bottom-left {{
+                content: "{quote_number} · Computer-generated quotation";
+                font-size: 7.5px;
+                color: #94a3b8;
+                font-family: Helvetica, Arial, sans-serif;
+            }}
+            @bottom-right {{
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 7.5px;
+                color: #94a3b8;
+                font-family: Helvetica, Arial, sans-serif;
+            }}
         }}
-        .quote {{ border: 1px solid #1e293b; }}
-        table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
-        td, th {{ border: 0.8px solid #475569; vertical-align: top; padding: 7px; }}
-        .no-border td {{ border: none; padding: 0; }}
-        .header-title {{ font-size: 22px; color: #0f172a; font-weight: 700; line-height: 1.2; margin-bottom: 2px; }}
-        .header-sub {{ font-size: 12px; color: #1d4ed8; font-weight: 600; margin-bottom: 8px; }}
-        .brand-wrap {{ display: table; width: 100%; }}
-        .brand-logo {{ display: table-cell; width: 70px; vertical-align: top; }}
-        .brand-text {{ display: table-cell; vertical-align: top; }}
-        .logo-img {{ max-width: 60px; max-height: 60px; object-fit: contain; }}
-        .quote-heading {{ text-align: center; font-size: 14px; font-weight: 700; background: #e2e8f0; letter-spacing: 0.5px; padding: 8px 6px; }}
-        .meta-label {{ width: 44%; font-weight: 600; background: #f8fafc; }}
-        .meta-val {{ text-align: right; font-weight: 700; }}
-        .section-label {{ font-size: 13px; font-weight: 700; margin-bottom: 6px; }}
-        .subject-row {{ font-size: 12px; font-weight: 700; padding: 8px 0 2px; }}
-        .item-head th {{ background: #eef2ff; text-align: center; font-size: 11px; font-weight: 700; }}
+        * {{ box-sizing: border-box; }}
+        body {{
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 9.5px;
+            color: #1e293b;
+            margin: 0;
+            line-height: 1.45;
+        }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        td, th {{ vertical-align: top; }}
+
+        /* Top accent */
+        .accent {{ height: 5px; background: linear-gradient(90deg, #0f172a 0%, #0f172a 62%, {accent} 100%); border-radius: 2px; }}
+
+        /* Header */
+        .hdr {{ margin-top: 12px; }}
+        .hdr td {{ padding: 0; }}
+        .logo-img {{ max-width: 52px; max-height: 52px; object-fit: contain; margin-right: 12px; }}
+        .co-name {{ font-size: 19px; font-weight: 700; color: #0f172a; letter-spacing: -0.2px; }}
+        .co-tag {{ font-size: 8px; font-weight: 700; color: {accent}; text-transform: uppercase; letter-spacing: 1.4px; margin: 2px 0 6px; }}
+        .co-meta {{ color: #64748b; font-size: 8.5px; line-height: 1.5; }}
+        .doc-title {{ font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: 3px; text-align: right; }}
+        .doc-no {{ font-family: "Courier New", monospace; font-size: 11px; font-weight: 700; color: {accent}; text-align: right; margin-top: 2px; }}
+        .doc-dates {{ text-align: right; color: #64748b; font-size: 8.5px; margin-top: 6px; line-height: 1.6; }}
+        .doc-dates b {{ color: #1e293b; }}
+
+        /* Bill-to / meta band */
+        .band {{ margin-top: 14px; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }}
+        .band td {{ padding: 10px 0; }}
+        .band .divider {{ border-left: 1px solid #e2e8f0; padding-left: 14px; }}
+        .eyebrow {{ font-size: 7.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 4px; }}
+        .bill-name {{ font-size: 11px; font-weight: 700; color: #0f172a; }}
+        .kv {{ width: 100%; }}
+        .kv td {{ padding: 1.5px 0; font-size: 8.8px; }}
+        .kv .k {{ color: #64748b; width: 42%; }}
+        .kv .v {{ color: #0f172a; font-weight: 600; }}
+
+        .subject {{ margin: 12px 0 0; font-size: 9.5px; }}
+        .subject b {{ color: #0f172a; }}
+
+        /* Items table */
+        .items {{ margin-top: 12px; table-layout: fixed; }}
+        .items th {{
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 7.8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            padding: 7px 8px;
+            text-align: left;
+        }}
+        .items th.right {{ text-align: right; }}
+        .items th.center {{ text-align: center; }}
+        .items td {{ padding: 8px; border-bottom: 0.6px solid #e2e8f0; font-size: 9px; }}
+        .items tr:nth-child(even) td {{ background: #f8fafc; }}
+        .part-name {{ display: block; font-weight: 700; color: #0f172a; font-size: 9.5px; margin-bottom: 2px; }}
+        .desc-meta {{ display: block; color: #64748b; font-size: 8px; line-height: 1.5; }}
         .center {{ text-align: center; }}
         .right {{ text-align: right; }}
-        .image-cell {{ text-align: center; }}
-        .img-ph {{
-            margin: 0 auto;
-            width: 54px;
-            height: 54px;
-            border: 1px dashed #777;
-            color: #666;
-            font-size: 10px;
-            line-height: 54px;
+        .num {{ font-family: "Courier New", monospace; white-space: nowrap; }}
+        .muted {{ color: #94a3b8; }}
+        .strong {{ font-weight: 700; color: #0f172a; }}
+
+        /* Totals */
+        .totals-wrap {{ margin-top: 4px; }}
+        .totals-wrap td {{ padding: 0; }}
+        .words-cell {{ padding: 12px 14px 0 0 !important; }}
+        .words-label {{ font-size: 7.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 3px; }}
+        .words-text {{ font-size: 9px; font-style: italic; color: #334155; }}
+        .totals {{ width: 100%; margin-top: 6px; }}
+        .totals td {{ padding: 5px 10px; font-size: 9.5px; }}
+        .totals .lbl {{ color: #64748b; }}
+        .totals .amt {{ text-align: right; font-family: "Courier New", monospace; font-weight: 700; color: #0f172a; white-space: nowrap; }}
+        .totals .sub-row td {{ border-bottom: 0.6px solid #e2e8f0; }}
+        .totals .grand td {{
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 8px 10px;
         }}
-        .desc-meta {{ color: #4a4a4a; font-size: 11px; }}
-        .amount-label {{ font-size: 13px; font-weight: 700; margin-bottom: 4px; }}
-        .terms-title {{ font-size: 13px; font-weight: 700; margin-bottom: 4px; }}
-        .totals-table td {{ border: none; padding: 3px 0; }}
-        .totals-table .key {{ width: 70%; font-weight: 700; }}
-        .totals-table .sep {{ width: 6%; text-align: center; }}
-        .totals-table .val {{ width: 24%; text-align: right; font-weight: 700; }}
-        .sign-wrap {{ text-align: center; padding-top: 8px; }}
-        .sign-date {{ color: #475569; font-size: 10px; margin-top: 4px; }}
-        .sign-line {{ margin-top: 24px; font-weight: 700; }}
-        .footer-note {{ text-align: center; font-size: 10px; color: #475569; padding: 6px 0; border-top: 1px solid #1e293b; }}
-        .section-table {{ margin-top: -1px; }}
-        .totals-cell {{ background: #f8fafc; }}
+        .totals .grand .amt {{ color: #ffffff; }}
+
+        /* Commercial strip */
+        .comm {{ margin-top: 16px; border: 0.8px solid #e2e8f0; border-radius: 4px; }}
+        .comm td {{ padding: 8px 12px; border-left: 0.8px solid #e2e8f0; width: 25%; }}
+        .comm td:first-child {{ border-left: none; }}
+        .comm .val {{ font-size: 9.5px; font-weight: 700; color: #0f172a; margin-top: 1px; }}
+
+        /* DFM callout */
+        .dfm-callout {{
+            margin-top: 14px;
+            background: #f0f9ff;
+            border-left: 3px solid {accent};
+            border-radius: 0 4px 4px 0;
+            padding: 9px 12px;
+        }}
+        .dfm-title {{ font-size: 8px; font-weight: 700; color: #0369a1; text-transform: uppercase; letter-spacing: 1.1px; margin-bottom: 3px; }}
+        .dfm-score {{ font-size: 9px; color: #0c4a6e; }}
+        .dfm-list {{ margin: 5px 0 0 14px; padding: 0; color: #0c4a6e; font-size: 8.3px; line-height: 1.6; }}
+
+        /* Terms + signature */
+        .foot {{ margin-top: 16px; }}
+        .foot td {{ padding: 0; }}
+        .terms-title {{ font-size: 7.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 5px; }}
+        .terms ol {{ margin: 0 0 0 14px; padding: 0; color: #475569; font-size: 8.5px; line-height: 1.7; }}
+        .sign-cell {{ padding-left: 24px !important; }}
+        .sign-box {{ border: 0.8px solid #e2e8f0; border-radius: 4px; padding: 12px 14px 10px; text-align: center; }}
+        .sign-for {{ font-size: 9px; color: #334155; }}
+        .sign-for b {{ color: #0f172a; }}
+        .sign-space {{ height: 34px; }}
+        .sign-rule {{ border-top: 0.8px solid #94a3b8; margin: 0 10px; }}
+        .sign-title {{ font-size: 8.5px; font-weight: 700; color: #0f172a; margin-top: 4px; }}
+        .sign-date {{ font-size: 7.5px; color: #94a3b8; margin-top: 2px; }}
+
+        .thanks {{ margin-top: 14px; text-align: center; font-size: 8.5px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 8px; }}
     </style>
 </head>
 <body>
-    <div class="quote">
-        <table>
-            <tr>
-                <td style="width:50%;">
-                    <div class="brand-wrap">
-                        <div class="brand-logo">{company_logo_html}</div>
-                        <div class="brand-text">
-                            <div class="header-title">{company_name}</div>
-                            <div class="header-sub">Precision Manufacturing Quotation</div>
-                            <div>{company_address}</div>
-                            <div>Contact: {company_phone}</div>
-                            <div>Email: {company_email}</div>
-                        </div>
-                    </div>
-                </td>
-                <td style="width:50%; padding:0;">
-                    <table>
-                        <tr><td class="quote-heading" colspan="2">QUOTATION</td></tr>
-                        <tr><td class="meta-label">Quotation No.</td><td class="meta-val">{quote_number}</td></tr>
-                        <tr><td class="meta-label">Date</td><td class="meta-val">{quote_date}</td></tr>
-                        <tr><td class="meta-label">Terms of Payment</td><td class="meta-val">{terms_of_payment}</td></tr>
-                        <tr><td class="meta-label">Client ID</td><td class="meta-val">{client_id}</td></tr>
-                    </table>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">
-                    <div class="section-label">To:</div>
-                    <div>{client_block}</div>
-                    <div class="subject-row">Subject:- {subject}</div>
-                </td>
-            </tr>
-        </table>
+    <div class="accent"></div>
 
-        <table class="section-table">
-            <colgroup>
-                <col style="width:4%;"><col style="width:12%;"><col style="width:24%;"><col style="width:10%;">
-                <col style="width:8%;"><col style="width:7%;"><col style="width:12%;"><col style="width:13%;">
-            </colgroup>
-            <tr class="item-head">
-                <th>SN</th>
-                <th>Image</th>
-                <th>Description</th>
-                <th>HSN Code</th>
-                <th>Qty</th>
-                <th>UOM</th>
-                <th>Price</th>
-                <th>Total</th>
-            </tr>
-            {line_items_html}
-        </table>
+    <!-- Header -->
+    <table class="hdr">
+        <tr>
+            <td style="width:56%;">
+                <table><tr>
+                    <td style="width:64px;">{company_logo_html}</td>
+                    <td>
+                        <div class="co-name">{company_name}</div>
+                        <div class="co-tag">Precision CNC Manufacturing</div>
+                        <div class="co-meta">{company_address}<br>{company_phone} &nbsp;·&nbsp; {company_email}</div>
+                    </td>
+                </tr></table>
+            </td>
+            <td style="width:44%;">
+                <div class="doc-title">QUOTATION</div>
+                <div class="doc-no">{quote_number}</div>
+                <div class="doc-dates">
+                    Issued: <b>{quote_date}</b><br>
+                    Valid until: <b>{valid_until}</b>
+                </div>
+            </td>
+        </tr>
+    </table>
 
-        <table class="section-table">
-            <tr>
-                <td style="width:60%;">
-                    <div class="amount-label">Amount in Words</div>
-                    <div>INR {grand_total:,.2f} only.</div>
-                </td>
-                <td class="totals-cell" style="width:40%;">
-                    <table class="totals-table">
-                        <tr><td class="key">Sub Total</td><td class="sep">:</td><td class="val">{subtotal:,.2f}</td></tr>
-                        <tr><td class="key">GST ({gst_display})</td><td class="sep">:</td><td class="val">Included/As applicable</td></tr>
-                        <tr><td class="key">Total Amount</td><td class="sep">:</td><td class="val">{grand_total:,.2f}</td></tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
+    <!-- Bill To + quote meta -->
+    <table class="band">
+        <tr>
+            <td style="width:46%;">
+                <div class="eyebrow">Bill To</div>
+                <div class="bill-name">{client_block}</div>
+            </td>
+            <td style="width:54%;" class="divider">
+                <table class="kv">
+                    <tr><td class="k">Client Reference</td><td class="v">{client_id}</td></tr>
+                    <tr><td class="k">Payment Terms</td><td class="v">{terms_of_payment}</td></tr>
+                    <tr><td class="k">Estimated Lead Time</td><td class="v">{lead_time}</td></tr>
+                    <tr><td class="k">Line Items</td><td class="v">{item_count}</td></tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 
-        <table class="section-table">
-            <tr>
-                <td style="width:65%;">
-                    <div class="terms-title">Terms and Conditions:</div>
-                    <div>1. Payment Terms: {terms_of_payment}</div>
-                    <div>2. Delivery: {delivery}</div>
-                    <div>3. GST: {gst_display}</div>
-                    <div>4. Price Validity: {price_validity}</div>
-                </td>
-                <td style="width:35%;">
-                    <div class="sign-wrap">
-                        <div>For {signature_name}</div>
-                        <div class="sign-date">Prepared on {prepared_date}</div>
-                        <div class="sign-line">Authorized Signatory</div>
-                    </div>
-                </td>
-            </tr>
-        </table>
+    <div class="subject"><b>Subject:</b> {subject}</div>
 
-        {dfm_summary_html}
+    <!-- Items -->
+    <table class="items">
+        <colgroup>
+            <col style="width:5%;"><col style="width:49%;"><col style="width:8%;">
+            <col style="width:10%;"><col style="width:14%;"><col style="width:14%;">
+        </colgroup>
+        <tr>
+            <th class="center">#</th>
+            <th>Part &amp; Specification</th>
+            <th class="center">HSN</th>
+            <th class="right">Qty</th>
+            <th class="right">Unit Price (Rs.)</th>
+            <th class="right">Amount (Rs.)</th>
+        </tr>
+        {line_items_html}
+    </table>
 
-        <div class="footer-note">This is a software generated quotation from {company_name}. For clarifications, contact {company_email}.</div>
-    </div>
+    <!-- Totals -->
+    <table class="totals-wrap">
+        <tr>
+            <td style="width:55%;" class="words-cell">
+                <div class="words-label">Amount in Words</div>
+                <div class="words-text">{amount_in_words}</div>
+            </td>
+            <td style="width:45%;">
+                <table class="totals">
+                    <tr class="sub-row"><td class="lbl">Subtotal</td><td class="amt">{subtotal:,.2f}</td></tr>
+                    <tr class="sub-row"><td class="lbl">GST ({gst_display})</td><td class="amt">As applicable</td></tr>
+                    <tr class="grand"><td>GRAND TOTAL (INR)</td><td class="amt">{grand_total:,.2f}</td></tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Commercial strip -->
+    <table class="comm">
+        <tr>
+            <td><div class="eyebrow">Lead Time</div><div class="val">{lead_time}</div></td>
+            <td><div class="eyebrow">Delivery</div><div class="val">{delivery}</div></td>
+            <td><div class="eyebrow">Price Validity</div><div class="val">{price_validity}</div></td>
+            <td><div class="eyebrow">GST</div><div class="val">{gst_display}</div></td>
+        </tr>
+    </table>
+
+    {dfm_summary_html}
+
+    <!-- Terms + signature -->
+    <table class="foot">
+        <tr>
+            <td style="width:62%;" class="terms">
+                <div class="terms-title">Terms &amp; Conditions</div>
+                <ol>
+                    <li>Payment terms: {terms_of_payment}.</li>
+                    <li>Delivery: {delivery}.</li>
+                    <li>GST: {gst_display}. Taxes charged extra where applicable.</li>
+                    <li>Prices are valid until {valid_until} ({price_validity}); re-quote required thereafter.</li>
+                    <li>Lead time is counted from receipt of confirmed purchase order and approved CAD.</li>
+                </ol>
+            </td>
+            <td style="width:38%;" class="sign-cell">
+                <div class="sign-box">
+                    <div class="sign-for">For <b>{signature_name}</b></div>
+                    <div class="sign-space"></div>
+                    <div class="sign-rule"></div>
+                    <div class="sign-title">Authorised Signatory</div>
+                    <div class="sign-date">Prepared on {prepared_date}</div>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="thanks">Thank you for the opportunity to quote. For clarifications regarding {quote_number}, contact {company_email}.</div>
 </body>
 </html>"""
 

@@ -1,13 +1,144 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Cloud, Upload, FolderOpen, FileText,
   ChevronRight, Settings, Loader2, AlertCircle, ShieldCheck, Sparkles,
+  Clock, TrendingUp,
 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
 import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
+import { createSamplePartFile } from '@/services/samplePart';
+import { StatusPill } from '@/components/ui';
+
+interface WeekBucket {
+  label: string;
+  value: number;
+  count: number;
+}
+
+const buildWeeklyBuckets = (quotes: QuoteListItem[], weeks = 8): WeekBucket[] => {
+  const now = new Date();
+  const dayOfWeek = (now.getDay() + 6) % 7; // Monday-start weeks
+  const currentWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+
+  const buckets: WeekBucket[] = [];
+  for (let i = weeks - 1; i >= 0; i -= 1) {
+    const start = new Date(currentWeekStart);
+    start.setDate(start.getDate() - i * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    const inWeek = quotes.filter((quote) => {
+      const created = new Date(quote.created_at).getTime();
+      return created >= start.getTime() && created < end.getTime();
+    });
+    buckets.push({
+      label: start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+      value: inWeek.reduce((sum, quote) => sum + Number(quote.total_price || 0), 0),
+      count: inWeek.length,
+    });
+  }
+  return buckets;
+};
+
+const compactINR = (value: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value);
+
+/** Weekly quoted-value bars: single series, baseline-anchored, hover tooltip. */
+const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  const width = 320;
+  const height = 116;
+  const baseline = 96;
+  const plotTop = 14;
+  const slot = width / buckets.length;
+  const barWidth = 22;
+  const maxValue = Math.max(...buckets.map((b) => b.value), 1);
+  const maxIndex = buckets.findIndex((b) => b.value === maxValue);
+
+  const barPath = (x: number, barHeight: number) => {
+    const r = Math.min(4, barHeight);
+    const y = baseline - barHeight;
+    const w = barWidth;
+    return `M ${x} ${baseline} L ${x} ${y + r} Q ${x} ${y} ${x + r} ${y} L ${x + w - r} ${y} Q ${x + w} ${y} ${x + w} ${y + r} L ${x + w} ${baseline} Z`;
+  };
+
+  return (
+    <div className="relative">
+      {hovered !== null && (
+        <div
+          className="pointer-events-none absolute -top-1 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-lg"
+          style={{ left: `${((hovered + 0.5) / buckets.length) * 100}%` }}
+        >
+          Week of {buckets[hovered].label} · {buckets[hovered].count} quote{buckets[hovered].count === 1 ? '' : 's'} ·{' '}
+          {compactINR(buckets[hovered].value)}
+        </div>
+      )}
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        role="img"
+        aria-label={`Quoted value per week for the last ${buckets.length} weeks`}
+        onMouseLeave={() => setHovered(null)}
+      >
+        <line x1="0" y1={baseline} x2={width} y2={baseline} className="stroke-slate-200" strokeWidth="1" />
+        {buckets.map((bucket, index) => {
+          const barHeight = bucket.value > 0 ? Math.max((bucket.value / maxValue) * (baseline - plotTop), 3) : 2;
+          const x = index * slot + (slot - barWidth) / 2;
+          return (
+            <g key={bucket.label}>
+              {/* oversized hit target */}
+              <rect
+                x={index * slot}
+                y={0}
+                width={slot}
+                height={height}
+                fill="transparent"
+                onMouseEnter={() => setHovered(index)}
+              />
+              <path
+                d={barPath(x, barHeight)}
+                className={
+                  bucket.value === 0
+                    ? 'fill-slate-200'
+                    : hovered === index
+                    ? 'fill-sky-700'
+                    : 'fill-sky-600'
+                }
+                style={{ pointerEvents: 'none' }}
+              />
+              {index === maxIndex && bucket.value > 0 && (
+                <text
+                  x={x + barWidth / 2}
+                  y={baseline - barHeight - 5}
+                  textAnchor="middle"
+                  className="fill-slate-500 font-mono"
+                  fontSize="9"
+                >
+                  {compactINR(bucket.value)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        <text x="2" y={height - 4} className="fill-slate-400" fontSize="9">
+          {buckets[0]?.label}
+        </text>
+        <text x={width - 2} y={height - 4} textAnchor="end" className="fill-slate-400" fontSize="9">
+          {buckets[buckets.length - 1]?.label}
+        </text>
+      </svg>
+    </div>
+  );
+};
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -70,26 +201,25 @@ const HomePage = () => {
   const totalValue = quotes.reduce((sum, quote) => sum + Number(quote.total_price || 0), 0);
   const now = Date.now();
   const sentCount = quotes.filter((quote) => quote.status === 'sent').length;
-  const expiringSoon = quotes.filter((quote) => {
-    const validUntil = new Date(quote.valid_until).getTime();
-    return quote.status !== 'expired' && validUntil > now && validUntil - now < 3 * 86400000;
-  }).length;
-  const expiredCount = quotes.filter(
-    (quote) => quote.status === 'expired' || new Date(quote.valid_until).getTime() < now,
-  ).length;
+  const acceptedCount = quotes.filter((quote) => quote.status === 'accepted').length;
+  const declinedCount = quotes.filter((quote) => quote.status === 'declined').length;
+  const respondedCount = acceptedCount + declinedCount;
+  const winRate = respondedCount > 0 ? Math.round((acceptedCount / respondedCount) * 100) : null;
 
-  const statusPill = (status: string) => {
-    switch (status) {
-      case 'sent':
-        return 'bg-sky-50 text-sky-700 border-sky-200';
-      case 'expired':
-        return 'bg-red-50 text-red-700 border-red-200';
-      case 'generated':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      default:
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-    }
-  };
+  const expiringQuotes = useMemo(
+    () =>
+      quotes
+        .filter((quote) => {
+          if (['expired', 'accepted', 'declined'].includes(quote.status)) return false;
+          const validUntil = new Date(quote.valid_until).getTime();
+          return validUntil > now && validUntil - now < 7 * 86400000;
+        })
+        .sort((a, b) => new Date(a.valid_until).getTime() - new Date(b.valid_until).getTime()),
+    [quotes, now],
+  );
+  const expiringSoon = expiringQuotes.length;
+
+  const weeklyBuckets = useMemo(() => buildWeeklyBuckets(quotes), [quotes]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -127,9 +257,9 @@ const HomePage = () => {
                 <p className="text-[11px] text-slate-500">Sent to Customers</p>
                 <p className="font-display text-2xl text-slate-900">{sentCount}</p>
               </div>
-              <div className={`rounded-2xl border p-3 ${expiringSoon > 0 ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}>
-                <p className={`text-[11px] ${expiringSoon > 0 ? 'text-amber-700' : 'text-slate-500'}`}>Expiring in 3 days</p>
-                <p className="font-display text-2xl text-slate-900">{expiringSoon}</p>
+              <div className={`rounded-2xl border p-3 ${winRate !== null ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                <p className={`text-[11px] ${winRate !== null ? 'text-emerald-700' : 'text-slate-500'}`}>Win rate</p>
+                <p className="font-display text-2xl text-slate-900">{winRate !== null ? `${winRate}%` : '—'}</p>
               </div>
             </div>
 
@@ -182,6 +312,13 @@ const HomePage = () => {
                   >
                     Upload Files
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => onDrop([createSamplePartFile()])}
+                    className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                  >
+                    Try a sample part
+                  </button>
                 </div>
 
                 <p className="text-xs text-slate-500">Single and multi-file uploads both open the same quote builder flow.</p>
@@ -228,6 +365,15 @@ const HomePage = () => {
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
               <p className="text-slate-600 font-medium">No quotes yet.</p>
               <p className="text-sm text-slate-500 mt-1">Upload your first file to start building estimates.</p>
+              <button
+                type="button"
+                onClick={() => onDrop([createSamplePartFile()])}
+                disabled={uploading}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4" />
+                Quote a sample part
+              </button>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -248,9 +394,7 @@ const HomePage = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2.5 ml-3 shrink-0">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize border ${statusPill(quote.status)}`}>
-                        {quote.status}
-                      </span>
+                      <StatusPill status={quote.status} />
                       <span className="text-sm font-semibold font-mono text-slate-700">{formatCurrency(quote.total_price)}</span>
                     </div>
                   </Link>
@@ -262,29 +406,62 @@ const HomePage = () => {
 
         <div className="space-y-6">
           <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-xl text-slate-900">Operations Snapshot</h2>
-              <span className="text-xs font-medium bg-slate-900 text-white px-2.5 py-1 rounded-lg">This Month</span>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="font-display text-xl text-slate-900">Quoted Value</h2>
+                  <p className="text-xs text-slate-500">Last 8 weeks · {sentCount} sent{winRate !== null ? ` · ${winRate}% win rate` : ''}</p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3">
+              <QuoteTrendChart buckets={weeklyBuckets} />
+            </div>
+          </section>
+
+          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${expiringSoon > 0 ? 'bg-amber-500 text-white' : 'bg-slate-900 text-white'}`}>
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="font-display text-xl text-slate-900">Expiring Soon</h2>
+                <p className="text-xs text-slate-500">Open quotes lapsing within 7 days — worth a follow-up.</p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-sky-50 border border-sky-100 p-3">
-                <p className="text-[11px] text-sky-700">Total Quotes</p>
-                <p className="font-display text-2xl text-slate-900">{totalParts}</p>
-              </div>
-              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
-                <p className="text-[11px] text-emerald-700">Sent</p>
-                <p className="font-display text-2xl text-slate-900">{sentCount}</p>
-              </div>
-              <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                <p className="text-[11px] text-amber-700">Expiring Soon</p>
-                <p className="font-display text-2xl text-slate-900">{expiringSoon}</p>
-              </div>
-              <div className="rounded-xl bg-orange-50 border border-orange-100 p-3">
-                <p className="text-[11px] text-orange-700">Expired</p>
-                <p className="font-display text-2xl text-slate-900">{expiredCount}</p>
-              </div>
-            </div>
+            {expiringQuotes.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+                Nothing expiring this week.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {expiringQuotes.slice(0, 4).map((quote) => {
+                  const daysLeft = Math.ceil((new Date(quote.valid_until).getTime() - now) / 86400000);
+                  return (
+                    <li key={quote.id}>
+                      <Link
+                        to={`/quotes/${quote.id}`}
+                        className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 hover:border-amber-300 hover:shadow-sm transition-all"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 truncate text-sm">{quote.quote_number}</p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {quote.customer_name || 'No customer'} · {formatCurrency(quote.total_price)}
+                          </p>
+                        </div>
+                        <span className="ml-3 shrink-0 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          {daysLeft} day{daysLeft === 1 ? '' : 's'} left
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
 
           <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
@@ -305,16 +482,6 @@ const HomePage = () => {
               Go to Cost Master
               <ChevronRight className="w-4 h-4" />
             </Link>
-
-            <div className="mt-5 rounded-2xl bg-gradient-to-r from-emerald-100 to-sky-100 p-4 flex items-end gap-1 justify-center h-24">
-              {[42, 58, 39, 73, 51, 86, 64].map((height, idx) => (
-                <div
-                  key={idx}
-                  className="w-4 rounded-t-md bg-slate-700/70"
-                  style={{ height: `${height}%` }}
-                />
-              ))}
-            </div>
           </section>
         </div>
       </div>

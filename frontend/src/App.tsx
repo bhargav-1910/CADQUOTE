@@ -13,6 +13,7 @@ import QuoteList from './pages/QuoteList';
 import QuoteDetail from './pages/QuoteDetail';
 import AdminPricing from './pages/AdminPricing';
 import BillingPage from './pages/BillingPage';
+import PublicQuotePage from './pages/PublicQuotePage';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/q/:token" element={<PublicQuotePage />} />
           <Route
             path="/login"
             element={(

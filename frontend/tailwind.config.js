@@ -8,6 +8,18 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Semantic tokens (CSS variables defined in index.css; theme-aware)
+        surface: {
+          DEFAULT: 'var(--fq-surface)',
+          muted: 'var(--fq-surface-muted)',
+          raised: 'var(--fq-surface-raised)',
+        },
+        ink: {
+          DEFAULT: 'var(--fq-ink)',
+          secondary: 'var(--fq-ink-secondary)',
+          muted: 'var(--fq-ink-muted)',
+        },
+        edge: 'var(--fq-border)',
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',

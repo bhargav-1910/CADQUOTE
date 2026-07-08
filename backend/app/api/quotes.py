@@ -1,4 +1,5 @@
 """Pricing and quote endpoints."""
+import secrets
 import uuid
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
@@ -22,7 +23,7 @@ from app.schemas.schemas import (
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse, CombinedQuoteCreateRequest,
     QuoteResponse, QuoteListResponse, VendorMatchSummary,
     VendorMatchPreviewRequest, VendorMatchPreviewResponse,
-    QuoteEmailRequest, QuoteEmailResponse,
+    QuoteEmailRequest, QuoteEmailResponse, QuoteShareResponse,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
@@ -95,12 +96,13 @@ async def preview_vendor_match(
 
 
 def _effective_quote_status(quote: Quote) -> QuoteStatus:
-    """Quotes past their validity window are reported (and treated) as expired."""
-    if (
-        quote.status != QuoteStatus.EXPIRED
-        and quote.valid_until is not None
-        and quote.valid_until < datetime.utcnow()
-    ):
+    """Quotes past their validity window are reported (and treated) as expired.
+
+    Accepted and declined are terminal customer responses and never lapse.
+    """
+    if quote.status in (QuoteStatus.ACCEPTED, QuoteStatus.DECLINED, QuoteStatus.EXPIRED):
+        return quote.status
+    if quote.valid_until is not None and quote.valid_until < datetime.utcnow():
         return QuoteStatus.EXPIRED
     return quote.status
 
@@ -890,6 +892,25 @@ async def preview_quote_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{quote.quote_number}.pdf"'},
     )
+
+
+@router.post("/quotes/{quote_id}/share", response_model=QuoteShareResponse)
+async def share_quote(
+    quote_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create (or return) the share token for the customer-facing quote page."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if not quote.share_token:
+        quote.share_token = secrets.token_urlsafe(24)
+        await db.commit()
+        await db.refresh(quote)
+
+    return QuoteShareResponse(quote_id=quote.id, share_token=quote.share_token)
 
 
 @router.post("/quotes/{quote_id}/email", response_model=QuoteEmailResponse)

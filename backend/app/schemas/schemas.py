@@ -742,6 +742,61 @@ class QuoteEmailResponse(BaseModel):
     quote_id: UUID
 
 
+class QuoteShareResponse(BaseModel):
+    """Share token for the customer-facing quote page."""
+    quote_id: UUID
+    share_token: str
+
+
+class PublicQuoteLineItem(BaseModel):
+    """A line item shown on the customer-facing quote page."""
+    part_name: str
+    quantity: int
+    unit_price: Decimal
+    line_total: Decimal
+
+
+class PublicSellerInfo(BaseModel):
+    """The issuing shop's public identity."""
+    company_name: str
+    company_address: Optional[str] = None
+    contact_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    brand_color: Optional[str] = None
+
+
+class PublicQuoteResponse(BaseModel):
+    """Customer-facing quote view — no internal cost or margin data."""
+    quote_number: str
+    status: str
+    customer_name: Optional[str]
+    customer_company: Optional[str]
+    part_name: Optional[str]
+    material_name: Optional[str]
+    surface_finish_name: Optional[str]
+    inspection_level_name: Optional[str]
+    tolerance_notes: Optional[str]
+    line_items: List[PublicQuoteLineItem]
+    total_price: Decimal
+    estimated_lead_time_days: float
+    valid_until: datetime
+    created_at: datetime
+    payment_terms: Optional[str]
+    delivery: Optional[str]
+    gst: Optional[str]
+    price_validity: Optional[str]
+    responded_at: Optional[datetime]
+    customer_response_note: Optional[str]
+    seller: PublicSellerInfo
+
+
+class PublicQuoteRespondRequest(BaseModel):
+    """Customer response to a shared quote."""
+    action: str = Field(..., pattern="^(accept|decline)$")
+    note: Optional[str] = Field(None, max_length=2000)
+
+
 # ============================================================================
 # Billing Schemas
 # ============================================================================
@@ -812,6 +867,7 @@ class UserProfileResponse(BaseSchema):
     company_address: str
     phone_number: Optional[str] = None
     company_logo_url: Optional[str] = None
+    brand_color: Optional[str] = None
     created_at: datetime
 
 
