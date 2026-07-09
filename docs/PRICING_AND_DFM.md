@@ -499,3 +499,32 @@ This ensures configured defaults and engine code are aligned.
 6. **Live vendor load in instant pricing** — `/api/pricing` and `/api/pricing/batch` now run vendor matching and feed the matched vendor's `current_load_pct` / machine rate into the engine (explicit user overrides win). Section 6.1 dynamic load pricing is therefore live end-to-end; match details appear in `pricing_explanation.vendor_match`.
 7. **Quantity breaks** — every pricing response includes `details.quantity_breaks` (qty 1/10/50/100 + requested) with unit price, total and savings vs single-part price; rendered as a table in the price panel.
 8. **Quote expiry enforcement** — quotes past `valid_until` are reported and lazily persisted as `expired`; emailing an expired quote is blocked with a re-quote prompt.
+
+## 14) Market Calibration (2026-07-09)
+
+Benchmarked against 2026 India job-shop data (MechHub cost guide, IndiaMART
+job-work rates, supplier price lists). Changes:
+
+1. **Milled billet stock model (correctness fix)** — milled parts now buy the
+   full billet: bounding box + 3 mm machining/saw allowance per side. The old
+   model billed part volume + 10-25% wastage while machining time charged for
+   clearing the whole envelope, understating material on pocketed parts by up
+   to 2-3x. Turned parts already used true round-bar stock. Stock dims in
+   `details.raw_material` now include the allowance.
+2. **Machine rate clamps widened** — 3-axis 500-1200 INR/hr (was 500-800),
+   lathe 400-800 (was 400-600). Blended 2026 VMC rates run 800-1400.
+3. **Seed machine rates corrected** — 3-Axis VMC 700/hr (setup 0.75 hr),
+   4/5-Axis 2200/hr, CNC Turning 500/hr, Turn Mill 800/hr. Previous seeds
+   (400/500/300/400) only produced sane prices via engine clamps.
+4. **MRR raised toward handbook values** — aluminum 10-20 cm3/min (was 8-15),
+   steel 4-8 (was 3-6). Values remain full-cycle averages, not peak roughing.
+5. **Deep-volume discount** — beyond fixed-cost spreading, unit price now
+   drops 5% at qty>=100, 8% at >=250, 12% at >=500
+   (`details.marketplace.volume_discount_pct`), matching market bid curves.
+6. **Material seed tweaks** — Brass C360 680 -> 620 INR/kg, Mild Steel 1018
+   80 -> 70 INR/kg.
+7. **Anodizing lot fees reduced to India job-work norms** — Type II clear
+   2000 -> 1200, color 2500 -> 1500, Type III hard 4200 -> 2800.
+
+Validated by smoke tests (`tests/test_smoke.py`): billet stock weight, stock
+dimension reporting, and volume-discount monotonicity.

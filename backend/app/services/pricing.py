@@ -117,19 +117,31 @@ class PricingEngine:
 
     # India benchmark ranges (INR)
     MACHINE_RATES = {
-        "3-axis": (500.0, 800.0),
+        # 2026 India blended VMC rates run up to ~1200/hr; lathe up to ~800.
+        "3-axis": (500.0, 1200.0),
         "5-axis": (2000.0, 3000.0),
-        "lathe": (400.0, 600.0),
+        "lathe": (400.0, 800.0),
     }
 
+    # Effective full-cycle averages (roughing + finishing + air moves), not
+    # peak roughing MRR. Aluminum/steel raised to match handbook rates
+    # (~22 cm3/min/kW mild steel, ~3x that for aluminum, derated for cycle mix).
     MRR_CM3_PER_MIN = {
-        "aluminum": (8.0, 15.0),
-        "steel": (3.0, 6.0),
+        "aluminum": (10.0, 20.0),
+        "steel": (4.0, 8.0),
         "stainless": (3.0, 6.0),
         "brass": (6.0, 10.0),
         "plastic": (12.0, 22.0),
         "titanium": (2.0, 4.0),
     }
+
+    # Deep-volume discount on the variable price beyond fixed-cost spreading;
+    # market bids fall another ~5-12% at 100-500+ pieces.
+    VOLUME_DISCOUNT_TIERS = [
+        (500, 0.12),
+        (250, 0.08),
+        (100, 0.05),
+    ]
 
     MATERIAL_RATE_BENCHMARKS = {
         "aluminum 6061": (300.0, 350.0),
@@ -234,7 +246,7 @@ class PricingEngine:
 
         # A. Material cost — stock model depends on process:
         # turned parts buy round bar (pi/4 * d^2 * L), milled parts buy a
-        # rectangular billet estimated from part volume plus wastage.
+        # sawn billet sized from the bounding box plus machining allowance.
         raw_weight_kg = (inputs.volume_cm3 * inputs.material_density) / 1000.0
 
         if process_type == "turning":
@@ -252,14 +264,23 @@ class PricingEngine:
                 "length_mm": round(stock_length_cm * 10.0, 2),
             }
         else:
-            wastage_range = (0.10, 0.25)
-            wastage_pct = wastage_range[0] + (wastage_range[1] - wastage_range[0]) * complexity_norm
-            buy_weight_kg = raw_weight_kg * (1.0 + wastage_pct)
+            # Milled parts buy the full billet: bounding box plus a saw/facing
+            # allowance per side. Charging only part volume + wastage under-
+            # billed material on pocketed parts while machining time still
+            # charged for removing the whole envelope.
+            allowance_cm = 0.3  # 3 mm per side
+            stock_x_cm = inputs.bbox_x_cm + 2 * allowance_cm
+            stock_y_cm = inputs.bbox_y_cm + 2 * allowance_cm
+            stock_z_cm = inputs.bbox_z_cm + 2 * allowance_cm
+            billet_volume_cm3 = stock_x_cm * stock_y_cm * stock_z_cm
+            stock_volume_cm3 = max(billet_volume_cm3, inputs.volume_cm3)
+            buy_weight_kg = (stock_volume_cm3 * inputs.material_density) / 1000.0
+            wastage_pct = (buy_weight_kg / raw_weight_kg - 1.0) if raw_weight_kg > 0 else 0.0
             stock_dimensions = {
                 "form": "rectangular_block",
-                "x": round(inputs.bbox_x_cm * 10.0, 2),
-                "y": round(inputs.bbox_y_cm * 10.0, 2),
-                "z": round(inputs.bbox_z_cm * 10.0, 2),
+                "x": round(stock_x_cm * 10.0, 2),
+                "y": round(stock_y_cm * 10.0, 2),
+                "z": round(stock_z_cm * 10.0, 2),
             }
 
         effective_material_rate = self._normalized_material_rate(
@@ -598,6 +619,14 @@ class PricingEngine:
             * _to_decimal(negotiation_multiplier)
         )
 
+        # Deep-volume discount on the unit price at large batch sizes.
+        volume_discount_pct = next(
+            (discount for threshold, discount in self.VOLUME_DISCOUNT_TIERS if inputs.quantity >= threshold),
+            0.0,
+        )
+        if volume_discount_pct > 0:
+            priced_unit_before_moq *= _to_decimal(1.0 - volume_discount_pct)
+
         # MOQ logic on total order value
         total_before_moq = priced_unit_before_moq * _to_decimal(inputs.quantity)
         min_order = inputs.min_order_value
@@ -617,6 +646,7 @@ class PricingEngine:
             "surge_multiplier": round(surge_multiplier, 4),
             "urgent_factor_pct": round(normalized_urgent_pct, 2),
             "negotiation_buffer_pct": round(_clamp(inputs.negotiation_buffer_pct, 5.0, 10.0), 2),
+            "volume_discount_pct": round(volume_discount_pct * 100, 2),
             "min_order_value": float(min_order),
             "priced_unit_before_moq": float(priced_unit_before_moq),
             "total_before_moq": float(total_before_moq),
