@@ -24,6 +24,8 @@ import {
   Thermometer,
   Ruler,
   Boxes,
+  Move3d,
+  Info,
 } from 'lucide-react';
 import type { GeometryAnalysis } from '@/types';
 import { fetchFilePreviewBlob, fetchFileDownloadBlob } from '@/services/api';
@@ -33,6 +35,7 @@ import {
   parseGlbBuffer,
   disposeShapes,
   computeThicknessHeatmap,
+  computeMeshStats,
   type ParsedShape,
 } from '@/services/cadGeometry';
 
@@ -99,7 +102,51 @@ const computeNormalization = (shapes: ParsedShape[]) => {
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
   const scale = MODEL_SIZE / maxDim;
-  return { scale, offset: center.clone().multiplyScalar(-scale), center };
+  return { scale, offset: center.clone().multiplyScalar(-scale), center, size };
+};
+
+/** Wireframe bounding box with X/Y/Z edge dimension labels (file units mm). */
+const BoundingBoxOverlay = ({ shapes }: { shapes: ParsedShape[] }) => {
+  const { scale, offset, center, size } = useMemo(() => computeNormalization(shapes), [shapes]);
+
+  const edgesGeometry = useMemo(() => {
+    const box = new THREE.BoxGeometry(size.x, size.y, size.z);
+    const edges = new THREE.EdgesGeometry(box);
+    box.dispose();
+    return edges;
+  }, [size]);
+
+  useEffect(() => () => edgesGeometry.dispose(), [edgesGeometry]);
+
+  const min = center.clone().sub(size.clone().multiplyScalar(0.5));
+  const max = center.clone().add(size.clone().multiplyScalar(0.5));
+
+  const labels: Array<{ position: [number, number, number]; text: string }> = [
+    { position: [center.x, min.y, max.z], text: `X ${size.x.toFixed(1)} mm` },
+    { position: [min.x, center.y, max.z], text: `Y ${size.y.toFixed(1)} mm` },
+    { position: [max.x, min.y, center.z], text: `Z ${size.z.toFixed(1)} mm` },
+  ];
+
+  return (
+    <group position={offset} scale={scale}>
+      <lineSegments geometry={edgesGeometry} position={center} renderOrder={5}>
+        <lineBasicMaterial color="#0ea5e9" transparent opacity={0.85} depthTest={false} />
+      </lineSegments>
+      {labels.map((label) => (
+        <Html
+          key={label.text}
+          position={label.position}
+          center
+          zIndexRange={[12, 0]}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className="whitespace-nowrap rounded-md bg-sky-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white shadow-lg">
+            {label.text}
+          </div>
+        </Html>
+      ))}
+    </group>
+  );
 };
 
 /** Renders parsed shapes normalized to a fixed size, with edges + clipping. */
@@ -275,6 +322,8 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
   const [measurePoints, setMeasurePoints] = useState<THREE.Vector3[]>([]);
   const [explodeEnabled, setExplodeEnabled] = useState(false);
   const [explode, setExplode] = useState(0.6);
+  const [showBoundingBox, setShowBoundingBox] = useState(false);
+  const [showPartInfo, setShowPartInfo] = useState(false);
   const [viewRequest, setViewRequest] = useState<{
     position: [number, number, number];
     seq: number;
@@ -354,6 +403,16 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
   const modelScale = useMemo(
     () => (shapes && shapes.length > 0 ? computeNormalization(shapes).scale : 1),
+    [shapes],
+  );
+
+  const meshStats = useMemo(
+    () => (showPartInfo && shapes && shapes.length > 0 ? computeMeshStats(shapes) : null),
+    [showPartInfo, shapes],
+  );
+
+  const meshSize = useMemo(
+    () => (shapes && shapes.length > 0 ? computeNormalization(shapes).size : null),
     [shapes],
   );
 
@@ -473,6 +532,20 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
         >
           <Ruler className="w-4 h-4" />
         </ToolbarButton>
+        <ToolbarButton
+          title="Bounding box with dimensions"
+          active={showBoundingBox}
+          onClick={() => setShowBoundingBox((prev) => !prev)}
+        >
+          <Move3d className="w-4 h-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Part info (volume, area, features)"
+          active={showPartInfo}
+          onClick={() => setShowPartInfo((prev) => !prev)}
+        >
+          <Info className="w-4 h-4" />
+        </ToolbarButton>
         {shapes && shapes.length > 1 && (
           <ToolbarButton
             title="Exploded view (assemblies)"
@@ -525,6 +598,68 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
           </span>
         )}
       </div>
+
+      {/* Part info panel */}
+      {showPartInfo && shapes && (
+        <div className="absolute top-20 right-3 z-10 w-60 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3.5 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Part info</p>
+          <dl className="space-y-1.5 text-xs text-gray-700">
+            {meshSize && (
+              <div className="flex justify-between gap-2">
+                <dt className="text-gray-500">Dimensions</dt>
+                <dd className="font-mono text-right">
+                  {meshSize.x.toFixed(1)} × {meshSize.y.toFixed(1)} × {meshSize.z.toFixed(1)} mm
+                </dd>
+              </div>
+            )}
+            <div className="flex justify-between gap-2">
+              <dt className="text-gray-500">Volume</dt>
+              <dd className="font-mono">
+                {geometry
+                  ? `${Number(geometry.volume).toFixed(2)} cm³`
+                  : meshStats
+                  ? `${(meshStats.volumeMm3 / 1000).toFixed(2)} cm³`
+                  : '—'}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-gray-500">Surface area</dt>
+              <dd className="font-mono">
+                {geometry
+                  ? `${Number(geometry.surface_area).toFixed(1)} cm²`
+                  : meshStats
+                  ? `${(meshStats.surfaceAreaMm2 / 100).toFixed(1)} cm²`
+                  : '—'}
+              </dd>
+            </div>
+            {geometry?.hole_count != null && (
+              <div className="flex justify-between gap-2">
+                <dt className="text-gray-500">Holes detected</dt>
+                <dd className="font-mono">{geometry.hole_count}</dd>
+              </div>
+            )}
+            {geometry?.min_wall_thickness != null && (
+              <div className="flex justify-between gap-2">
+                <dt className="text-gray-500">Min wall</dt>
+                <dd className="font-mono">{Number(geometry.min_wall_thickness).toFixed(2)} mm</dd>
+              </div>
+            )}
+            {(meshStats?.triangleCount ?? geometry?.triangle_count) != null && (
+              <div className="flex justify-between gap-2">
+                <dt className="text-gray-500">Triangles</dt>
+                <dd className="font-mono">
+                  {(meshStats?.triangleCount ?? geometry?.triangle_count)?.toLocaleString()}
+                </dd>
+              </div>
+            )}
+          </dl>
+          {!geometry && (
+            <p className="mt-2 text-[10px] leading-snug text-gray-400">
+              Measured from the 3D mesh; backend analysis refines holes and walls.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Measure hint */}
       {measureEnabled && (
@@ -662,6 +797,8 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
         )}
 
         <MeasureOverlay points={measurePoints} modelScale={modelScale} />
+
+        {showBoundingBox && shapes && !explodeEnabled && <BoundingBoxOverlay shapes={shapes} />}
 
         <Grid
           position={[0, -MODEL_SIZE / 2 - 0.35, 0]}

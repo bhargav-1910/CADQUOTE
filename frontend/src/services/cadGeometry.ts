@@ -113,6 +113,54 @@ export const disposeShapes = (shapes: ParsedShape[]): void => {
   shapes.forEach((shape) => shape.geometry.dispose());
 };
 
+export interface MeshStats {
+  volumeMm3: number;
+  surfaceAreaMm2: number;
+  triangleCount: number;
+}
+
+/**
+ * Volume (signed tetrahedron sum) and surface area straight from the mesh,
+ * in file units (mm). Used as a fallback when no backend analysis is loaded.
+ */
+export const computeMeshStats = (shapes: ParsedShape[]): MeshStats => {
+  let volume = 0;
+  let area = 0;
+  let triangleCount = 0;
+
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const crossProduct = new THREE.Vector3();
+
+  for (const shape of shapes) {
+    const position = shape.geometry.getAttribute('position');
+    const index = shape.geometry.getIndex();
+    const count = index ? index.count : position.count;
+    triangleCount += count / 3;
+
+    for (let i = 0; i < count; i += 3) {
+      const ia = index ? index.getX(i) : i;
+      const ib = index ? index.getX(i + 1) : i + 1;
+      const ic = index ? index.getX(i + 2) : i + 2;
+      a.fromBufferAttribute(position, ia);
+      b.fromBufferAttribute(position, ib);
+      c.fromBufferAttribute(position, ic);
+
+      volume += a.dot(crossProduct.copy(b).cross(c)) / 6;
+      area += ab.copy(b).sub(a).cross(ac.copy(c).sub(a)).length() / 2;
+    }
+  }
+
+  return {
+    volumeMm3: Math.abs(volume),
+    surfaceAreaMm2: area,
+    triangleCount: Math.round(triangleCount),
+  };
+};
+
 // ---------------------------------------------------------------------------
 // DFM wall-thickness heatmap
 // ---------------------------------------------------------------------------
