@@ -389,6 +389,12 @@ class GeometryAnalysis(Base):
     hole_count = Column(Integer, default=0)
     # Fitted diameters (mm) of circular hole loops; None for legacy analyses.
     hole_diameters_mm = Column(JSON, nullable=True)
+
+    # Exact B-rep features (STEP files with OCP installed); None otherwise.
+    # Distinct hole-axis directions — drives the setup count in pricing.
+    machining_direction_count = Column(Integer, nullable=True)
+    # Per-hole detail: [{diameter_mm, depth_mm, axis}, ...]
+    brep_hole_data = Column(JSON, nullable=True)
     
     # Computed scores
     complexity_score = Column(Float, nullable=False)  # surface_area / volume

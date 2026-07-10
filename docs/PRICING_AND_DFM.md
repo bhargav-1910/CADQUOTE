@@ -41,14 +41,20 @@ The roadmap from estimate to guarantee, in payoff order:
 1. **Feedback calibration loop** — log `actual_cycle_time` / `actual_setup_time`
    on completed jobs; regression-fit MRR, feature times and setup constants
    per material/machine so the engine converges on the shop's reality.
-2. **B-rep feature recognition** — server-side OpenCascade on the exact STEP:
-   recognize pockets (true depth), bores, threads and faces per setup
-   orientation, then price each feature from cutting parameters
-   (feed × speed × stepover per tool). Moves cycle-time accuracy from ~±30%
-   to ~±10%.
-3. **Setup-count from orientation analysis** — count distinct tool-approach
-   directions on the B-rep so the number of fixturings is per-design instead
-   of complexity-derived.
+2. **B-rep feature recognition** — ✅ **first slice shipped (2026-07-10)**.
+   STEP files are now read as exact boundary representations with
+   OpenCascade (`app/services/brep.py`, optional `cadquery-ocp` dependency):
+   internal cylindrical faces are grouped into holes with exact fitted
+   diameters and depths (partial fillet radii excluded by requiring a full
+   circular sweep). These replace the mesh boundary-loop/genus heuristics
+   whenever available (`analysis_library = "trimesh+ocp-brep"`). Still
+   ahead: pocket depth recognition, thread detection from the model, and
+   per-feature cutting-parameter pricing.
+3. **Setup-count from orientation analysis** — ✅ **first slice shipped
+   (2026-07-10)**. Distinct hole-axis direction clusters (10° tolerance) are
+   counted per part (`machining_direction_count`); when present, the setup
+   count uses this measurement instead of the complexity heuristic (see §6C,
+   `setup_basis`). Still ahead: including pocket/face approach directions.
 
 ---
 
@@ -238,7 +244,12 @@ machining_cost = cycle_time_min × machine_rate / 60
 ### 6.3 C — Setup & CAM (amortized over quantity)
 
 ```
-number_of_setups   = max(1, round(1 + 1.5·c)) + DFM extra_setups
+# STEP + OCP (setup_basis = "brep_machining_directions"):
+base_setups        = clamp(machining_direction_count, 1, 6)
+# otherwise (setup_basis = "complexity_estimate"):
+base_setups        = max(1, round(1 + 1.5·c))
+
+number_of_setups   = base_setups + DFM extra_setups
 setup_total        = setups × setup_time_hours × setup_hour_rate
 setup_per_part     = setup_total / qty
 
@@ -402,6 +413,17 @@ dimensions incl. allowance, mass, rate, scrap), `material`, `machining`
 
 ## 13) Calibration History
 
+### 2026-07-10 — Exact B-rep features (STEP)
+1. `app/services/brep.py`: OpenCascade (`cadquery-ocp`) reads the exact
+   boundary representation — holes recovered from internal cylindrical
+   faces with exact diameters/depths; edge fillets excluded via the
+   full-sweep test.
+2. Setup count from measured orientation: distinct hole-axis clusters
+   (`machining_direction_count`) replace the complexity heuristic when
+   available; `details.setup.setup_basis` records which basis priced the
+   quote. Degrades gracefully to mesh heuristics for STL or when OCP is
+   not installed.
+
 ### 2026-07-09 — Market calibration (2026 India benchmarks)
 1. **Milled billet stock model** (correctness): bbox + 3 mm/side allowance
    replaces part-volume+wastage; material was understated up to 2–3× on
@@ -423,9 +445,11 @@ pricing · quantity breaks in every response · quote expiry enforcement.
 
 ## 14) Known Limitations
 
-1. Hole and wall metrics are mesh-derived heuristics (no B-rep features yet).
+1. Wall thickness is still mesh-sampled; holes on STL uploads remain
+   mesh heuristics (STEP uploads get exact B-rep holes).
 2. DFM thresholds are global, not per material/process.
-3. Setup count is complexity-derived, not orientation-derived.
+3. Orientation-derived setups count hole axes only; pocket/face approach
+   directions are not yet included (STL uploads stay complexity-derived).
 4. No actuals feedback loop yet (§1 roadmap item 1).
 5. Combined-quote PDFs summarize DFM at quote level, not per line item.
 

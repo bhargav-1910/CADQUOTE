@@ -109,6 +109,22 @@ class GeometryProcessor:
             # Wall thickness estimation (simplified)
             min_wall_thickness = self._estimate_min_wall_thickness(mesh, scale_factor)
 
+            # STEP files carry an exact boundary representation — prefer
+            # B-rep hole/orientation features over the mesh heuristics.
+            analysis_library = "trimesh"
+            machining_direction_count = None
+            brep_hole_data = None
+            if file_format == "step":
+                from app.services.brep import analyze_step_brep
+
+                brep = analyze_step_brep(file_path)
+                if brep is not None:
+                    hole_count = brep.hole_count
+                    hole_diameters_mm = brep.hole_diameters_mm or None
+                    machining_direction_count = brep.machining_direction_count
+                    brep_hole_data = brep.holes or None
+                    analysis_library = "trimesh+ocp-brep"
+
             analysis_time = time.time() - start_time
 
             return {
@@ -121,12 +137,14 @@ class GeometryProcessor:
                 "min_wall_thickness": round(min_wall_thickness, 2) if min_wall_thickness else None,
                 "hole_count": hole_count,
                 "hole_diameters_mm": hole_diameters_mm,
+                "machining_direction_count": machining_direction_count,
+                "brep_hole_data": brep_hole_data,
                 "complexity_score": round(complexity_score, 4),
                 "removal_ratio": round(removal_ratio, 4),
                 "triangle_count": len(mesh.faces),
                 "vertex_count": len(mesh.vertices),
                 "analysis_time_seconds": round(analysis_time, 3),
-                "analysis_library": "trimesh",
+                "analysis_library": analysis_library,
             }
             
         except Exception as e:
@@ -371,6 +389,8 @@ async def process_cad_file(
         min_wall_thickness=analysis_data.get("min_wall_thickness"),
         hole_count=analysis_data.get("hole_count", 0),
         hole_diameters_mm=analysis_data.get("hole_diameters_mm"),
+        machining_direction_count=analysis_data.get("machining_direction_count"),
+        brep_hole_data=analysis_data.get("brep_hole_data"),
         complexity_score=analysis_data["complexity_score"],
         removal_ratio=analysis_data["removal_ratio"],
         triangle_count=analysis_data.get("triangle_count"),

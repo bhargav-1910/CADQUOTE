@@ -94,6 +94,11 @@ class PricingInputs:
     # Tolerance requirement (general / precision / tight)
     tolerance_tier: str = "general"
 
+    # Exact B-rep machining orientations (STEP + OCP only). When present,
+    # the setup count comes from real hole-axis directions instead of the
+    # complexity heuristic.
+    machining_direction_count: Optional[int] = None
+
 
 @dataclass
 class PricingResult:
@@ -390,7 +395,15 @@ class PricingEngine:
 
         # C. Setup cost
         setup_time_hours = _clamp(inputs.setup_time_hours, 0.1, 2.0)
-        number_of_setups = max(1, int(round(1 + complexity_norm * 1.5))) + int(dfm_adjustments["extra_setups"])
+        # Prefer measured orientations (distinct hole-axis directions from the
+        # exact B-rep) over the complexity heuristic when they are available.
+        if inputs.machining_direction_count and inputs.machining_direction_count > 0:
+            base_setups = int(_clamp(float(inputs.machining_direction_count), 1.0, 6.0))
+            setup_basis = "brep_machining_directions"
+        else:
+            base_setups = max(1, int(round(1 + complexity_norm * 1.5)))
+            setup_basis = "complexity_estimate"
+        number_of_setups = base_setups + int(dfm_adjustments["extra_setups"])
         setup_time_total_hours = setup_time_hours * number_of_setups
         setup_hour_rate_per_hour = max(inputs.setup_hour_rate, _to_decimal(0))
         if setup_hour_rate_per_hour <= 0:
@@ -403,6 +416,7 @@ class PricingEngine:
             "setup_time_hours": round(setup_time_hours, 4),
             "setup_time_total_hours": round(setup_time_total_hours, 4),
             "number_of_setups": number_of_setups,
+            "setup_basis": setup_basis,
             "setup_hour_rate": float(setup_hour_rate_per_hour),
             "batch_size": inputs.quantity,
             "setup_cost_total": float(setup_cost_total),
@@ -1155,6 +1169,7 @@ async def calculate_pricing(
         removal_ratio=geometry.removal_ratio,
         hole_count=geometry.hole_count,
         hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
+        machining_direction_count=getattr(geometry, "machining_direction_count", None),
         min_wall_thickness_mm=geometry.min_wall_thickness,
         triangle_count=geometry.triangle_count,
         material_name=material.name,

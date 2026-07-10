@@ -186,6 +186,19 @@ def test_volume_discount_applies_at_large_quantities():
     assert large.unit_price < small.unit_price
 
 
+def test_brep_directions_drive_setup_count():
+    """Measured machining orientations must replace the complexity heuristic."""
+    engine = PricingEngine()
+
+    measured = engine.calculate_price(make_pricing_inputs(machining_direction_count=3))
+    setup = measured.details["setup"]
+    assert setup["setup_basis"] == "brep_machining_directions"
+    assert setup["number_of_setups"] == 3 + measured.details["dfm"]["extra_setups"]
+
+    heuristic = engine.calculate_price(make_pricing_inputs())
+    assert heuristic.details["setup"]["setup_basis"] == "complexity_estimate"
+
+
 def test_tolerance_tiers_defined():
     engine = PricingEngine()
     assert set(engine.TOLERANCE_TIERS) >= {"general", "precision", "tight"}
