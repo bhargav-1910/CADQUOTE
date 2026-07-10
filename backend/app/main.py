@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.cache import cache
-from app.api import files, config, quotes, auth, billing, public
+from app.api import files, config, quotes, auth, billing, public, customers
 from app.seed import seed_if_empty
 
 # Configure logging
@@ -47,9 +47,14 @@ async def lifespan(app: FastAPI):
     from app.services.geometry import recover_interrupted_processing
     recovery_task = asyncio.create_task(recover_interrupted_processing())
 
+    # Link pre-CRM quotes to customer records (idempotent janitor).
+    from app.services.customers import backfill_customer_links
+    backfill_task = asyncio.create_task(backfill_customer_links())
+
     yield
 
     recovery_task.cancel()
+    backfill_task.cancel()
     
     # Shutdown
     logger.info("Shutting down...")
@@ -105,6 +110,7 @@ app.include_router(files.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
+app.include_router(customers.router, prefix="/api")
 
 # Serve user-uploaded assets such as company logos and generated PDFs
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

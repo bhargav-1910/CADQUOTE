@@ -415,9 +415,16 @@ const QuoteDetail = () => {
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-500">Name</p>
-                <p className="font-medium text-gray-900">
-                  {quote.customer_name || 'Not specified'}
-                </p>
+                {quote.customer_id ? (
+                  <Link
+                    to={`/customers/${quote.customer_id}`}
+                    className="font-medium text-primary-700 hover:text-primary-800 hover:underline"
+                  >
+                    {quote.customer_name || 'View customer'}
+                  </Link>
+                ) : (
+                  <p className="font-medium text-gray-900">{quote.customer_name || 'Not specified'}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-gray-500">Email</p>

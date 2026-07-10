@@ -335,6 +335,32 @@ class VendorCertification(Base):
 
 
 # ============================================================================
+# Customer Model (CRM-lite)
+# ============================================================================
+
+class Customer(Base):
+    """A workspace-private customer record; quotes link to it while keeping
+    their own free-text snapshot of the customer fields."""
+    __tablename__ = "customers"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+
+    name = Column(String(200), nullable=False)
+    email = Column(String(200), nullable=True, index=True)
+    company = Column(String(200), nullable=True)
+    phone = Column(String(30), nullable=True)
+    gstin = Column(String(20), nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
+    quotes = relationship("Quote", back_populates="customer")
+
+
+# ============================================================================
 # CAD File Model
 # ============================================================================
 
@@ -426,7 +452,8 @@ class Quote(Base):
     user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
     quote_number = Column(String(20), unique=True, nullable=False, index=True)
     
-    # Customer info
+    # Customer info (free-text snapshot; customer_id links the CRM record)
+    customer_id = Column(UUID(), ForeignKey("customers.id"), nullable=True, index=True)
     customer_name = Column(String(200), nullable=True)
     customer_email = Column(String(200), nullable=True)
     customer_company = Column(String(200), nullable=True)
@@ -513,6 +540,7 @@ class Quote(Base):
     
     # Relationships
     user = relationship("User", back_populates="quotes")
+    customer = relationship("Customer", back_populates="quotes")
     cad_file = relationship("CADFile", back_populates="quotes")
     material = relationship("Material", back_populates="quotes")
     surface_finish = relationship("SurfaceFinish", back_populates="quotes")

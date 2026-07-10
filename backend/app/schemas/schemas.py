@@ -491,8 +491,10 @@ class QuoteCreateRequest(BaseModel):
     surface_finish_id: UUID
     inspection_level_id: UUID
     quantity: int = Field(default=1, ge=1, le=10000)
-    
-    # Customer info
+
+    # Customer info (customer_id links an existing CRM record; free text
+    # still stored as the quote's snapshot)
+    customer_id: Optional[UUID] = None
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
@@ -548,6 +550,7 @@ class BatchQuoteCreateRequest(BaseModel):
     inspection_level_id: UUID
     quantity: int = Field(default=1, ge=1, le=10000)
 
+    customer_id: Optional[UUID] = None
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
@@ -599,6 +602,7 @@ class CombinedQuoteCreateRequest(BaseModel):
     """Request to create a single quotation that aggregates multiple files."""
     items: List[CombinedQuoteLineItemRequest] = Field(..., min_length=1)
 
+    customer_id: Optional[UUID] = None
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
     customer_company: Optional[str] = Field(None, max_length=200)
@@ -641,8 +645,9 @@ class QuoteResponse(BaseSchema):
     """Quote response schema."""
     id: UUID
     quote_number: str
-    
+
     # Customer
+    customer_id: Optional[UUID] = None
     customer_name: Optional[str]
     customer_email: Optional[str]
     customer_company: Optional[str]
@@ -912,3 +917,45 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     code: Optional[str] = None
+
+
+# ============================================================================
+# Customer Schemas (CRM-lite)
+# ============================================================================
+
+class CustomerBase(BaseModel):
+    """Customer contact fields."""
+    name: str = Field(..., min_length=1, max_length=200)
+    email: Optional[str] = Field(None, max_length=200)
+    company: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=30)
+    gstin: Optional[str] = Field(None, max_length=20)
+    notes: Optional[str] = None
+
+
+class CustomerCreate(CustomerBase):
+    """Create (find-or-create by email/name) a customer."""
+    pass
+
+
+class CustomerUpdate(BaseModel):
+    """Partial update of a customer record."""
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    email: Optional[str] = Field(None, max_length=200)
+    company: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=30)
+    gstin: Optional[str] = Field(None, max_length=20)
+    notes: Optional[str] = None
+
+
+class CustomerResponse(CustomerBase, BaseSchema):
+    """Customer record with per-customer quote aggregates."""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    quote_count: int = 0
+    total_quoted_value: Decimal = Decimal("0")
+    accepted_count: int = 0
+    declined_count: int = 0
+    last_quote_at: Optional[datetime] = None

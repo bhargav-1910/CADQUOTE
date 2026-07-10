@@ -24,6 +24,9 @@ import type {
   AuthTokenResponse,
   UserProfile,
   UpdateProfileRequest,
+  Customer,
+  CustomerCreateRequest,
+  CustomerUpdateRequest,
   PointsPackage,
   PointsWallet,
   PointsLedgerEntry,
@@ -785,6 +788,60 @@ export const previewVendorMatch = async (
 ): Promise<VendorMatchPreviewResponse> => {
   try {
     const response = await api.post<VendorMatchPreviewResponse>('/quotes/match-vendors', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+// ============================================================================
+// Customers (CRM-lite) API
+// ============================================================================
+
+export const listCustomers = async (search?: string): Promise<Customer[]> => {
+  try {
+    const response = await api.get<Customer[]>('/customers', {
+      params: search ? { search } : undefined,
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const createCustomer = async (payload: CustomerCreateRequest): Promise<Customer> => {
+  try {
+    const response = await api.post<Customer>('/customers', payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getCustomer = async (customerId: string): Promise<Customer> => {
+  try {
+    const response = await api.get<Customer>(`/customers/${customerId}`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const updateCustomer = async (
+  customerId: string,
+  payload: CustomerUpdateRequest,
+): Promise<Customer> => {
+  try {
+    const response = await api.patch<Customer>(`/customers/${customerId}`, payload);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getCustomerQuotes = async (customerId: string): Promise<QuoteListItem[]> => {
+  try {
+    const response = await api.get<QuoteListItem[]>(`/customers/${customerId}/quotes`);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

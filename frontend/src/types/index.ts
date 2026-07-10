@@ -282,6 +282,7 @@ export interface QuoteCreateRequest {
   surface_finish_id: string;
   inspection_level_id: string;
   quantity: number;
+  customer_id?: string;
   pricing_overrides?: PricingOverrides;
   customer_name?: string;
   customer_email?: string;
@@ -375,6 +376,7 @@ export interface CombinedQuoteLineItemRequest {
 export interface CombinedQuoteCreateRequest {
   items: CombinedQuoteLineItemRequest[];
   pricing_overrides?: PricingOverrides;
+  customer_id?: string;
   customer_name?: string;
   customer_email?: string;
   customer_company?: string;
@@ -515,6 +517,7 @@ export interface Quote {
   estimated_lead_time_days: number;
   status: QuoteStatus;
   valid_until: string;
+  customer_id?: string | null;
   share_token?: string | null;
   responded_at?: string | null;
   customer_response_note?: string | null;
@@ -599,3 +602,36 @@ export interface AuthTokenResponse {
   token_type: string;
   user: UserProfile;
 }
+
+
+// ============================================================================
+// Customers (CRM-lite)
+// ============================================================================
+
+export interface Customer {
+  id: string;
+  name: string;
+  email?: string | null;
+  company?: string | null;
+  phone?: string | null;
+  gstin?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  quote_count: number;
+  total_quoted_value: number;
+  accepted_count: number;
+  declined_count: number;
+  last_quote_at?: string | null;
+}
+
+export interface CustomerCreateRequest {
+  name: string;
+  email?: string;
+  company?: string;
+  phone?: string;
+  gstin?: string;
+  notes?: string;
+}
+
+export type CustomerUpdateRequest = Partial<CustomerCreateRequest>;

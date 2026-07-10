@@ -419,6 +419,7 @@ async def create_batch_quotation(
                 surface_finish_id=request.surface_finish_id,
                 inspection_level_id=request.inspection_level_id,
                 quantity=request.quantity,
+                customer_id=request.customer_id,
                 customer_name=request.customer_name,
                 customer_email=request.customer_email,
                 customer_company=request.customer_company,
@@ -654,6 +655,10 @@ async def create_combined_quotation(
         notes=final_notes,
     )
 
+    from app.services.customers import link_quote_customer
+
+    await link_quote_customer(db, quote, customer_id=request.customer_id)
+
     db.add(quote)
     await db.commit()
     await db.refresh(quote)
@@ -705,6 +710,7 @@ async def create_quotation(
             surface_finish_id=request.surface_finish_id,
             inspection_level_id=request.inspection_level_id,
             quantity=request.quantity,
+            customer_id=request.customer_id,
             customer_name=request.customer_name or current_user.full_name,
             customer_email=request.customer_email,
             customer_company=request.customer_company or current_user.company_name,
@@ -1012,6 +1018,7 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
     return QuoteResponse(
         id=quote.id,
         quote_number=quote.quote_number,
+        customer_id=quote.customer_id,
         customer_name=quote.customer_name,
         customer_email=quote.customer_email,
         customer_company=quote.customer_company,

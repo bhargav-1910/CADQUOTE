@@ -8,7 +8,9 @@ import ConfigurationPanel from '@/components/ConfigurationPanel';
 import PricingDisplay from '@/components/PricingDisplay';
 import DFXAnalysis from '@/components/DFXAnalysis';
 import FilePreviewModal from '@/components/FilePreviewModal';
+import CustomerPicker from '@/components/CustomerPicker';
 import { useAuth } from '@/components/AuthProvider';
+import type { Customer } from '@/types';
 import type {
   CADFile,
   DFMIssueCostImpact,
@@ -229,7 +231,7 @@ const StickyPriceBar = ({
       <button
         onClick={onClick}
         disabled={disabled}
-        className="shrink-0 flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-600/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+        className="shrink-0 flex items-center gap-2 px-8 py-3 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 transition-all shadow-lg shadow-accent-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
       >
         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
         {ctaLabel}
@@ -256,6 +258,7 @@ const QuoteBuilder = () => {
   const [customerName, setCustomerName] = useState(user?.full_name ?? '');
   const [customerEmail, setCustomerEmail] = useState(user?.email ?? '');
   const [customerCompany, setCustomerCompany] = useState(user?.company_name ?? '');
+  const [pickedCustomer, setPickedCustomer] = useState<Customer | null>(null);
   const [notes, setNotes] = useState('');
 
   // Single-file state
@@ -822,6 +825,7 @@ const QuoteBuilder = () => {
           ...(pricingOverridesPayload ?? {}),
           machine_name: toOptionalString(pricingOverrides.machine_name ?? ''),
         },
+        customer_id: pickedCustomer?.id,
         customer_name: config.customerName || undefined,
         customer_email: config.customerEmail || undefined,
         customer_company: config.customerCompany || undefined,
@@ -888,6 +892,7 @@ const QuoteBuilder = () => {
           ...(pricingOverridesPayload ?? {}),
           machine_name: toOptionalString(pricingOverrides.machine_name ?? ''),
         },
+        customer_id: pickedCustomer?.id,
         customer_name: customerName || undefined,
         customer_email: customerEmail || undefined,
         customer_company: customerCompany || undefined,
@@ -922,6 +927,7 @@ const QuoteBuilder = () => {
     setCustomerName('');
     setCustomerEmail('');
     setCustomerCompany('');
+    setPickedCustomer(null);
     setNotes('');
     setConfig({
       cadFile: null, geometry: null, materialId: null, surfaceFinishId: null,
@@ -945,17 +951,17 @@ const QuoteBuilder = () => {
     {
       label: 'Name', type: 'text', placeholder: 'Customer name',
       value: isMultiMode ? customerName : config.customerName,
-      onChange: (v: string) => isMultiMode ? setCustomerName(v) : setConfig((p) => ({ ...p, customerName: v })),
+      onChange: (v: string) => { setPickedCustomer(null); return isMultiMode ? setCustomerName(v) : setConfig((p) => ({ ...p, customerName: v })); },
     },
     {
       label: 'Email', type: 'email', placeholder: 'customer@company.com',
       value: isMultiMode ? customerEmail : config.customerEmail,
-      onChange: (v: string) => isMultiMode ? setCustomerEmail(v) : setConfig((p) => ({ ...p, customerEmail: v })),
+      onChange: (v: string) => { setPickedCustomer(null); return isMultiMode ? setCustomerEmail(v) : setConfig((p) => ({ ...p, customerEmail: v })); },
     },
     {
       label: 'Company', type: 'text', placeholder: 'Company name',
       value: isMultiMode ? customerCompany : config.customerCompany,
-      onChange: (v: string) => isMultiMode ? setCustomerCompany(v) : setConfig((p) => ({ ...p, customerCompany: v })),
+      onChange: (v: string) => { setPickedCustomer(null); return isMultiMode ? setCustomerCompany(v) : setConfig((p) => ({ ...p, customerCompany: v })); },
     },
   ];
 
@@ -963,6 +969,23 @@ const QuoteBuilder = () => {
     <div className="bg-white rounded-xl border border-gray-200 p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Customer Information (Optional)</h2>
       <div className="space-y-4">
+        <CustomerPicker
+          selected={pickedCustomer}
+          onSelect={(customer) => {
+            setPickedCustomer(customer);
+            const name = customer.name;
+            const email = customer.email ?? '';
+            const company = customer.company ?? '';
+            if (isMultiMode) {
+              setCustomerName(name);
+              setCustomerEmail(email);
+              setCustomerCompany(company);
+            } else {
+              setConfig((p) => ({ ...p, customerName: name, customerEmail: email, customerCompany: company }));
+            }
+          }}
+          onClear={() => setPickedCustomer(null)}
+        />
         {formFields.map(({ label, type, placeholder, value, onChange }) => (
           <div key={label}>
             <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
@@ -1338,7 +1361,7 @@ const QuoteBuilder = () => {
             <button
               onClick={handleCreateSingleQuote}
               disabled={!pricing || creating}
-              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-600/25 hover:shadow-primary-600/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 transition-all shadow-lg shadow-accent-500/25 hover:shadow-accent-500/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {creating
                 ? <><Loader2 className="w-5 h-5 animate-spin" />Generating Quote...</>
@@ -1697,7 +1720,7 @@ const QuoteBuilder = () => {
             <button
               onClick={handleCreateBatchQuotes}
               disabled={!allMultiPriced || anyMultiLoading || creating}
-              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-xl hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-600/25 hover:shadow-primary-600/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 transition-all shadow-lg shadow-accent-500/25 hover:shadow-accent-500/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {creating ? (
                 <><Loader2 className="w-5 h-5 animate-spin" />Generating Combined Quote...</>

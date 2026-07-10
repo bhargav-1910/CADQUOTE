@@ -11,6 +11,8 @@ import HomePage from './pages/HomePage';
 import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteList from './pages/QuoteList';
 import QuoteDetail from './pages/QuoteDetail';
+import CustomersPage from './pages/CustomersPage';
+import CustomerDetail from './pages/CustomerDetail';
 import AdminPricing from './pages/AdminPricing';
 import BillingPage from './pages/BillingPage';
 import PublicQuotePage from './pages/PublicQuotePage';
@@ -84,6 +86,26 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <QuoteDetail />
+                </Layout>
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/customers"
+            element={(
+              <ProtectedRoute>
+                <Layout>
+                  <CustomersPage />
+                </Layout>
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/customers/:customerId"
+            element={(
+              <ProtectedRoute>
+                <Layout>
+                  <CustomerDetail />
                 </Layout>
               </ProtectedRoute>
             )}

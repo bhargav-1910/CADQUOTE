@@ -11,6 +11,7 @@ import {
   Building2,
   Mail,
   CreditCard,
+  Users,
   Moon,
   Sun,
   Search,
@@ -27,6 +28,7 @@ const NAV = [
   { path: '/workspace', icon: Upload, label: 'Dashboard', exact: true },
   { path: '/quote', icon: Layers, label: 'New Quote', exact: true },
   { path: '/quotes', icon: FolderOpen, label: 'My Quotes', exact: false },
+  { path: '/customers', icon: Users, label: 'Customers', exact: false },
   { path: '/admin/pricing', icon: Settings, label: 'Cost Master', exact: false },
   { path: '/billing', icon: CreditCard, label: 'Billing', exact: false },
 ];
@@ -227,23 +229,34 @@ const Layout = ({ children }: LayoutProps) => {
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              className="w-9 h-9 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
+              aria-label="Search"
+              className="w-11 h-11 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
             >
               <Search className="w-4 h-4" />
             </button>
             <button
               type="button"
               onClick={toggleTheme}
-              className="w-9 h-9 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="w-11 h-11 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
             <button
               type="button"
               onClick={() => setProfileSettingsOpen(true)}
-              className="w-9 h-9 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
+              aria-label="Profile settings"
+              className="w-11 h-11 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
             >
               <User className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              aria-label="Logout"
+              className="w-11 h-11 rounded-lg border border-red-200 bg-white/80 text-red-500 flex items-center justify-center"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -261,34 +274,30 @@ const Layout = ({ children }: LayoutProps) => {
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onToggleTheme={toggleTheme} />
 
-      {/* Mobile bottom nav */}
-      <nav className="lg:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 surface-strong border border-slate-200 rounded-2xl p-1.5 shadow-lg">
-        <div className="flex items-center gap-1.5">
+      {/* Mobile bottom nav — labeled, top-level destinations only */}
+      <nav
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 surface-strong border-t border-slate-200 pb-[env(safe-area-inset-bottom)]"
+        aria-label="Primary"
+      >
+        <div className="flex items-stretch justify-around px-1 py-1">
           {NAV.map(({ path, icon: Icon, label, exact }) => {
             const active = isActive(path, exact);
             return (
               <Link
                 key={path}
                 to={path}
-                className={`px-2.5 py-2 rounded-xl ${
-                  active ? 'bg-slate-900 text-white' : 'text-slate-600'
+                aria-current={active ? 'page' : undefined}
+                className={`flex min-h-[48px] min-w-[56px] flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1.5 transition-colors ${
+                  active ? 'text-sky-700 bg-sky-600/10' : 'text-slate-500 hover:text-slate-700'
                 }`}
-                title={label}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-[18px] h-[18px]" />
+                <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-medium'}`}>
+                  {label}
+                </span>
               </Link>
             );
           })}
-          <button
-            type="button"
-            onClick={() => {
-              logout();
-            }}
-            className="px-2.5 py-2 rounded-xl text-red-500"
-            title="Logout"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </nav>
     </div>

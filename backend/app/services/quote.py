@@ -32,6 +32,7 @@ async def create_quote(
     surface_finish_id: uuid.UUID,
     inspection_level_id: uuid.UUID,
     quantity: int = 1,
+    customer_id: Optional[uuid.UUID] = None,
     customer_name: Optional[str] = None,
     customer_email: Optional[str] = None,
     customer_company: Optional[str] = None,
@@ -184,10 +185,16 @@ async def create_quote(
         notes=notes,
     )
     
+    # Link the CRM customer record (find-or-create from the free-text
+    # fields; an explicit customer_id wins after an ownership check).
+    from app.services.customers import link_quote_customer
+
+    await link_quote_customer(db, quote, customer_id=customer_id)
+
     db.add(quote)
     await db.commit()
     await db.refresh(quote)
-    
+
     return quote
 
 

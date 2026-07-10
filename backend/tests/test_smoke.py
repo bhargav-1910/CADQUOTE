@@ -209,6 +209,22 @@ def test_tolerance_tiers_defined():
 
 
 # ---------------------------------------------------------------------------
+# Customer identity normalization (CRM-lite)
+# ---------------------------------------------------------------------------
+
+def test_customer_identity_normalization():
+    from app.services.customers import normalize_email, normalize_text
+
+    # Email matching must be case/whitespace-insensitive so repeat customers
+    # collapse into one record.
+    assert normalize_email("  Ops@Acme.IN ") == "ops@acme.in"
+    assert normalize_email("   ") is None
+    assert normalize_email(None) is None
+    assert normalize_text("  Acme Precision  ") == "Acme Precision"
+    assert normalize_text("") is None
+
+
+# ---------------------------------------------------------------------------
 # Configuration safety
 # ---------------------------------------------------------------------------
 
