@@ -24,8 +24,6 @@ import type {
   AuthTokenResponse,
   UserProfile,
   UpdateProfileRequest,
-  QuoteEmailRequest,
-  QuoteEmailResponse,
   PointsPackage,
   PointsWallet,
   PointsLedgerEntry,
@@ -544,18 +542,6 @@ export const fetchQuotePDFPreviewBlob = async (quoteId: string): Promise<Blob> =
     const response = await api.get<Blob>(`/quotes/${quoteId}/pdf/preview`, {
       responseType: 'blob',
     });
-    return response.data;
-  } catch (error) {
-    return handleError(error as AxiosError);
-  }
-};
-
-export const sendQuoteEmail = async (
-  quoteId: string,
-  payload: QuoteEmailRequest,
-): Promise<QuoteEmailResponse> => {
-  try {
-    const response = await api.post<QuoteEmailResponse>(`/quotes/${quoteId}/email`, payload);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

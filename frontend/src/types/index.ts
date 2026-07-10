@@ -418,20 +418,6 @@ export interface BatchQuoteResponse {
   quote_count: number;
 }
 
-export interface QuoteEmailRequest {
-  recipient_email?: string;
-  subject?: string;
-  message?: string;
-  mailbox_access_consent?: boolean;
-  send_as_logged_in_user?: boolean;
-}
-
-export interface QuoteEmailResponse {
-  message: string;
-  recipient_email: string;
-  quote_id: string;
-}
-
 export interface PointsPackage {
   id: string;
   name: string;
@@ -529,6 +515,9 @@ export interface Quote {
   estimated_lead_time_days: number;
   status: QuoteStatus;
   valid_until: string;
+  share_token?: string | null;
+  responded_at?: string | null;
+  customer_response_note?: string | null;
   pdf_path: string | null;
   price_validity?: string | null;
   gst?: string | null;

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  ChevronRight, Download, FileText, Mail, Loader2, Home,
+  ChevronRight, Copy, ExternalLink, FileText, Loader2, Home,
   AlertCircle, CheckCircle, Package, Clock, User, Pencil, Eye,
-  Link2, Check,
+  Link2, Check, XCircle,
 } from 'lucide-react';
 import type { Quote } from '@/types';
-import { getQuote, generateQuotePDF, downloadQuotePDF, sendQuoteEmail, fetchQuotePDFPreviewBlob, shareQuote } from '@/services/api';
-import { useAuth } from '@/components/AuthProvider';
+import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote } from '@/services/api';
 import { StatusPill } from '@/components/ui';
 
 interface CombinedFileLine {
@@ -65,14 +64,11 @@ const parseCombinedNotes = (rawNotes: string | null): { files: CombinedFileLine[
 
 const QuoteDetail = () => {
   const { quoteId } = useParams<{ quoteId: string }>();
-  const { user } = useAuth();
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [emailing, setEmailing] = useState(false);
-  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -156,6 +152,16 @@ const QuoteDetail = () => {
     }
   };
 
+  const copyShareLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch {
+      setActionError('Could not copy the link — copy it from the box below.');
+    }
+  };
+
   const handleShareQuote = async () => {
     if (!quote) return;
 
@@ -163,59 +169,20 @@ const QuoteDetail = () => {
     setSharing(true);
     try {
       const { share_token: shareToken } = await shareQuote(quote.id);
-      const shareUrl = `${window.location.origin}/q/${shareToken}`;
-      await navigator.clipboard.writeText(shareUrl);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2500);
+      setQuote((prev) =>
+        prev
+          ? {
+              ...prev,
+              share_token: shareToken,
+              status: prev.status === 'draft' || prev.status === 'generated' ? 'sent' : prev.status,
+            }
+          : prev,
+      );
+      await copyShareLink(`${window.location.origin}/q/${shareToken}`);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to create share link');
     } finally {
       setSharing(false);
-    }
-  };
-
-  const handleEmailQuote = async () => {
-    if (!quote || !quote.customer_email) {
-      setActionError('Customer email is missing for this quote');
-      return;
-    }
-
-    if (!hasPreviewed) {
-      setActionError('Please preview the quote before emailing.');
-      return;
-    }
-
-    const consentMessage = [
-      'Allow this app to use your logged-in email identity for this one email?',
-      '',
-      `Logged-in email: ${user?.email || 'Unavailable'}`,
-      `Recipient: ${quote.customer_email}`,
-      '',
-      'Note: Actual delivery is still performed by server SMTP. Your email identity is used in sender headers when provider policy allows.',
-    ].join('\n');
-
-    const permissionGranted = window.confirm(consentMessage);
-    if (!permissionGranted) {
-      setActionError('Email sending cancelled. Permission was not granted.');
-      return;
-    }
-
-    setActionError(null);
-    setEmailSuccess(null);
-    setEmailing(true);
-
-    try {
-      const response = await sendQuoteEmail(quote.id, {
-        recipient_email: quote.customer_email,
-        mailbox_access_consent: true,
-        send_as_logged_in_user: true,
-      });
-      setEmailSuccess(`Email sent to ${response.recipient_email}`);
-      setQuote((prev) => (prev ? { ...prev, status: 'sent' } : prev));
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to email quote');
-    } finally {
-      setEmailing(false);
     }
   };
 
@@ -278,15 +245,32 @@ const QuoteDetail = () => {
   const isExpired = quote.status === 'expired' || new Date(quote.valid_until) < new Date();
   const combinedQuote = parseCombinedNotes(quote.notes);
 
-  // Lifecycle: created -> generated -> sent -> valid/expired
+  const hasResponse = quote.status === 'accepted' || quote.status === 'declined';
+  const isShared = Boolean(quote.share_token) || quote.status === 'sent' || hasResponse;
+  const shareUrl = quote.share_token ? `${window.location.origin}/q/${quote.share_token}` : null;
+
+  // Lifecycle: created -> generated -> shared -> customer response -> valid/expired
   const lifecycleSteps = [
     { key: 'created', label: 'Created', detail: formatDate(quote.created_at), done: true },
     { key: 'generated', label: 'Generated', detail: 'Priced & saved', done: true },
     {
-      key: 'sent',
-      label: 'Sent',
-      detail: quote.status === 'sent' ? 'Emailed to customer' : 'Not sent yet',
-      done: quote.status === 'sent',
+      key: 'shared',
+      label: 'Shared',
+      detail: isShared ? 'Customer link created' : 'Not shared yet',
+      done: isShared,
+    },
+    {
+      key: 'response',
+      label: quote.status === 'accepted' ? 'Accepted' : quote.status === 'declined' ? 'Declined' : 'Response',
+      detail: hasResponse
+        ? quote.responded_at
+          ? formatDate(quote.responded_at)
+          : 'Customer responded'
+        : isShared
+        ? 'Awaiting customer'
+        : 'After sharing',
+      done: quote.status === 'accepted',
+      danger: quote.status === 'declined',
     },
     {
       key: 'validity',
@@ -336,30 +320,18 @@ const QuoteDetail = () => {
             All Quotes
           </Link>
           <button
-            onClick={handleShareQuote}
+            onClick={shareUrl ? () => copyShareLink(shareUrl) : handleShareQuote}
             disabled={sharing}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 text-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 text-sm"
           >
             {sharing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : shareCopied ? (
-              <Check className="w-4 h-4 text-emerald-600" />
+              <Check className="w-4 h-4" />
             ) : (
               <Link2 className="w-4 h-4" />
             )}
-            {shareCopied ? 'Link copied' : 'Share with customer'}
-          </button>
-          <button
-            onClick={handleDownloadPDF}
-            disabled={generating}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 text-sm"
-          >
-            {generating ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4" />
-            )}
-            Download PDF
+            {shareCopied ? 'Link copied' : shareUrl ? 'Copy customer link' : 'Share with customer'}
           </button>
         </div>
       </div>
@@ -420,13 +392,6 @@ const QuoteDetail = () => {
           >
             Re-quote at current prices
           </Link>
-        </div>
-      )}
-
-      {emailSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-green-700">{emailSuccess}</p>
         </div>
       )}
 
@@ -680,6 +645,100 @@ const QuoteDetail = () => {
             </p>
           </div>
 
+          {/* Customer link & response */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <Link2 className="w-4 h-4 text-gray-400" />
+              Customer Link
+            </h2>
+
+            {shareUrl ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={shareUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700"
+                    aria-label="Customer quote link"
+                  />
+                  <button
+                    onClick={() => copyShareLink(shareUrl)}
+                    title="Copy link"
+                    className="shrink-0 rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    {shareCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <a
+                    href={shareUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open customer view"
+                    className="shrink-0 rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Anyone with this link can view the quote, download the PDF, and accept or decline it.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-600">
+                  Create a link your customer can open to view this quote and respond to it.
+                </p>
+                <button
+                  onClick={handleShareQuote}
+                  disabled={sharing}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+                >
+                  {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                  {sharing ? 'Creating link...' : 'Create customer link'}
+                </button>
+              </>
+            )}
+
+            {quote.status === 'accepted' ? (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-800">
+                  <CheckCircle className="w-4 h-4" />
+                  Accepted by customer
+                </p>
+                {quote.responded_at && (
+                  <p className="text-xs text-emerald-700 mt-0.5">{formatDate(quote.responded_at)}</p>
+                )}
+                {quote.customer_response_note && (
+                  <p className="text-xs text-emerald-800 mt-2 whitespace-pre-wrap">
+                    “{quote.customer_response_note}”
+                  </p>
+                )}
+              </div>
+            ) : quote.status === 'declined' ? (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-red-800">
+                  <XCircle className="w-4 h-4" />
+                  Declined by customer
+                </p>
+                {quote.responded_at && (
+                  <p className="text-xs text-red-700 mt-0.5">{formatDate(quote.responded_at)}</p>
+                )}
+                {quote.customer_response_note && (
+                  <p className="text-xs text-red-800 mt-2 whitespace-pre-wrap">
+                    “{quote.customer_response_note}”
+                  </p>
+                )}
+              </div>
+            ) : shareUrl ? (
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p className="text-sm font-medium text-gray-700">Awaiting customer response</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Their decision will appear here once they respond.
+                </p>
+              </div>
+            ) : null}
+          </div>
+
           {/* Actions */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
             <button
@@ -702,20 +761,9 @@ const QuoteDetail = () => {
               )}
               Download PDF Quote
             </button>
-            
-            {quote.customer_email && (
-              <button
-                onClick={handleEmailQuote}
-                disabled={emailing}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                {emailing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                {emailing ? 'Sending Email...' : 'Email Customer'}
-              </button>
-            )}
             {!hasPreviewed && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                Preview is required before download or email.
+                Preview is required before download.
               </p>
             )}
           </div>

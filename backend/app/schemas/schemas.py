@@ -334,11 +334,18 @@ class GeometryAnalysisResponse(BaseSchema):
     min_wall_thickness: Optional[float] = Field(None, description="Minimum wall thickness in mm")
     hole_count: int = Field(default=0)
     hole_diameters_mm: Optional[List[float]] = Field(None, description="Fitted diameters of detected circular holes")
+    machining_direction_count: Optional[int] = Field(
+        None, description="Distinct hole-axis directions from the exact B-rep (STEP only)"
+    )
+    brep_hole_data: Optional[List[dict]] = Field(
+        None, description="Exact B-rep holes: [{diameter_mm, depth_mm, axis}]"
+    )
     complexity_score: float
     removal_ratio: float
     triangle_count: Optional[int] = None
     vertex_count: Optional[int] = None
     analysis_time_seconds: Optional[float] = None
+    analysis_library: Optional[str] = None
     dfm_analysis: Optional[DFMAnalysisResponse] = None
     created_at: datetime
 
@@ -686,6 +693,12 @@ class QuoteResponse(BaseSchema):
     # Status
     status: str
     valid_until: datetime
+
+    # Customer share link and response
+    share_token: Optional[str] = None
+    responded_at: Optional[datetime] = None
+    customer_response_note: Optional[str] = None
+
     pdf_path: Optional[str]
     price_validity: Optional[str]
     gst: Optional[str]

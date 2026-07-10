@@ -901,8 +901,18 @@ async def share_quote(
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
 
+    changed = False
     if not quote.share_token:
         quote.share_token = secrets.token_urlsafe(24)
+        changed = True
+
+    # Sharing the link IS delivering the quote — advance the lifecycle, but
+    # never overwrite a terminal customer response or expiry.
+    if quote.status in (QuoteStatus.DRAFT, QuoteStatus.GENERATED):
+        quote.status = QuoteStatus.SENT
+        changed = True
+
+    if changed:
         await db.commit()
         await db.refresh(quote)
 
@@ -1053,6 +1063,9 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
         estimated_lead_time_days=quote.estimated_lead_time_days,
         status=_effective_quote_status(quote).value,
         valid_until=quote.valid_until,
+        share_token=quote.share_token,
+        responded_at=quote.responded_at,
+        customer_response_note=quote.customer_response_note,
         pdf_path=quote.pdf_path,
         price_validity=quote.price_validity,
         gst=quote.gst,
