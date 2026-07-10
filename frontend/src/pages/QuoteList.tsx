@@ -156,7 +156,7 @@ const QuoteList = () => {
         </div>
         <Link
           to="/quote"
-          className="inline-flex w-fit items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-medium rounded-xl hover:from-primary-700 hover:to-primary-800 shadow-lg shadow-primary-600/20 transition-all"
+          className="inline-flex w-fit items-center gap-2 px-4 py-2.5 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 shadow-lg shadow-accent-500/20 transition-all"
         >
           <Plus className="w-4 h-4" />
           New Quote

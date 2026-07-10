@@ -2,20 +2,34 @@
  * Shared UI primitives — one source of truth for buttons, cards, badges,
  * status pills and skeletons so every screen renders them identically.
  */
-import { ButtonHTMLAttributes, HTMLAttributes, ReactNode, forwardRef } from 'react';
-import { Loader2, CheckCircle2, XCircle, Clock, Send, FileText, AlertTriangle } from 'lucide-react';
+import {
+  ButtonHTMLAttributes,
+  HTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+  forwardRef,
+  useId,
+  useState,
+} from 'react';
+import { Loader2, CheckCircle2, XCircle, Clock, Send, FileText, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import type { QuoteStatus } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Button
 // ---------------------------------------------------------------------------
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
+type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'success';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary:
     'bg-primary-600 text-white shadow-sm hover:bg-primary-700 focus-visible:outline-primary-600 disabled:bg-primary-300',
+  // Landing-page machined orange with dark ink — reserved for the single
+  // highest-value CTA on a screen.
+  accent:
+    'bg-accent-400 text-slate-950 shadow-sm hover:bg-accent-300 focus-visible:outline-accent-500 disabled:bg-accent-200 disabled:text-slate-500',
   secondary:
     'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:outline-gray-400 disabled:text-gray-400',
   ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-gray-400',
@@ -139,3 +153,114 @@ export const SectionLabel = ({ children, className = '' }: { children: ReactNode
     {children}
   </p>
 );
+
+// ---------------------------------------------------------------------------
+// Form primitives — Input / Select / Textarea share one focus + border
+// treatment (visible 2px ring, not just a border-color shift).
+// ---------------------------------------------------------------------------
+
+const FIELD_BASE =
+  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition ' +
+  'placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 ' +
+  'disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
+
+const FIELD_ERROR = 'border-red-400 focus:border-red-500 focus:ring-red-500/30';
+
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  invalid?: boolean;
+}
+
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ invalid = false, className = '', ...rest }, ref) => (
+    <input ref={ref} className={`${FIELD_BASE} ${invalid ? FIELD_ERROR : ''} ${className}`} {...rest} />
+  ),
+);
+Input.displayName = 'Input';
+
+export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  invalid?: boolean;
+}
+
+export const Select = forwardRef<HTMLSelectElement, SelectProps>(
+  ({ invalid = false, className = '', children, ...rest }, ref) => (
+    <select ref={ref} className={`${FIELD_BASE} ${invalid ? FIELD_ERROR : ''} ${className}`} {...rest}>
+      {children}
+    </select>
+  ),
+);
+Select.displayName = 'Select';
+
+export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  invalid?: boolean;
+}
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ invalid = false, className = '', ...rest }, ref) => (
+    <textarea ref={ref} className={`${FIELD_BASE} ${invalid ? FIELD_ERROR : ''} ${className}`} {...rest} />
+  ),
+);
+Textarea.displayName = 'Textarea';
+
+/** Password input with a show/hide toggle. */
+export const PasswordInput = forwardRef<HTMLInputElement, InputProps>(
+  ({ invalid = false, className = '', ...rest }, ref) => {
+    const [visible, setVisible] = useState(false);
+    return (
+      <div className="relative">
+        <input
+          ref={ref}
+          type={visible ? 'text' : 'password'}
+          className={`${FIELD_BASE} ${invalid ? FIELD_ERROR : ''} pr-11 ${className}`}
+          {...rest}
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? 'Hide password' : 'Show password'}
+          className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-400 transition hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+        >
+          {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+    );
+  },
+);
+PasswordInput.displayName = 'PasswordInput';
+
+/**
+ * Field — label + control + helper/error wiring in one place, so every form
+ * gets identical spacing, required markers and aria-describedby for free.
+ */
+export interface FieldProps {
+  label: ReactNode;
+  children: (props: { id: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }) => ReactNode;
+  helper?: ReactNode;
+  error?: ReactNode;
+  required?: boolean;
+  className?: string;
+}
+
+export const Field = ({ label, children, helper, error, required = false, className = '' }: FieldProps) => {
+  const id = useId();
+  const describedBy = error ? `${id}-error` : helper ? `${id}-helper` : undefined;
+  return (
+    <div className={className}>
+      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
+        {label}
+        {required && <span aria-hidden className="ml-0.5 text-red-500">*</span>}
+      </label>
+      <div className="mt-1">
+        {children({ id, 'aria-describedby': describedBy, 'aria-invalid': error ? true : undefined })}
+      </div>
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-red-600">
+          {error}
+        </p>
+      ) : helper ? (
+        <p id={`${id}-helper`} className="mt-1 text-xs text-slate-500">
+          {helper}
+        </p>
+      ) : null}
+    </div>
+  );
+};
