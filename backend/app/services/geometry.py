@@ -3,6 +3,8 @@ import time
 import asyncio
 import logging
 import os
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from typing import Optional, Dict, Any
 from pathlib import Path
 import tempfile
@@ -18,6 +20,31 @@ from app.core.config import settings
 from app.services.storage import storage
 
 logger = logging.getLogger(__name__)
+
+# CAD analysis runs in worker processes so the CPU/RAM-heavy mesh and B-rep
+# work never stalls the API event loop (GIL) or crashes the web process (OOM).
+# The pool doubles as a queue: at most GEOMETRY_WORKERS analyses run at once.
+_pool: Optional[ProcessPoolExecutor] = None
+
+
+def _get_pool() -> ProcessPoolExecutor:
+    global _pool
+    if _pool is None:
+        _pool = ProcessPoolExecutor(max_workers=settings.GEOMETRY_WORKERS)
+    return _pool
+
+
+def shutdown_pool() -> None:
+    """Terminate geometry workers; called on app shutdown."""
+    global _pool
+    if _pool is not None:
+        _pool.shutdown(wait=False, cancel_futures=True)
+        _pool = None
+
+
+def _analyze_in_worker(file_path: str, file_format: str) -> Dict[str, Any]:
+    """Entry point executed inside a geometry worker process."""
+    return GeometryProcessor()._analyze_sync(file_path, file_format)
 
 
 class GeometryProcessor:
@@ -40,16 +67,24 @@ class GeometryProcessor:
     ) -> Dict[str, Any]:
         """
         Analyze CAD file and extract geometry metrics.
-        
-        Runs in thread pool to avoid blocking.
+
+        Runs in a worker process so heavy analysis never blocks the API.
         """
+        global _pool
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self._analyze_sync,
-            file_path,
-            file_format
-        )
+        try:
+            return await loop.run_in_executor(
+                _get_pool(),
+                _analyze_in_worker,
+                file_path,
+                file_format,
+            )
+        except BrokenProcessPool:
+            # A worker died (e.g. OOM-killed on a pathological file). The
+            # pool is unusable after this, so discard it — the next analysis
+            # lazily creates a fresh one. Only this file fails.
+            _pool = None
+            raise
     
     def _analyze_sync(
         self,

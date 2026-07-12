@@ -1,170 +1,190 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
-import type { PointsLedgerEntry, PointsPackage } from '@/types';
-import {
-  createStripeCheckoutSession,
-  getPointsLedger,
-  getPointsPackages,
-  getPointsWallet,
-} from '@/services/api';
+import { useState } from 'react';
+import { Check, Mail, Sparkles, Building2, Box } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+
+interface Plan {
+  key: 'free' | 'pro' | 'enterprise';
+  name: string;
+  price: string;
+  priceSuffix?: string;
+  blurb: string;
+  features: string[];
+  cta: string;
+  popular?: boolean;
+  icon: typeof Box;
+}
+
+const PLANS: Plan[] = [
+  {
+    key: 'free',
+    name: 'Starter',
+    price: '₹0',
+    blurb: 'Try the full quoting flow on the built-in sample part.',
+    features: [
+      'Sample part quoting, end to end',
+      'Geometry analysis & DFM checks',
+      'PDF preview and download',
+      'Share link with customer response',
+    ],
+    cta: 'Included on signup',
+    icon: Box,
+  },
+  {
+    key: 'pro',
+    name: 'Professional',
+    price: '₹1,999',
+    priceSuffix: '/month',
+    blurb: 'For job shops quoting real customer work every day.',
+    features: [
+      'Unlimited CAD uploads (STEP & STL)',
+      'Exact B-rep hole & setup detection',
+      'Customer records with win-rate stats',
+      'Branded PDF quotes with your logo',
+      'Share links, responses & manual marking',
+      'Priority support',
+    ],
+    cta: 'Get Professional',
+    popular: true,
+    icon: Sparkles,
+  },
+  {
+    key: 'enterprise',
+    name: 'Enterprise',
+    price: 'Custom',
+    blurb: 'For manufacturers needing tailored workflows and volume.',
+    features: [
+      'Everything in Professional',
+      'Multiple team members',
+      'Vendor routing & custom machine rates',
+      'Onboarding & dedicated support',
+    ],
+    cta: 'Contact sales',
+    icon: Building2,
+  },
+];
+
+const CONTACT_EMAIL = 'bhargav191007@gmail.com';
 
 const BillingPage = () => {
-  const location = useLocation();
-  const [walletPoints, setWalletPoints] = useState<number>(0);
-  const [packages, setPackages] = useState<PointsPackage[]>([]);
-  const [ledger, setLedger] = useState<PointsLedgerEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [requested, setRequested] = useState<string | null>(null);
 
-  const purchaseStatus = useMemo(() => {
-    const status = new URLSearchParams(location.search).get('status');
-    if (status === 'success') return 'Points purchase completed. Credits are applied after Stripe webhook confirmation.';
-    if (status === 'cancel') return 'Payment was canceled. No points were deducted.';
-    return null;
-  }, [location.search]);
+  const isPro = user?.plan === 'pro';
+  const currentPlanKey = isPro ? 'pro' : 'free';
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [wallet, pointsPackages, entries] = await Promise.all([
-        getPointsWallet(),
-        getPointsPackages(),
-        getPointsLedger(25),
-      ]);
-      setWalletPoints(wallet.balance_points);
-      setPackages(pointsPackages);
-      setLedger(entries);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load billing data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const formatCurrency = (minor: number, currency: string) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency.toUpperCase() }).format(minor / 100);
-
-  const onBuyPoints = async (pkg: PointsPackage) => {
-    setBuyingPackageId(pkg.id);
-    setError(null);
-
-    try {
-      const base = window.location.origin;
-      const response = await createStripeCheckoutSession({
-        package_id: pkg.id,
-        success_url: `${base}/billing?status=success`,
-        cancel_url: `${base}/billing?status=cancel`,
-      });
-      window.location.href = response.checkout_url;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start Stripe checkout');
-      setBuyingPackageId(null);
-    }
+  const onSelectPlan = (plan: Plan) => {
+    if (plan.key === currentPlanKey) return;
+    setRequested(plan.key);
   };
 
   return (
-    <div className="space-y-8 py-4">
-      <div className="border-l-4 border-[#ff5e07] bg-[#ff5e07]/10 p-4">
-        <h4 className="text-mono-label text-xs text-[#ffb59a]">LOW_BALANCE_INTERVENTION</h4>
-        <p className="mt-1 text-sm text-[#b9caca]">CREDITS REMAINING: {walletPoints.toLocaleString()}</p>
-      </div>
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
+      <div className="text-center pt-4">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">
+          Choose your <span className="text-sky-600">plan</span>
+        </h1>
+        <p className="mt-2 text-slate-500">Quote faster, win more work. Upgrade when you're ready.</p>
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-mono-label text-xs text-[#00f5ff]">FINANCIAL_PROTOCOLS_V4.2</p>
-          <h1 className="mt-2 font-headline text-5xl font-black uppercase tracking-tighter text-[#e9feff]">BILLING_CORE</h1>
-        </div>
-        <button type="button" onClick={loadData} className="mf-btn-outline px-4 py-2 text-xs font-semibold">REFRESH</button>
-      </div>
-
-      {purchaseStatus && <div className="border-l-4 border-[#65f98b] bg-[#65f98b]/10 p-3 text-sm text-[#65f98b]">{purchaseStatus}</div>}
-      {error && <div className="border-l-4 border-[#ff5e07] bg-[#ff5e07]/10 p-3 text-sm text-[#ffb59a]">{error}</div>}
-
-      <div className="grid grid-cols-12 gap-8">
-        <div className="col-span-12 space-y-6 lg:col-span-4">
-          <div className="mf-card p-8">
-            <p className="text-mono-label text-xs text-[#00f5ff]">REAL_TIME_TOTAL</p>
-            <p className="mt-5 font-headline text-6xl font-light tracking-tighter text-[#e9feff]">{walletPoints.toLocaleString()}</p>
-            <p className="mt-2 text-mono-label text-xs text-[#b9caca]">MF_CREDITS_AVAILABLE</p>
-          </div>
-        </div>
-
-        <div className="col-span-12 lg:col-span-8">
-          <div className="border border-[#3a494a]/30 bg-[#171f33]">
-            <div className="border-b border-[#3a494a]/20 p-8">
-              <h2 className="font-headline text-2xl font-bold uppercase text-[#e9feff]">MANUFACTURING_CREDIT_ACQUISITION</h2>
-              <p className="mt-1 text-sm text-[#b9caca]">Select a technical tier to replenish system units.</p>
-            </div>
-
-            {loading ? (
-              <div className="flex items-center gap-2 p-8 text-[#b9caca]">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading packages...
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3">
-                {packages.map((pkg) => (
-                  <div key={pkg.id} className="border-r border-[#3a494a]/20 p-8 last:border-r-0 hover:bg-[#222a3d]/40">
-                    <h3 className="text-mono-label text-xs text-[#00f5ff]">{pkg.name}</h3>
-                    <p className="mt-2 font-headline text-3xl font-black text-[#e9feff]">{formatCurrency(pkg.price_minor, pkg.currency)}</p>
-                    <p className="mt-2 text-sm text-[#b9caca]">{pkg.points.toLocaleString()} credits</p>
-                    <button
-                      type="button"
-                      onClick={() => onBuyPoints(pkg)}
-                      disabled={buyingPackageId === pkg.id}
-                      className="mf-btn-primary mt-6 w-full px-3 py-3 text-xs disabled:opacity-60"
-                    >
-                      {buyingPackageId === pkg.id ? 'REDIRECTING...' : 'TOP-UP_CORE'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm">
+          <span className="text-slate-500">Current plan:</span>
+          <span className={`font-semibold ${isPro ? 'text-sky-700' : 'text-slate-800'}`}>
+            {isPro ? 'Professional' : 'Starter (free)'}
+          </span>
+          {isPro && (
+            <span className="text-xs text-slate-400">
+              {user?.plan_expires_at ? `· renews ${formatDate(user.plan_expires_at)}` : '· active'}
+            </span>
+          )}
         </div>
       </div>
 
-      <section className="border border-[#3a494a]/30 bg-[#131b2e]">
-        <div className="border-b border-[#3a494a]/20 px-5 py-4">
-          <h2 className="font-headline text-lg font-bold uppercase text-[#e9feff]">TRANSACTION_LOG</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="text-mono-label text-[11px] text-[#b9caca]">
-              <tr>
-                <th className="px-4 py-3 text-left">DATE</th>
-                <th className="px-4 py-3 text-left">ACTION</th>
-                <th className="px-4 py-3 text-right">DELTA</th>
-                <th className="px-4 py-3 text-right">BALANCE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ledger.length === 0 && (
-                <tr>
-                  <td className="px-4 py-4 text-[#b9caca]" colSpan={4}>No activity yet.</td>
-                </tr>
+      <div className="grid gap-5 md:grid-cols-3 items-stretch">
+        {PLANS.map((plan) => {
+          const isCurrent = plan.key === currentPlanKey;
+          const Icon = plan.icon;
+          return (
+            <div
+              key={plan.key}
+              className={`relative flex flex-col rounded-2xl border bg-white p-6 ${
+                plan.popular
+                  ? 'border-sky-300 shadow-lg shadow-sky-100 ring-1 ring-sky-200'
+                  : 'border-slate-200 shadow-sm'
+              }`}
+            >
+              {plan.popular && (
+                <span className="absolute -top-3 right-5 rounded-full bg-sky-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+                  Popular
+                </span>
               )}
-              {ledger.map((entry) => (
-                <tr key={entry.id} className="border-t border-[#3a494a]/20">
-                  <td className="px-4 py-3 text-[#b9caca]">{new Date(entry.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-[#dae2fd]">{entry.description || entry.action}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${entry.delta_points >= 0 ? 'text-[#65f98b]' : 'text-[#ffb59a]'}`}>
-                    {entry.delta_points >= 0 ? '+' : ''}{entry.delta_points}
-                  </td>
-                  <td className="px-4 py-3 text-right text-[#dae2fd]">{entry.balance_after}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                    plan.popular ? 'bg-sky-600 text-white' : 'bg-slate-900 text-white'
+                  }`}
+                >
+                  <Icon className="w-[18px] h-[18px]" />
+                </span>
+                <h2 className="text-lg font-bold text-slate-900">{plan.name}</h2>
+              </div>
+
+              <p className="mt-3 text-sm text-slate-500 min-h-[40px]">{plan.blurb}</p>
+
+              <p className="mt-4">
+                <span className="font-display text-4xl font-bold text-slate-900">{plan.price}</span>
+                {plan.priceSuffix && <span className="text-sm text-slate-500">{plan.priceSuffix}</span>}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => onSelectPlan(plan)}
+                disabled={isCurrent}
+                className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  isCurrent
+                    ? 'border border-emerald-300 bg-emerald-50 text-emerald-700 cursor-default'
+                    : plan.popular
+                    ? 'bg-sky-600 text-white hover:bg-sky-700'
+                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {isCurrent ? 'Your current plan' : plan.cta}
+              </button>
+
+              <ul className="mt-6 space-y-2.5">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2.5 text-sm text-slate-600">
+                    <Check className={`w-4 h-4 mt-0.5 shrink-0 ${plan.popular ? 'text-sky-600' : 'text-emerald-600'}`} />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+
+      {requested && (
+        <div className="mx-auto max-w-2xl rounded-2xl border border-sky-200 bg-sky-50 p-5 text-center">
+          <p className="flex items-center justify-center gap-2 text-sm font-semibold text-sky-900">
+            <Mail className="w-4 h-4" />
+            Online payments are launching soon.
+          </p>
+          <p className="mt-1 text-sm text-sky-800">
+            To activate {requested === 'enterprise' ? 'an Enterprise plan' : 'Professional'} today, email{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold underline">
+              {CONTACT_EMAIL}
+            </a>{' '}
+            and we'll enable it on your account.
+          </p>
         </div>
-      </section>
+      )}
+
+      <p className="text-center text-xs text-slate-400">
+        Prices exclude GST. Cancel anytime — your quotes and customer records stay accessible.
+      </p>
     </div>
   );
 };

@@ -1,18 +1,26 @@
 """Points wallet and Stripe billing service helpers."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import PointsWallet, PointsLedgerEntry, StripeCheckoutCredit, PointsPackage
+from app.models.models import PointsWallet, PointsLedgerEntry, StripeCheckoutCredit, PointsPackage, User
 from app.core.config import settings
 
 
 class InsufficientPointsError(ValueError):
     """Raised when a user does not have enough points for an action."""
+
+
+def has_active_subscription(user: User) -> bool:
+    """Pro plan, either perpetual (no expiry) or not yet expired."""
+    if user.plan != "pro":
+        return False
+    return user.plan_expires_at is None or user.plan_expires_at > datetime.utcnow()
 
 
 async def list_points_packages(db: AsyncSession, *, active_only: bool = True) -> list[PointsPackage]:

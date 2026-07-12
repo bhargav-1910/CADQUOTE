@@ -4,10 +4,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   Cloud, Upload, FolderOpen, FileText,
   ChevronRight, Settings, Loader2, AlertCircle, ShieldCheck, Sparkles,
-  Clock, TrendingUp,
+  Clock, TrendingUp, Inbox,
 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
+import { useAuth } from '@/components/AuthProvider';
 import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
 import { createSamplePartFile } from '@/services/samplePart';
 import { StatusPill } from '@/components/ui';
@@ -142,6 +143,8 @@ const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isFreePlan = user?.plan !== 'pro';
 
   // Upload state
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -218,6 +221,15 @@ const HomePage = () => {
     [quotes, now],
   );
   const expiringSoon = expiringQuotes.length;
+
+  const recentResponses = useMemo(
+    () =>
+      quotes
+        .filter((quote) => quote.status === 'accepted' || quote.status === 'declined')
+        .sort((a, b) =>
+          new Date(b.responded_at ?? b.created_at).getTime() - new Date(a.responded_at ?? a.created_at).getTime()),
+    [quotes],
+  );
 
   const weeklyBuckets = useMemo(() => buildWeeklyBuckets(quotes), [quotes]);
 
@@ -322,6 +334,16 @@ const HomePage = () => {
                 </div>
 
                 <p className="text-xs text-slate-500">Single and multi-file uploads both open the same quote builder flow.</p>
+
+                {isFreePlan && (
+                  <p className="text-xs text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+                    Free plan: only the sample part can be quoted.{' '}
+                    <Link to="/billing" className="font-semibold underline">
+                      Upgrade
+                    </Link>{' '}
+                    to quote your own CAD files.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -420,6 +442,62 @@ const HomePage = () => {
             <div className="mt-3">
               <QuoteTrendChart buckets={weeklyBuckets} />
             </div>
+          </section>
+
+          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white ${recentResponses[0]?.status === 'accepted' ? 'bg-emerald-600' : 'bg-slate-900'}`}>
+                <Inbox className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="font-display text-xl text-slate-900">Customer Responses</h2>
+                <p className="text-xs text-slate-500">Quotes your customers accepted or declined via the share link.</p>
+              </div>
+            </div>
+
+            {recentResponses.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+                No responses yet — share a quote link to hear back here.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {recentResponses.slice(0, 4).map((quote) => {
+                  const accepted = quote.status === 'accepted';
+                  return (
+                    <li key={quote.id}>
+                      <Link
+                        to={`/quotes/${quote.id}`}
+                        className={`block rounded-xl border px-3 py-2.5 hover:shadow-sm transition-all ${
+                          accepted
+                            ? 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300'
+                            : 'border-red-200 bg-red-50/50 hover:border-red-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-900 truncate text-sm">{quote.quote_number}</p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {quote.customer_name || 'No customer'} · {formatCurrency(quote.total_price)}
+                            </p>
+                          </div>
+                          <span
+                            className={`ml-3 shrink-0 rounded-full border bg-white px-2 py-0.5 text-[11px] font-semibold ${
+                              accepted ? 'border-emerald-300 text-emerald-700' : 'border-red-300 text-red-700'
+                            }`}
+                          >
+                            {accepted ? 'Accepted' : 'Declined'}
+                            {quote.responded_at ? ` · ${new Date(quote.responded_at).toLocaleDateString('en-IN')}` : ''}
+                          </span>
+                        </div>
+                        {quote.customer_response_note && (
+                          <p className="mt-1.5 text-xs text-slate-600 italic truncate">“{quote.customer_response_note}”</p>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
 
           <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">

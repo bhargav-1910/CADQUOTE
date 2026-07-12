@@ -23,7 +23,7 @@ from app.schemas.schemas import (
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse, CombinedQuoteCreateRequest,
     QuoteResponse, QuoteListResponse, VendorMatchSummary,
     VendorMatchPreviewRequest, VendorMatchPreviewResponse,
-    QuoteEmailRequest, QuoteEmailResponse, QuoteShareResponse,
+    QuoteShareResponse, PublicQuoteRespondRequest,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
@@ -35,10 +35,8 @@ from app.services.quote import (
     get_quote_by_number,
     list_quotes,
     generate_quote_number,
-    update_quote_status,
 )
 from app.services.document import generate_quote_document, ensure_quote_document
-from app.services.email import send_quote_email
 from app.core.config import settings
 from app.services.billing import consume_points, InsufficientPointsError
 
@@ -112,44 +110,6 @@ async def _mark_expired_if_needed(db: AsyncSession, quote: Quote) -> None:
     if quote.status != QuoteStatus.EXPIRED and _effective_quote_status(quote) == QuoteStatus.EXPIRED:
         quote.status = QuoteStatus.EXPIRED
         await db.commit()
-
-
-async def _auto_send_quote_email_if_requested(
-    *,
-    db: AsyncSession,
-    quote: Quote,
-    current_user: User,
-    auto_send_email: bool,
-) -> None:
-    if not auto_send_email:
-        return
-
-    recipient_email = (quote.customer_email or "").strip()
-    if not recipient_email:
-        return
-
-    pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
-
-    try:
-        await consume_points(
-            db,
-            user_id=current_user.id,
-            points=settings.POINTS_COST_SEND_QUOTE_EMAIL,
-            action="send_quote_email",
-            description=f"Sent quote {quote.quote_number} to customer",
-            reference_type="quote",
-            reference_id=str(quote.id),
-        )
-    except InsufficientPointsError:
-        raise HTTPException(status_code=402, detail="Insufficient points to send quote email")
-
-    await send_quote_email(
-        quote=quote,
-        sender=current_user,
-        recipient_email=recipient_email,
-        pdf_path=pdf_path,
-    )
-    await update_quote_status(db, quote.id, QuoteStatus.SENT)
 
 
 def _serialize_pricing_overrides(overrides: Any) -> Optional[Dict[str, Any]]:
@@ -461,18 +421,9 @@ async def create_batch_quotation(
                 notes=request.notes,
             )
             quote = await get_quote(db, current_user.id, quote.id)
-            await _auto_send_quote_email_if_requested(
-                db=db,
-                quote=quote,
-                current_user=current_user,
-                auto_send_email=request.auto_send_email,
-            )
-            quote = await get_quote(db, current_user.id, quote.id)
             created.append(_quote_to_response(quote))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Quote email delivery failed: {str(e)}")
 
     total = sum(D(str(q.total_price)) for q in created)
     return BatchQuoteResponse(quotes=created, total_price=total, quote_count=len(created))
@@ -663,18 +614,6 @@ async def create_combined_quotation(
     await db.commit()
     await db.refresh(quote)
     quote = await get_quote(db, current_user.id, quote.id)
-
-    try:
-        await _auto_send_quote_email_if_requested(
-            db=db,
-            quote=quote,
-            current_user=current_user,
-            auto_send_email=request.auto_send_email,
-        )
-        quote = await get_quote(db, current_user.id, quote.id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Quote email delivery failed: {str(e)}")
-
     return _quote_to_response(quote)
 
 @router.post("/quotes", response_model=QuoteResponse, status_code=201)
@@ -755,18 +694,6 @@ async def create_quotation(
         raise HTTPException(status_code=400, detail=str(e))
     
     quote = await get_quote(db, current_user.id, quote.id)
-
-    try:
-        await _auto_send_quote_email_if_requested(
-            db=db,
-            quote=quote,
-            current_user=current_user,
-            auto_send_email=request.auto_send_email,
-        )
-        quote = await get_quote(db, current_user.id, quote.id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Quote email delivery failed: {str(e)}")
-    
     return _quote_to_response(quote)
 
 
@@ -788,6 +715,8 @@ async def list_quotations(
             status=_effective_quote_status(q).value,
             valid_until=q.valid_until,
             created_at=q.created_at,
+            responded_at=q.responded_at,
+            customer_response_note=q.customer_response_note,
         )
         for q in quotes
     ]
@@ -925,78 +854,31 @@ async def share_quote(
     return QuoteShareResponse(quote_id=quote.id, share_token=quote.share_token)
 
 
-@router.post("/quotes/{quote_id}/email", response_model=QuoteEmailResponse)
-async def email_quote_to_customer(
+@router.post("/quotes/{quote_id}/respond", response_model=QuoteResponse)
+async def record_quote_response(
     quote_id: uuid.UUID,
-    request: QuoteEmailRequest,
+    request: PublicQuoteRespondRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Send the quote PDF to the customer using SMTP."""
+    """Record a customer decision received outside the share link (e.g. the
+    PDF was downloaded and forwarded, and the customer agreed by phone or
+    email). Unlike the public endpoint, expiry does not block this: the owner
+    is recording what actually happened.
+    """
     quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
+    if quote.status in (QuoteStatus.ACCEPTED, QuoteStatus.DECLINED):
+        raise HTTPException(status_code=409, detail="This quote already has a response")
 
-    if _effective_quote_status(quote) == QuoteStatus.EXPIRED:
-        await _mark_expired_if_needed(db, quote)
-        raise HTTPException(
-            status_code=400,
-            detail="This quote has expired. Re-quote the part to get current pricing before sending.",
-        )
+    quote.status = QuoteStatus.ACCEPTED if request.action == "accept" else QuoteStatus.DECLINED
+    quote.customer_response_note = (request.note or "").strip() or None
+    quote.responded_at = datetime.utcnow()
+    await db.commit()
 
-    if not request.mailbox_access_consent:
-        raise HTTPException(
-            status_code=400,
-            detail="Email permission required. Please confirm mailbox access permission before sending.",
-        )
-
-    recipient_email = (quote.customer_email or request.recipient_email or "").strip()
-    if not recipient_email:
-        raise HTTPException(status_code=400, detail="Customer email is required to send quote")
-
-    try:
-        pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}",
-        )
-
-    try:
-        try:
-            await consume_points(
-                db,
-                user_id=current_user.id,
-                points=settings.POINTS_COST_SEND_QUOTE_EMAIL,
-                action="send_quote_email",
-                description=f"Sent quote {quote.quote_number} to customer",
-                reference_type="quote",
-                reference_id=str(quote.id),
-            )
-        except InsufficientPointsError:
-            raise HTTPException(status_code=402, detail="Insufficient points to send quote email")
-
-        await send_quote_email(
-            quote=quote,
-            sender=current_user,
-            recipient_email=recipient_email,
-            pdf_path=pdf_path,
-            subject=request.subject,
-            message=request.message,
-            use_logged_in_sender_identity=request.send_as_logged_in_user,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email delivery failed: {str(e)}")
-
-    await update_quote_status(db, quote.id, QuoteStatus.SENT)
-
-    return QuoteEmailResponse(
-        message="Quote emailed successfully",
-        recipient_email=recipient_email,
-        quote_id=quote.id,
-    )
+    quote = await get_quote(db, current_user.id, quote.id)
+    return _quote_to_response(quote)
 
 
 def _quote_to_response(quote: Quote) -> QuoteResponse:

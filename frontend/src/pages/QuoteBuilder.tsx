@@ -840,7 +840,6 @@ const QuoteBuilder = () => {
         delivery: toOptionalString(rfqCommercialForm.delivery),
         payment_terms: toOptionalString(rfqCommercialForm.paymentTerms),
         notes: config.notes || undefined,
-        auto_send_email: false,
       });
       navigate(`/quotes/${quote.id}`);
     } catch (err) {
@@ -907,7 +906,6 @@ const QuoteBuilder = () => {
         delivery: toOptionalString(rfqCommercialForm.delivery),
         payment_terms: toOptionalString(rfqCommercialForm.paymentTerms),
         notes: notes || undefined,
-        auto_send_email: false,
       });
 
       navigate(`/quotes/${quote.id}`);

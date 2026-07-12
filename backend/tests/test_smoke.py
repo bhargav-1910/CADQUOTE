@@ -244,3 +244,19 @@ def test_development_allows_default_jwt_secret():
         _env_file=None,
     )
     assert settings.ENVIRONMENT == "development"
+
+
+def test_subscription_gate_logic():
+    from datetime import datetime, timedelta
+    from app.models.models import User
+    from app.services.billing import has_active_subscription
+
+    free = User(plan="free")
+    pro = User(plan="pro", plan_expires_at=None)
+    pro_valid = User(plan="pro", plan_expires_at=datetime.utcnow() + timedelta(days=30))
+    pro_lapsed = User(plan="pro", plan_expires_at=datetime.utcnow() - timedelta(days=1))
+
+    assert not has_active_subscription(free)
+    assert has_active_subscription(pro)
+    assert has_active_subscription(pro_valid)
+    assert not has_active_subscription(pro_lapsed)

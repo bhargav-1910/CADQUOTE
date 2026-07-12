@@ -18,7 +18,7 @@ from app.schemas.schemas import (
 from app.services.upload import upload_cad_file, get_cad_file, get_cad_file_content
 from app.services.geometry import process_cad_file, get_geometry_analysis
 from app.services.dfm import analyze_dfm_from_geometry
-from app.services.billing import consume_points, InsufficientPointsError
+from app.services.billing import consume_points, InsufficientPointsError, has_active_subscription
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,22 @@ async def upload_file(
     The file will be validated, stored, and queued for geometry processing.
     """
     cad_file, is_duplicate = await upload_cad_file(db, file, current_user.id)
-    
+
+    # Subscription gate: free-plan users may only work with the sample part.
+    # Upload is the single choke point — everything downstream (pricing,
+    # quoting, sharing) needs an uploaded file, so gating here covers it all.
+    if (
+        not has_active_subscription(current_user)
+        and cad_file.file_hash != settings.SAMPLE_PART_SHA256
+    ):
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "subscription_required: Your free plan includes the sample part only. "
+                "Upgrade to quote your own CAD files."
+            ),
+        )
+
     if is_duplicate:
         return CADFileUploadResponse(
             id=cad_file.id,

@@ -318,7 +318,6 @@ export interface QuoteCreateRequest {
   terms_and_conditions?: string;
   dfm_exceptions?: string;
   notes?: string;
-  auto_send_email?: boolean;
 }
 
 export interface BatchQuoteCreateRequest {
@@ -362,7 +361,6 @@ export interface BatchQuoteCreateRequest {
   terms_and_conditions?: string;
   dfm_exceptions?: string;
   notes?: string;
-  auto_send_email?: boolean;
 }
 
 export interface CombinedQuoteLineItemRequest {
@@ -411,7 +409,6 @@ export interface CombinedQuoteCreateRequest {
   terms_and_conditions?: string;
   dfm_exceptions?: string;
   notes?: string;
-  auto_send_email?: boolean;
 }
 
 export interface BatchQuoteResponse {
@@ -544,6 +541,8 @@ export interface QuoteListItem {
   status: QuoteStatus;
   valid_until: string;
   created_at: string;
+  responded_at: string | null;
+  customer_response_note: string | null;
 }
 
 // App State
@@ -570,6 +569,8 @@ export interface UserProfile {
   phone_number: string | null;
   company_logo_url: string | null;
   brand_color: string | null;
+  plan: 'free' | 'pro';
+  plan_expires_at: string | null;
   created_at: string;
 }
 

@@ -6,7 +6,7 @@ import {
   Link2, Check, XCircle,
 } from 'lucide-react';
 import type { Quote } from '@/types';
-import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote } from '@/services/api';
+import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote, respondToQuote } from '@/services/api';
 import { StatusPill } from '@/components/ui';
 
 interface CombinedFileLine {
@@ -75,6 +75,9 @@ const QuoteDetail = () => {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [hasPreviewed, setHasPreviewed] = useState(false);
+  const [marking, setMarking] = useState<'accept' | 'decline' | null>(null);
+  const [markNote, setMarkNote] = useState('');
+  const [markSaving, setMarkSaving] = useState(false);
   const previewSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -186,6 +189,23 @@ const QuoteDetail = () => {
     }
   };
 
+  const handleMarkResponse = async () => {
+    if (!quote || !marking) return;
+
+    setActionError(null);
+    setMarkSaving(true);
+    try {
+      const updated = await respondToQuote(quote.id, marking, markNote.trim() || undefined);
+      setQuote(updated);
+      setMarking(null);
+      setMarkNote('');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to record the response');
+    } finally {
+      setMarkSaving(false);
+    }
+  };
+
   const handlePreviewQuote = async () => {
     if (!quote) return;
 
@@ -256,7 +276,11 @@ const QuoteDetail = () => {
     {
       key: 'shared',
       label: 'Shared',
-      detail: isShared ? 'Customer link created' : 'Not shared yet',
+      detail: isShared
+        ? quote.share_token
+          ? 'Customer link created'
+          : 'Delivered outside the app'
+        : 'Not shared yet',
       done: isShared,
     },
     {
@@ -736,14 +760,83 @@ const QuoteDetail = () => {
                   </p>
                 )}
               </div>
-            ) : shareUrl ? (
-              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
-                <p className="text-sm font-medium text-gray-700">Awaiting customer response</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Their decision will appear here once they respond.
-                </p>
+            ) : (
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-2.5">
+                {shareUrl && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Awaiting customer response</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Their decision will appear here once they respond.
+                    </p>
+                  </div>
+                )}
+
+                {marking ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-800">
+                      Mark this quote as {marking === 'accept' ? 'accepted' : 'declined'}?
+                    </p>
+                    <textarea
+                      value={markNote}
+                      onChange={(e) => setMarkNote(e.target.value)}
+                      rows={2}
+                      placeholder="Optional note — e.g. “Confirmed on phone, PO to follow”"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleMarkResponse}
+                        disabled={markSaving}
+                        className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 ${
+                          marking === 'accept' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'
+                        }`}
+                      >
+                        {markSaving ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : marking === 'accept' ? (
+                          <CheckCircle className="w-4 h-4" />
+                        ) : (
+                          <XCircle className="w-4 h-4" />
+                        )}
+                        Confirm {marking === 'accept' ? 'accepted' : 'declined'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMarking(null);
+                          setMarkNote('');
+                        }}
+                        disabled={markSaving}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-xs text-gray-500">
+                      Sent the PDF yourself? Record the customer's decision here.
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={() => setMarking('accept')}
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Mark as accepted
+                      </button>
+                      <button
+                        onClick={() => setMarking('decline')}
+                        className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        Declined
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null}
+            )}
           </div>
 
           {/* Actions */}

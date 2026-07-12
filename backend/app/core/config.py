@@ -62,15 +62,15 @@ class Settings(BaseSettings):
     # Quote settings
     QUOTE_VALIDITY_DAYS: int = 14
 
-    # Email settings
-    SMTP_HOST: Optional[str] = None
-    SMTP_PORT: int = 587
-    SMTP_USERNAME: Optional[str] = None
-    SMTP_PASSWORD: Optional[str] = None
-    SMTP_USE_TLS: bool = True
-    SMTP_FROM_EMAIL: str = "quotes@cncplatform.com"
-    SMTP_FROM_NAME: str = "CNC Quote Platform"
+    # CAD analysis worker processes (CPU/RAM heavy; each warmed worker
+    # holds trimesh+OpenCASCADE in memory, ~200-300MB).
+    GEOMETRY_WORKERS: int = 2
+
     FRONTEND_BASE_URL: str = "http://localhost"
+
+    # Subscription gate: free-plan users may only upload/quote the built-in
+    # sample part, identified by the sha256 of its deterministic STL bytes.
+    SAMPLE_PART_SHA256: str = "d654f3539c0d8a03aa18db6e0ab2885a1f29178f0154dff5d6e191ce92c93f03"
 
     # Billing and points
     # Master switch: when False, no action consumes points (dev/testing mode).
@@ -81,7 +81,6 @@ class Settings(BaseSettings):
     POINTS_COST_UPLOAD_FILE: int = 2
     POINTS_COST_TRIGGER_PROCESSING: int = 3
     POINTS_COST_CREATE_QUOTE: int = 8
-    POINTS_COST_SEND_QUOTE_EMAIL: int = 2
     POINTS_STARTING_BONUS: int = 200
 
     # Authentication

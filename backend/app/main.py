@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,6 +59,8 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down...")
+    from app.services.geometry import shutdown_pool
+    shutdown_pool()
     await cache.disconnect()
     await close_db()
     logger.info("Shutdown complete")
@@ -112,8 +115,12 @@ app.include_router(quotes.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 
-# Serve user-uploaded assets such as company logos and generated PDFs
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+# Serve company logos only. Never mount the whole upload dir: it also holds
+# quote PDFs and customer CAD files, which must stay behind authenticated
+# download endpoints.
+_logo_dir = Path(settings.UPLOAD_DIR) / "company_logos"
+_logo_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads/company_logos", StaticFiles(directory=_logo_dir), name="company_logos")
 
 
 @app.get("/")

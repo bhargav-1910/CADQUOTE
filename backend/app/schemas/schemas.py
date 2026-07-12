@@ -539,7 +539,6 @@ class QuoteCreateRequest(BaseModel):
     
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
-    auto_send_email: bool = False
 
 
 class BatchQuoteCreateRequest(BaseModel):
@@ -586,7 +585,6 @@ class BatchQuoteCreateRequest(BaseModel):
     dfm_exceptions: Optional[str] = None
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
-    auto_send_email: bool = False
 
 
 class CombinedQuoteLineItemRequest(BaseModel):
@@ -638,7 +636,6 @@ class CombinedQuoteCreateRequest(BaseModel):
     dfm_exceptions: Optional[str] = None
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
-    auto_send_email: bool = False
 
 
 class QuoteResponse(BaseSchema):
@@ -729,6 +726,8 @@ class QuoteListResponse(BaseSchema):
     status: str
     valid_until: datetime
     created_at: datetime
+    responded_at: Optional[datetime] = None
+    customer_response_note: Optional[str] = None
 
 
 class BatchQuoteResponse(BaseModel):
@@ -736,28 +735,6 @@ class BatchQuoteResponse(BaseModel):
     quotes: List[QuoteResponse]
     total_price: Decimal
     quote_count: int
-
-
-class QuoteEmailRequest(BaseModel):
-    """Request payload for emailing a quote to a customer."""
-    recipient_email: Optional[str] = Field(None, max_length=200)
-    subject: Optional[str] = Field(None, max_length=200)
-    message: Optional[str] = None
-    mailbox_access_consent: bool = Field(
-        default=False,
-        description="Explicit consent from logged-in user to use their email identity for this send action.",
-    )
-    send_as_logged_in_user: bool = Field(
-        default=True,
-        description="When true, use logged-in user email in sender identity headers when provider allows.",
-    )
-
-
-class QuoteEmailResponse(BaseModel):
-    """Response payload for quote email dispatch."""
-    message: str
-    recipient_email: str
-    quote_id: UUID
 
 
 class QuoteShareResponse(BaseModel):
@@ -886,6 +863,8 @@ class UserProfileResponse(BaseSchema):
     phone_number: Optional[str] = None
     company_logo_url: Optional[str] = None
     brand_color: Optional[str] = None
+    plan: str = "free"
+    plan_expires_at: Optional[datetime] = None
     created_at: datetime
 
 

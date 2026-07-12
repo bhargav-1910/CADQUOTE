@@ -15,6 +15,8 @@ import {
   Moon,
   Sun,
   Search,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import ProfileEditModal from '@/components/ProfileEditModal';
@@ -48,7 +50,17 @@ const Layout = ({ children }: LayoutProps) => {
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const isFreePlan = user?.plan !== 'pro';
+
+  // The API client fires this whenever the backend answers 402 to a gated
+  // action — one global prompt instead of per-page handling.
+  useEffect(() => {
+    const onSubscriptionRequired = () => setUpgradeOpen(true);
+    window.addEventListener('billing:subscription-required', onSubscriptionRequired);
+    return () => window.removeEventListener('billing:subscription-required', onSubscriptionRequired);
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -204,6 +216,20 @@ const Layout = ({ children }: LayoutProps) => {
         </nav>
 
         <div className="px-3 pb-4 space-y-1 border-t border-slate-800/80 pt-3">
+          {isFreePlan && (
+            <Link
+              to="/billing"
+              className="block mb-2 rounded-xl border border-sky-500/30 bg-sky-600/10 px-3 py-2.5 hover:bg-sky-600/20 transition-colors"
+            >
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-300">
+                <Sparkles className="w-3.5 h-3.5" />
+                Free plan
+              </p>
+              <p className="mt-0.5 text-[11px] leading-snug text-slate-400">
+                Sample part only. Upgrade to quote your own CAD files.
+              </p>
+            </Link>
+          )}
           <button
             type="button"
             onClick={toggleTheme}
@@ -271,6 +297,48 @@ const Layout = ({ children }: LayoutProps) => {
         open={profileSettingsOpen}
         onClose={() => setProfileSettingsOpen(false)}
       />
+
+      {/* Subscription-required prompt (triggered by any gated 402) */}
+      {upgradeOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4"
+          onClick={() => setUpgradeOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Subscription required"
+          >
+            <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center">
+              <Lock className="w-6 h-6" />
+            </div>
+            <h2 className="mt-4 text-lg font-bold text-slate-900">Subscription required</h2>
+            <p className="mt-1.5 text-sm text-slate-600">
+              Your free plan includes the sample part so you can try the full quoting flow.
+              To upload and quote your own CAD files, upgrade to a plan.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <Link
+                to="/billing"
+                onClick={() => setUpgradeOpen(false)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                View plans
+              </Link>
+              <button
+                type="button"
+                onClick={() => setUpgradeOpen(false)}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onToggleTheme={toggleTheme} />
 

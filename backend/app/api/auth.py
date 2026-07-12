@@ -53,6 +53,8 @@ def _profile_from_user(user: User) -> UserProfileResponse:
         phone_number=user.phone_number,
         company_logo_url=_build_logo_url(user.company_logo_path),
         brand_color=user.brand_color,
+        plan=user.plan,
+        plan_expires_at=user.plan_expires_at,
         created_at=user.created_at,
     )
 

@@ -176,6 +176,8 @@ async def list_customer_quotes(
             status=q.status.value if hasattr(q.status, "value") else str(q.status),
             valid_until=q.valid_until,
             created_at=q.created_at,
+            responded_at=q.responded_at,
+            customer_response_note=q.customer_response_note,
         )
         for q in quotes
     ]

@@ -76,6 +76,14 @@ api.interceptors.response.use(
       url.includes('/auth/refresh') ||
       url.includes('/auth/logout');
 
+    // Subscription gate hit: let the app show the upgrade prompt globally.
+    if (status === 402) {
+      const detail = error.response?.data?.detail;
+      if (typeof detail === 'string' && detail.startsWith('subscription_required')) {
+        window.dispatchEvent(new CustomEvent('billing:subscription-required'));
+      }
+    }
+
     if (status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
       try {
         originalRequest._retry = true;
@@ -558,6 +566,23 @@ export const fetchQuotePDFPreviewBlob = async (quoteId: string): Promise<Blob> =
 export const shareQuote = async (quoteId: string): Promise<QuoteShareResponse> => {
   try {
     const response = await api.post<QuoteShareResponse>(`/quotes/${quoteId}/share`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+/** Owner-side: record a decision received outside the share link (forwarded PDF, phone call). */
+export const respondToQuote = async (
+  quoteId: string,
+  action: 'accept' | 'decline',
+  note?: string,
+): Promise<Quote> => {
+  try {
+    const response = await api.post<Quote>(`/quotes/${quoteId}/respond`, {
+      action,
+      note: note || null,
+    });
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

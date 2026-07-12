@@ -83,6 +83,11 @@ class User(Base):
     refresh_token_hash = Column(String(128), nullable=True)
     refresh_token_expires_at = Column(DateTime, nullable=True)
 
+    # Subscription: 'free' users may only quote the built-in sample part;
+    # 'pro' unlocks everything. plan_expires_at=NULL means no expiry.
+    plan = Column(String(20), nullable=False, default="free", server_default="free")
+    plan_expires_at = Column(DateTime, nullable=True)
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
