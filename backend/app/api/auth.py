@@ -53,6 +53,7 @@ def _profile_from_user(user: User) -> UserProfileResponse:
         phone_number=user.phone_number,
         company_logo_url=_build_logo_url(user.company_logo_path),
         brand_color=user.brand_color,
+        gstin=user.gstin,
         plan=user.plan,
         plan_expires_at=user.plan_expires_at,
         created_at=user.created_at,
@@ -114,7 +115,9 @@ async def register(
     email: str = Form(...),
     password: str = Form(...),
     company_name: str = Form(...),
-    company_address: str = Form(...),
+    # Address and logo are collected later in Profile Settings — requiring
+    # them at signup measurably hurts completion.
+    company_address: str = Form(""),
     phone_number: str | None = Form(None),
     logo: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
@@ -244,6 +247,7 @@ async def update_me(
     company_address: str | None = Form(None),
     phone_number: str | None = Form(None),
     brand_color: str | None = Form(None),
+    gstin: str | None = Form(None),
     logo: UploadFile | None = File(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -278,6 +282,15 @@ async def update_me(
             if not re.fullmatch(r"#[0-9a-f]{6}", value):
                 raise HTTPException(status_code=400, detail="Brand color must be a hex value like #0284c7")
             current_user.brand_color = value
+
+    if gstin is not None:
+        value = gstin.strip().upper()
+        if not value:
+            current_user.gstin = None
+        else:
+            if not re.fullmatch(r"[0-9A-Z]{15}", value):
+                raise HTTPException(status_code=400, detail="GSTIN must be 15 characters (digits and capital letters)")
+            current_user.gstin = value
 
     logo_relative_path = await _store_logo_file(logo)
     if logo_relative_path is not None:

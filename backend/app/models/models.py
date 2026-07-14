@@ -78,6 +78,7 @@ class User(Base):
     company_name = Column(String(200), nullable=False)
     company_address = Column(Text, nullable=False)
     phone_number = Column(String(30), nullable=True)
+    gstin = Column(String(20), nullable=True)
     company_logo_path = Column(String(500), nullable=True)
     brand_color = Column(String(7), nullable=True)  # hex accent, e.g. #0284c7
     refresh_token_hash = Column(String(128), nullable=True)

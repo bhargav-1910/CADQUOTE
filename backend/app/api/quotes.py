@@ -710,6 +710,7 @@ async def list_quotations(
         QuoteListResponse(
             id=q.id,
             quote_number=q.quote_number,
+            cad_file_id=q.cad_file_id,
             customer_name=q.customer_name,
             total_price=q.total_price,
             status=_effective_quote_status(q).value,
@@ -852,6 +853,27 @@ async def share_quote(
         await db.refresh(quote)
 
     return QuoteShareResponse(quote_id=quote.id, share_token=quote.share_token)
+
+
+@router.delete("/quotes/{quote_id}", status_code=204)
+async def delete_quotation(
+    quote_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a quote. Quotes with a customer response are business records
+    and cannot be deleted."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    if quote.status in (QuoteStatus.ACCEPTED, QuoteStatus.DECLINED):
+        raise HTTPException(
+            status_code=409,
+            detail="This quote has a customer response and can't be deleted",
+        )
+
+    await db.delete(quote)
+    await db.commit()
 
 
 @router.post("/quotes/{quote_id}/respond", response_model=QuoteResponse)

@@ -13,6 +13,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   const [companyName, setCompanyName] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [gstin, setGstin] = useState('');
   const [brandColor, setBrandColor] = useState('#0284c7');
   const [logo, setLogo] = useState<File | undefined>(undefined);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
@@ -27,6 +28,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
     setCompanyName(user.company_name ?? '');
     setCompanyAddress(user.company_address ?? '');
     setPhoneNumber(user.phone_number ?? '');
+    setGstin(user.gstin ?? '');
     setBrandColor(user.brand_color ?? '#0284c7');
     setLogo(undefined);
     setLogoPreviewUrl(null);
@@ -62,6 +64,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
         company_name: companyName.trim(),
         company_address: companyAddress.trim(),
         phone_number: phoneNumber.trim() || undefined,
+        gstin: gstin.trim().toUpperCase() || undefined,
         brand_color: brandColor,
         logo,
       });
@@ -145,6 +148,21 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="+91 98765 43210"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                />
+              </label>
+
+              <label className="text-sm text-slate-700 block">
+                <span className="font-medium">GSTIN</span>
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Shown on quote PDFs; drives CGST/SGST vs IGST breakup when the customer's GSTIN is known.
+                </span>
+                <input
+                  type="text"
+                  value={gstin}
+                  onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                  placeholder="27AAPCA1234F1Z5"
+                  maxLength={15}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-mono focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
                 />
               </label>
 

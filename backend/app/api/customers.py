@@ -171,6 +171,7 @@ async def list_customer_quotes(
         QuoteListResponse(
             id=q.id,
             quote_number=q.quote_number,
+            cad_file_id=q.cad_file_id,
             customer_name=q.customer_name,
             total_price=q.total_price,
             status=q.status.value if hasattr(q.status, "value") else str(q.status),

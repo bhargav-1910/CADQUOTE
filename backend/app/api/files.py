@@ -279,6 +279,30 @@ async def download_file(
     )
 
 
+@router.get("/{file_id}/thumbnail")
+async def get_file_thumbnail(
+    file_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Small rendered PNG of the part, generated during geometry analysis."""
+    from pathlib import Path
+
+    cad_file = await get_cad_file(db, file_id, current_user.id)
+    if not cad_file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    thumb = Path(settings.UPLOAD_DIR) / "thumbnails" / f"{cad_file.file_hash}.png"
+    if not thumb.exists():
+        raise HTTPException(status_code=404, detail="No thumbnail for this file")
+
+    return Response(
+        content=thumb.read_bytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
 @router.get("/{file_id}/preview")
 async def preview_file(
     file_id: uuid.UUID,

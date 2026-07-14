@@ -260,3 +260,20 @@ def test_subscription_gate_logic():
     assert has_active_subscription(pro)
     assert has_active_subscription(pro_valid)
     assert not has_active_subscription(pro_lapsed)
+
+
+def test_gst_breakup():
+    from app.services.document import gst_breakup
+
+    intra = gst_breakup("18%", 1000.0, "27AAPCA1234F1Z5", "27BBBCB5678G2Z9")
+    assert [label for label, _ in intra["lines"]] == ["CGST (9%)", "SGST (9%)"]
+    assert intra["tax"] == 180.0
+
+    inter = gst_breakup("GST 18", 1000.0, "27AAPCA1234F1Z5", "29XYZAB1234C1Z1")
+    assert inter["lines"] == [("IGST (18%)", 180.0)]
+
+    flat = gst_breakup("12", 500.0, None, None)
+    assert flat["lines"] == [("GST (12%)", 60.0)]
+
+    assert gst_breakup("As applicable", 1000.0, "27X", "27Y") is None
+    assert gst_breakup(None, 1000.0, None, None) is None

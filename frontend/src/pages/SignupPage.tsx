@@ -1,14 +1,24 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Box, Building2 } from 'lucide-react';
+import { ArrowRight, Box, Building2, Check, Circle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
-import { Button, Field, Input, PasswordInput, Textarea } from '@/components/ui';
+import { Button, Field, Input, PasswordInput } from '@/components/ui';
 
 const blueprintGrid = {
   backgroundImage:
     'linear-gradient(to right, rgba(143,174,245,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(143,174,245,0.05) 1px, transparent 1px)',
   backgroundSize: '36px 36px',
 };
+
+// Live password rules — shown as a checklist that ticks while typing, so the
+// policy is never a surprise at submit time.
+const PASSWORD_RULES: Array<{ label: string; test: (value: string) => boolean }> = [
+  { label: 'At least 10 characters', test: (v) => v.length >= 10 },
+  { label: 'An uppercase letter', test: (v) => /[A-Z]/.test(v) },
+  { label: 'A lowercase letter', test: (v) => /[a-z]/.test(v) },
+  { label: 'A number', test: (v) => /\d/.test(v) },
+  { label: 'A special character', test: (v) => /[^A-Za-z0-9]/.test(v) },
+];
 
 const SignupPage = () => {
   const { signup } = useAuth();
@@ -18,33 +28,18 @@ const SignupPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [companyAddress, setCompanyAddress] = useState('');
-  const [logo, setLogo] = useState<File | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isStrongPassword = (value: string): boolean => {
-    const byteLength = new TextEncoder().encode(value).length;
-    return (
-      value.length >= 10
-      && byteLength <= 72
-      && /[A-Z]/.test(value)
-      && /[a-z]/.test(value)
-      && /\d/.test(value)
-      && /[^A-Za-z0-9]/.test(value)
-    );
-  };
+  const passwordValid =
+    PASSWORD_RULES.every((rule) => rule.test(password)) &&
+    new TextEncoder().encode(password).length <= 72;
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!passwordValid) return;
     setLoading(true);
     setError(null);
-
-    if (!isStrongPassword(password)) {
-      setLoading(false);
-      setError('Password must be 10-72 bytes and include uppercase, lowercase, number, and special character.');
-      return;
-    }
 
     try {
       await signup({
@@ -52,10 +47,10 @@ const SignupPage = () => {
         email,
         password,
         company_name: companyName,
-        company_address: companyAddress,
-        logo,
       });
-      navigate('/login', { replace: true, state: { justSignedUp: true, email } });
+      // signup() stores the returned tokens — go straight to the workspace,
+      // where the profile prompt and onboarding checklist take over.
+      navigate('/workspace', { replace: true, state: { justSignedUp: true } });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
@@ -130,11 +125,7 @@ const SignupPage = () => {
             </Field>
           </div>
 
-          <Field
-            label="Password"
-            required
-            helper="Use 10-72 bytes with uppercase, lowercase, number, and special symbol."
-          >
+          <Field label="Password" required>
             {(props) => (
               <PasswordInput
                 {...props}
@@ -147,40 +138,36 @@ const SignupPage = () => {
             )}
           </Field>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Company name" required>
-              {(props) => (
-                <Input
-                  {...props}
-                  type="text"
-                  autoComplete="organization"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  required
-                />
-              )}
-            </Field>
-            <Field label="Company logo (optional)">
-              {(props) => (
-                <Input
-                  {...props}
-                  type="file"
-                  accept=".png,.jpg,.jpeg,.svg,.webp"
-                  onChange={(e) => setLogo(e.target.files?.[0])}
-                  className="file:mr-2 file:rounded-md file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-slate-700"
-                />
-              )}
-            </Field>
-          </div>
+          {password.length > 0 && !passwordValid && (
+            <ul className="grid grid-cols-1 gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 sm:grid-cols-2">
+              {PASSWORD_RULES.map(({ label, test }) => {
+                const met = test(password);
+                return (
+                  <li
+                    key={label}
+                    className={`flex items-center gap-1.5 text-xs ${met ? 'text-emerald-700' : 'text-slate-500'}`}
+                  >
+                    {met ? <Check className="h-3.5 w-3.5" /> : <Circle className="h-3 w-3 text-slate-300" />}
+                    {label}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
-          <Field label="Company address" required>
+          <Field
+            label="Company name"
+            required
+            helper="Address, logo, and GSTIN can be added later in Profile Settings."
+          >
             {(props) => (
-              <Textarea
+              <Input
                 {...props}
-                value={companyAddress}
-                onChange={(e) => setCompanyAddress(e.target.value)}
+                type="text"
+                autoComplete="organization"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
                 required
-                rows={3}
               />
             )}
           </Field>

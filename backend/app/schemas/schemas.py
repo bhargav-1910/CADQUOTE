@@ -721,6 +721,7 @@ class QuoteListResponse(BaseSchema):
     """Simplified quote list item."""
     id: UUID
     quote_number: str
+    cad_file_id: Optional[UUID] = None
     customer_name: Optional[str]
     total_price: Decimal
     status: str
@@ -863,6 +864,7 @@ class UserProfileResponse(BaseSchema):
     phone_number: Optional[str] = None
     company_logo_url: Optional[str] = None
     brand_color: Optional[str] = None
+    gstin: Optional[str] = None
     plan: str = "free"
     plan_expires_at: Optional[datetime] = None
     created_at: datetime

@@ -358,7 +358,7 @@ export const signupUser = async (payload: SignupRequest): Promise<AuthTokenRespo
     formData.append('email', payload.email);
     formData.append('password', payload.password);
     formData.append('company_name', payload.company_name);
-    formData.append('company_address', payload.company_address);
+    formData.append('company_address', payload.company_address ?? '');
     if (payload.logo) {
       formData.append('logo', payload.logo);
     }
@@ -388,6 +388,7 @@ export const updateCurrentUser = async (payload: UpdateProfileRequest): Promise<
     formData.append('company_name', payload.company_name);
     formData.append('company_address', payload.company_address);
     formData.append('phone_number', payload.phone_number ?? '');
+    formData.append('gstin', payload.gstin ?? '');
     if (payload.brand_color !== undefined) {
       formData.append('brand_color', payload.brand_color);
     }
@@ -510,6 +511,19 @@ export const getQuoteByNumber = async (quoteNumber: string): Promise<Quote> => {
   } catch (error) {
     return handleError(error as AxiosError);
   }
+};
+
+export const deleteQuote = async (quoteId: string): Promise<void> => {
+  try {
+    await api.delete(`/quotes/${quoteId}`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const fetchFileThumbnailBlob = async (fileId: string): Promise<Blob> => {
+  const response = await api.get(`/files/${fileId}/thumbnail`, { responseType: 'blob' });
+  return response.data as Blob;
 };
 
 export const listQuotes = async (skip = 0, limit = 50): Promise<QuoteListItem[]> => {

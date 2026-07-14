@@ -21,7 +21,7 @@ import type {
   QuoteConfiguration,
   ToleranceTier,
 } from '@/types';
-import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile } from '@/services/api';
+import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile, deleteQuote } from '@/services/api';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 import { analyzeDFM } from '@/services/dfm';
@@ -311,6 +311,16 @@ const QuoteBuilder = () => {
   const [processRouting, setProcessRouting] = useState<ProcessRoutingOperation[]>([{ ...emptyRoutingRow }]);
   const [showProcessRouting, setShowProcessRouting] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [editOriginalStatus, setEditOriginalStatus] = useState<string | null>(null);
+
+  // Editing an unanswered quote REPLACES it: create the new one, then remove
+  // the original so My Quotes doesn't collect a stale row per regenerate.
+  // Sent/responded quotes are kept — they're already with the customer.
+  const replaceEditedQuote = async () => {
+    if (editQuoteId && (editOriginalStatus === 'draft' || editOriginalStatus === 'generated')) {
+      await deleteQuote(editQuoteId).catch(() => {});
+    }
+  };
   const [step, setStep] = useState<'upload' | 'configure'>(
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
   );
@@ -367,6 +377,7 @@ const QuoteBuilder = () => {
       setError(null);
       try {
         const existingQuote = await getQuote(editQuoteId);
+        setEditOriginalStatus(existingQuote.status);
         const combinedEditItems = parseCombinedEditItems(existingQuote.notes);
 
         if (combinedEditItems.length > 1) {
@@ -841,6 +852,7 @@ const QuoteBuilder = () => {
         payment_terms: toOptionalString(rfqCommercialForm.paymentTerms),
         notes: config.notes || undefined,
       });
+      await replaceEditedQuote();
       navigate(`/quotes/${quote.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create quote');
@@ -908,6 +920,7 @@ const QuoteBuilder = () => {
         notes: notes || undefined,
       });
 
+      await replaceEditedQuote();
       navigate(`/quotes/${quote.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create quote');

@@ -2,13 +2,14 @@
 import { useDropzone } from 'react-dropzone';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Cloud, Upload, FolderOpen, FileText,
+  Cloud, Upload, FolderOpen,
   ChevronRight, Settings, Loader2, AlertCircle, ShieldCheck, Sparkles,
-  Clock, TrendingUp, Inbox,
+  Clock, TrendingUp, Inbox, CheckCircle2, Circle, X,
 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
 import { useAuth } from '@/components/AuthProvider';
+import PartThumbnail from '@/components/PartThumbnail';
 import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
 import { createSamplePartFile } from '@/services/samplePart';
 import { StatusPill } from '@/components/ui';
@@ -141,10 +142,20 @@ const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
   );
 };
 
+const ONBOARDING_DISMISSED_KEY = 'fq-onboarding-dismissed';
+
 const HomePage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isFreePlan = user?.plan !== 'pro';
+  const [onboardingDismissed, setOnboardingDismissed] = useState(
+    () => localStorage.getItem(ONBOARDING_DISMISSED_KEY) === '1',
+  );
+
+  const dismissOnboarding = () => {
+    localStorage.setItem(ONBOARDING_DISMISSED_KEY, '1');
+    setOnboardingDismissed(true);
+  };
 
   // Upload state
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -350,6 +361,103 @@ const HomePage = () => {
         </div>
       </section>
 
+      {/* Profile completion nudge — until the company address is filled the
+          PDFs ship with a placeholder address */}
+      {user && !user.company_address?.trim() && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 animate-fade-up">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Complete your company profile</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Your quote PDFs currently show a placeholder address. Add your address, logo, and GSTIN so
+                customers see your letterhead.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event('profile:open'))}
+            className="shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
+          >
+            Complete profile
+          </button>
+        </section>
+      )}
+
+      {/* Onboarding checklist — until the user has been through the full loop once */}
+      {!quotesLoading && !onboardingDismissed && respondedCount === 0 && (
+        <section className="surface-strong rounded-2xl border border-slate-200 p-5 animate-fade-up">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg text-slate-900">Get to your first won quote</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Three steps to see the whole flow — takes about two minutes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={dismissOnboarding}
+              aria-label="Dismiss checklist"
+              className="text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                label: 'Create your first quote',
+                detail: 'Use the sample part — no CAD file needed.',
+                done: totalParts > 0,
+                action: totalParts === 0 ? () => onDrop([createSamplePartFile()]) : undefined,
+                actionLabel: 'Quote sample part',
+              },
+              {
+                label: 'Share it with a customer',
+                detail: 'Open a quote and copy its customer link.',
+                done: sentCount + respondedCount > 0,
+                action: totalParts > 0 && sentCount + respondedCount === 0 ? () => navigate('/quotes') : undefined,
+                actionLabel: 'Open my quotes',
+              },
+              {
+                label: 'Get a response',
+                detail: 'The customer accepts or declines right on the link.',
+                done: respondedCount > 0,
+              },
+            ].map((step, index) => (
+              <div
+                key={step.label}
+                className={`rounded-xl border p-3.5 ${
+                  step.done ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  {step.done ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Circle className="w-4 h-4 text-slate-300 shrink-0" />
+                  )}
+                  {index + 1}. {step.label}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">{step.detail}</p>
+                {step.action && (
+                  <button
+                    type="button"
+                    onClick={step.action}
+                    disabled={uploading}
+                    className="mt-2.5 text-xs font-semibold text-sky-700 hover:text-sky-900 underline disabled:opacity-50"
+                  >
+                    {step.actionLabel}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {uploadError && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4 animate-fade-up">
           <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
@@ -407,9 +515,7 @@ const HomePage = () => {
                     style={{ animationDelay: `${index * 60}ms` }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
-                        <FileText className="w-4 h-4" />
-                      </div>
+                      <PartThumbnail fileId={quote.cad_file_id} className="w-8 h-8" />
                       <div className="min-w-0">
                         <p className="font-medium text-slate-900 truncate">{quote.quote_number}</p>
                         <p className="text-xs text-slate-500">{new Date(quote.created_at).toLocaleDateString('en-IN')}</p>

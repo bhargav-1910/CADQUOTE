@@ -1,6 +1,7 @@
 """PDF quotation document generation service."""
 import logging
 import os
+import re
 import uuid
 from datetime import datetime
 from html import escape
@@ -81,6 +82,46 @@ def inr_in_words(amount: float) -> str:
     if paise:
         result += f" and {_two_digits_words(paise)} Paise"
     return result + " Only"
+
+
+def gst_breakup(
+    gst_text: Optional[str],
+    subtotal: float,
+    seller_gstin: Optional[str],
+    buyer_gstin: Optional[str],
+) -> Optional[dict]:
+    """Derive Indian GST tax lines from the quote's GST note.
+
+    Rate is parsed from free text like "18%" / "GST 18". State codes are the
+    first two GSTIN digits: same state -> CGST+SGST split, different ->
+    IGST. With only a rate (no usable GSTINs) a flat GST line is shown.
+    Returns None when no rate can be parsed (PDF falls back to
+    "As applicable", the pre-GST-breakup behavior).
+    """
+    match = re.search(r"(\d+(?:\.\d+)?)", gst_text or "")
+    if not match:
+        return None
+    rate = float(match.group(1))
+    if not 0 < rate <= 50:
+        return None
+
+    total_tax = round(subtotal * rate / 100, 2)
+    seller_state = (seller_gstin or "").strip()[:2]
+    buyer_state = (buyer_gstin or "").strip()[:2]
+
+    if seller_state.isdigit() and buyer_state.isdigit():
+        if seller_state == buyer_state:
+            half = round(total_tax / 2, 2)
+            lines = [
+                (f"CGST ({rate / 2:g}%)", half),
+                (f"SGST ({rate / 2:g}%)", round(total_tax - half, 2)),
+            ]
+        else:
+            lines = [(f"IGST ({rate:g}%)", total_tax)]
+    else:
+        lines = [(f"GST ({rate:g}%)", total_tax)]
+
+    return {"rate": rate, "tax": total_tax, "lines": lines}
 
 
 class PDFGenerator:
@@ -350,7 +391,13 @@ class PDFGenerator:
 
         subtotal = float(quote.total_price)
         gst_display = quote.gst or "As applicable"
-        grand_total = subtotal
+        breakup = (issuer_profile or {}).get("gst_breakup")
+        if breakup:
+            tax_rows = [[label, ":", f"{amount:,.2f}"] for label, amount in breakup["lines"]]
+            grand_total = round(subtotal + breakup["tax"], 2)
+        else:
+            tax_rows = [[f"GST ({gst_display})", ":", "Included/As applicable"]]
+            grand_total = subtotal
 
         lower_left = Paragraph(
             f"<b>Amount in Words</b><br/><i>{escape(inr_in_words(grand_total))}</i>",
@@ -358,7 +405,7 @@ class PDFGenerator:
         )
         totals_rows = [
             ["Sub Total", ":", f"{subtotal:,.2f}"],
-            [f"GST ({gst_display})", ":", "Included/As applicable"],
+            *tax_rows,
             ["Total Amount", ":", f"{grand_total:,.2f}"],
         ]
         totals_table = Table(totals_rows, colWidths=[42 * mm, 5 * mm, 28 * mm])
@@ -516,7 +563,19 @@ class PDFGenerator:
 
         subtotal = float(quote.total_price)
         gst_display = quote.gst or "As applicable"
-        grand_total = subtotal
+        breakup = (issuer_profile or {}).get("gst_breakup")
+        if breakup:
+            tax_rows_html = "".join(
+                f'<tr class="sub-row"><td class="lbl">{escape(label)}</td><td class="amt">{amount:,.2f}</td></tr>'
+                for label, amount in breakup["lines"]
+            )
+            grand_total = round(subtotal + breakup["tax"], 2)
+        else:
+            tax_rows_html = (
+                f'<tr class="sub-row"><td class="lbl">GST ({escape(gst_display)})</td>'
+                '<td class="amt">As applicable</td></tr>'
+            )
+            grand_total = subtotal
 
         subject_line = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quotation for CNC machined components"
         client_lines = [
@@ -545,7 +604,14 @@ class PDFGenerator:
         context = {
             "accent": brand_accent,
             "company_name": escape((issuer_profile or {}).get("company_name") or "CNC Quote Platform"),
-            "company_address": escape((issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345").replace("\n", "<br>"),
+            "company_address": (
+                escape((issuer_profile or {}).get("company_address") or "123 Manufacturing Way\nIndustrial City, IC 12345").replace("\n", "<br>")
+                + (
+                    f"<br>GSTIN: {escape((issuer_profile or {}).get('gstin'))}"
+                    if (issuer_profile or {}).get("gstin")
+                    else ""
+                )
+            ),
             "company_phone": escape((issuer_profile or {}).get("company_phone") or "N/A"),
             "company_email": escape((issuer_profile or {}).get("company_email") or "quotes@cncplatform.com"),
             "company_logo_html": logo_html,
@@ -561,6 +627,7 @@ class PDFGenerator:
             "line_items_html": line_items_html,
             "subtotal": subtotal,
             "gst_display": escape(gst_display),
+            "tax_rows_html": tax_rows_html,
             "grand_total": grand_total,
             "amount_in_words": escape(inr_in_words(grand_total)),
             "delivery": escape(quote.delivery or "Not specified"),
@@ -882,7 +949,7 @@ class PDFGenerator:
             <td style="width:45%;">
                 <table class="totals">
                     <tr class="sub-row"><td class="lbl">Subtotal</td><td class="amt">{subtotal:,.2f}</td></tr>
-                    <tr class="sub-row"><td class="lbl">GST ({gst_display})</td><td class="amt">As applicable</td></tr>
+                    {tax_rows_html}
                     <tr class="grand"><td>GRAND TOTAL (INR)</td><td class="amt">{grand_total:,.2f}</td></tr>
                 </table>
             </td>
@@ -964,6 +1031,16 @@ async def generate_quote_document(
         if issuer.company_logo_path:
             logo_abs = str(Path(settings.UPLOAD_DIR) / issuer.company_logo_path)
 
+        buyer_gstin = None
+        if quote.customer_id:
+            from sqlalchemy import select as sa_select
+            from app.models.models import Customer
+
+            gstin_result = await db.execute(
+                sa_select(Customer.gstin).where(Customer.id == quote.customer_id)
+            )
+            buyer_gstin = gstin_result.scalar_one_or_none()
+
         issuer_profile = {
             "company_name": issuer.company_name,
             "company_address": issuer.company_address,
@@ -971,6 +1048,13 @@ async def generate_quote_document(
             "company_phone": issuer.phone_number or "N/A",
             "company_logo_abs_path": logo_abs,
             "brand_color": issuer.brand_color,
+            "gstin": getattr(issuer, "gstin", None),
+            "gst_breakup": gst_breakup(
+                quote.gst,
+                float(quote.total_price),
+                getattr(issuer, "gstin", None),
+                buyer_gstin,
+            ),
         }
 
     dfm_analysis = analyze_dfm_from_geometry(geometry)

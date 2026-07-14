@@ -114,11 +114,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     writeCachedProfile(result.user);
   };
 
+  // Register returns tokens — log the new user straight in.
   const signup = async (payload: SignupRequest) => {
-    await signupUser(payload);
-    clearAuthTokens();
-    setUser(null);
-    writeCachedProfile(null);
+    const result = await signupUser(payload);
+    setAuthTokens(result.access_token, result.refresh_token);
+    setUser(result.user);
+    writeCachedProfile(result.user);
   };
 
   const logout = () => {

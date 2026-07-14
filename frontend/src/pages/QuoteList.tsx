@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, Home, Search, Pencil, Eye, Download } from 'lucide-react';
+import { FileText, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, Home, Search, Pencil, Eye, Download, Trash2 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
-import { listQuotes, downloadQuotePDF } from '@/services/api';
+import { listQuotes, downloadQuotePDF, deleteQuote } from '@/services/api';
+import PartThumbnail from '@/components/PartThumbnail';
 
 type StatusFilter = 'all' | 'generated' | 'sent' | 'accepted' | 'declined' | 'expired' | 'draft';
 
@@ -72,6 +73,7 @@ const QuoteList = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -115,6 +117,20 @@ const QuoteList = () => {
       // Non-fatal; row action only.
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleDelete = async (event: React.MouseEvent, quote: QuoteListItem) => {
+    event.stopPropagation();
+    if (!window.confirm(`Delete ${quote.quote_number}? This can't be undone.`)) return;
+    setDeletingId(quote.id);
+    try {
+      await deleteQuote(quote.id);
+      setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete quote');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -264,7 +280,10 @@ const QuoteList = () => {
                   onClick={() => navigate(`/quotes/${quote.id}`)}
                 >
                   <td className="px-6 py-3.5">
-                    <span className="font-medium font-mono text-sm text-primary-700">{quote.quote_number}</span>
+                    <span className="flex items-center gap-3">
+                      <PartThumbnail fileId={quote.cad_file_id} />
+                      <span className="font-medium font-mono text-sm text-primary-700">{quote.quote_number}</span>
+                    </span>
                   </td>
                   <td className="px-6 py-3.5 text-sm text-gray-700">{quote.customer_name || '—'}</td>
                   <td className="px-6 py-3.5 text-right font-semibold font-mono text-sm text-gray-900">
@@ -309,6 +328,20 @@ const QuoteList = () => {
                           <Download className="w-3.5 h-3.5" />
                         )}
                       </button>
+                      {quote.status !== 'accepted' && quote.status !== 'declined' && (
+                        <button
+                          type="button"
+                          onClick={(event) => handleDelete(event, quote)}
+                          title="Delete quote"
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600"
+                        >
+                          {deletingId === quote.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

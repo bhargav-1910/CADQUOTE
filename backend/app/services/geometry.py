@@ -42,9 +42,41 @@ def shutdown_pool() -> None:
         _pool = None
 
 
-def _analyze_in_worker(file_path: str, file_format: str) -> Dict[str, Any]:
+def _analyze_in_worker(
+    file_path: str,
+    file_format: str,
+    thumbnail_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Entry point executed inside a geometry worker process."""
-    return GeometryProcessor()._analyze_sync(file_path, file_format)
+    return GeometryProcessor()._analyze_sync(file_path, file_format, thumbnail_path)
+
+
+def _render_thumbnail(mesh, out_path: str) -> None:
+    """Shaded isometric PNG of the mesh for list views. Best-effort only."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    triangles = mesh.vertices[mesh.faces]
+    if len(triangles) > 4000:
+        triangles = triangles[:: len(triangles) // 4000 + 1]
+
+    fig = plt.figure(figsize=(2.2, 2.2), dpi=100)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.add_collection3d(
+        Poly3DCollection(triangles, facecolor="#8ec8ea", edgecolor="#2c4a63", linewidths=0.15)
+    )
+    center = mesh.bounds.mean(axis=0)
+    radius = float(np.max(mesh.bounds[1] - mesh.bounds[0])) / 2 or 1.0
+    ax.set_xlim(center[0] - radius, center[0] + radius)
+    ax.set_ylim(center[1] - radius, center[1] + radius)
+    ax.set_zlim(center[2] - radius, center[2] + radius)
+    ax.set_axis_off()
+    ax.view_init(elev=22, azim=-55)
+    fig.savefig(out_path, transparent=True, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
 
 
 class GeometryProcessor:
@@ -63,7 +95,8 @@ class GeometryProcessor:
     async def analyze_file(
         self,
         file_path: str,
-        file_format: str
+        file_format: str,
+        thumbnail_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Analyze CAD file and extract geometry metrics.
@@ -78,6 +111,7 @@ class GeometryProcessor:
                 _analyze_in_worker,
                 file_path,
                 file_format,
+                thumbnail_path,
             )
         except BrokenProcessPool:
             # A worker died (e.g. OOM-killed on a pathological file). The
@@ -89,12 +123,13 @@ class GeometryProcessor:
     def _analyze_sync(
         self,
         file_path: str,
-        file_format: str
+        file_format: str,
+        thumbnail_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Synchronous geometry analysis."""
         start_time = time.time()
         trimesh = self._get_trimesh()
-        
+
         try:
             # Load mesh
             if file_format == 'step':
@@ -143,6 +178,14 @@ class GeometryProcessor:
 
             # Wall thickness estimation (simplified)
             min_wall_thickness = self._estimate_min_wall_thickness(mesh, scale_factor)
+
+            # Thumbnail for list views — never fail the analysis over it.
+            if thumbnail_path:
+                try:
+                    Path(thumbnail_path).parent.mkdir(parents=True, exist_ok=True)
+                    _render_thumbnail(mesh, thumbnail_path)
+                except Exception:
+                    logger.debug("Thumbnail render failed", exc_info=True)
 
             # STEP files carry an exact boundary representation — prefer
             # B-rep hole/orientation features over the mesh heuristics.
@@ -368,11 +411,13 @@ async def process_cad_file(
     
     Uses caching to avoid reprocessing identical files.
     """
-    # Check cache first
+    # Check cache first. A missing thumbnail forces one re-analysis so parts
+    # processed before thumbnails existed self-heal on their next upload.
     cache_key = cache.geometry_key(cad_file.file_hash)
     cached_data = await cache.get(cache_key)
-    
-    if cached_data:
+    thumbnail_file = Path(settings.UPLOAD_DIR) / "thumbnails" / f"{cad_file.file_hash}.png"
+
+    if cached_data and thumbnail_file.exists():
         logger.info(f"Using cached geometry for {cad_file.file_hash}")
         analysis_data = cached_data
     else:
@@ -381,6 +426,12 @@ async def process_cad_file(
         await db.commit()
         
         try:
+            # Thumbnails are keyed by content hash, so duplicate uploads reuse
+            # the image rendered on first analysis.
+            thumbnail_path = str(
+                Path(settings.UPLOAD_DIR) / "thumbnails" / f"{cad_file.file_hash}.png"
+            )
+
             # Perform analysis. For remote storage, materialize a temp file first.
             if settings.STORAGE_TYPE == "s3":
                 suffix = ".stl" if cad_file.file_format == "stl" else ".step"
@@ -393,6 +444,7 @@ async def process_cad_file(
                     analysis_data = await geometry_processor.analyze_file(
                         temp_path,
                         cad_file.file_format,
+                        thumbnail_path,
                     )
                 finally:
                     if os.path.exists(temp_path):
@@ -400,7 +452,8 @@ async def process_cad_file(
             else:
                 analysis_data = await geometry_processor.analyze_file(
                     cad_file.file_path,
-                    cad_file.file_format
+                    cad_file.file_format,
+                    thumbnail_path,
                 )
             
             # Cache the result

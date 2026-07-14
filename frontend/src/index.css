@@ -30,13 +30,15 @@
 }
 
 .dark {
-  --fq-surface: #111a2c;
-  --fq-surface-muted: #0d1524;
-  --fq-surface-raised: #17233a;
-  --fq-border: #24334d;
+  /* Near-black neutral surfaces (not navy) — depth comes from subtle
+     lightness steps, color only from the semantic accents. */
+  --fq-surface: #101318;
+  --fq-surface-muted: #0a0c10;
+  --fq-surface-raised: #181c23;
+  --fq-border: #262b34;
   --fq-ink: #f1f5f9;
-  --fq-ink-secondary: #a8b8cc;
-  --fq-ink-muted: #94a5ba;
+  --fq-ink-secondary: #a6b0bd;
+  --fq-ink-muted: #8b95a3;
 }
 
 body {
@@ -142,23 +144,23 @@ body {
 
 .dark body {
   color: #e2e8f0;
-  background-color: #0b1220;
+  background-color: #06080b;
   background-image:
-    linear-gradient(to right, rgba(143, 174, 245, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(143, 174, 245, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
   background-size: 36px 36px;
 }
 
-.dark .surface-panel { background: rgba(13, 20, 34, 0.82); }
-.dark .surface-strong { background: rgba(15, 23, 42, 0.92); }
+.dark .surface-panel { background: rgba(11, 13, 17, 0.85); }
+.dark .surface-strong { background: rgba(15, 18, 23, 0.94); }
 
 .dark .bg-white { background-color: var(--fq-surface) !important; }
-.dark .bg-white\/80, .dark .bg-white\/90, .dark .bg-white\/95 { background-color: rgba(17, 26, 44, 0.92) !important; }
+.dark .bg-white\/80, .dark .bg-white\/90, .dark .bg-white\/95 { background-color: rgba(17, 20, 26, 0.92) !important; }
 .dark .bg-gray-50, .dark .bg-slate-50 { background-color: var(--fq-surface-muted) !important; }
-.dark .bg-gray-50\/50, .dark .bg-gray-50\/60 { background-color: rgba(13, 21, 36, 0.6) !important; }
+.dark .bg-gray-50\/50, .dark .bg-gray-50\/60 { background-color: rgba(10, 12, 16, 0.6) !important; }
 .dark .bg-gray-100, .dark .bg-slate-100 { background-color: var(--fq-surface-raised) !important; }
-.dark .bg-gray-100\/70 { background-color: rgba(23, 35, 58, 0.7) !important; }
-.dark .bg-gray-200, .dark .bg-slate-200 { background-color: #1e2c46 !important; }
+.dark .bg-gray-100\/70 { background-color: rgba(24, 28, 35, 0.7) !important; }
+.dark .bg-gray-200, .dark .bg-slate-200 { background-color: #232833 !important; }
 .dark .bg-primary-50 { background-color: rgba(14, 165, 233, 0.13) !important; }
 .dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.13) !important; }
 .dark .bg-amber-50, .dark .bg-yellow-50 { background-color: rgba(245, 158, 11, 0.12) !important; }
@@ -166,8 +168,8 @@ body {
 .dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.12) !important; }
 .dark .bg-orange-50\/80 { background-color: rgba(249, 115, 22, 0.1) !important; }
 .dark .bg-primary-50\/40, .dark .bg-primary-50\/60 { background-color: rgba(14, 165, 233, 0.1) !important; }
-.dark .bg-green-50, .dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.12) !important; }
-.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.13) !important; }
+.dark .bg-green-50, .dark .bg-emerald-50, .dark .bg-emerald-50\/60 { background-color: rgba(16, 185, 129, 0.12) !important; }
+.dark .bg-red-50, .dark .bg-red-50\/50 { background-color: rgba(239, 68, 68, 0.13) !important; }
 .dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.13) !important; }
 .dark .bg-purple-50 { background-color: rgba(168, 85, 247, 0.13) !important; }
 .dark .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.13) !important; }
@@ -192,7 +194,7 @@ body {
 .dark .text-blue-600, .dark .text-blue-700, .dark .text-blue-800, .dark .text-blue-900 { color: #93c5fd !important; }
 .dark .text-primary-600 { color: #7dd3fc !important; }
 .dark .text-orange-800 { color: #fdba74 !important; }
-.dark .text-sky-600, .dark .text-sky-700 { color: #7dd3fc !important; }
+.dark .text-sky-600, .dark .text-sky-700, .dark .text-sky-800 { color: #7dd3fc !important; }
 .dark .text-sky-900 { color: #bae6fd !important; }
 .dark .text-green-600, .dark .text-emerald-600 { color: #34d399 !important; }
 .dark .text-amber-600 { color: #fbbf24 !important; }
@@ -215,25 +217,25 @@ body {
 .dark .border-cyan-200 { border-color: rgba(6, 182, 212, 0.3) !important; }
 
 .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
-.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #1c2942 !important; }
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #232833 !important; }
 
 .dark input, .dark select, .dark textarea {
-  background-color: #0d1524;
+  background-color: #0a0c10;
   color: #e2e8f0;
-  border-color: #24334d;
+  border-color: #262b34;
 }
-.dark input::placeholder, .dark textarea::placeholder { color: #5b6b82; }
+.dark input::placeholder, .dark textarea::placeholder { color: #626c7a; }
 
-.dark .hover\:bg-gray-50:hover, .dark .hover\:bg-slate-50:hover { background-color: #16213a !important; }
-.dark .hover\:bg-white:hover { background-color: #17233a !important; }
-.dark .hover\:bg-gray-100:hover, .dark .hover\:bg-slate-100:hover { background-color: #1c2942 !important; }
+.dark .hover\:bg-gray-50:hover, .dark .hover\:bg-slate-50:hover { background-color: #171b22 !important; }
+.dark .hover\:bg-white:hover { background-color: #1a1e26 !important; }
+.dark .hover\:bg-gray-100:hover, .dark .hover\:bg-slate-100:hover { background-color: #20242d !important; }
 .dark .hover\:bg-primary-50:hover { background-color: rgba(14, 165, 233, 0.18) !important; }
 .dark .hover\:bg-primary-100:hover { background-color: rgba(14, 165, 233, 0.25) !important; }
 .dark .hover\:bg-amber-100:hover { background-color: rgba(245, 158, 11, 0.22) !important; }
 
-.dark ::-webkit-scrollbar-track { background: #0d1524; }
-.dark ::-webkit-scrollbar-thumb { background: #2a3a58; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #38507a; }
+.dark ::-webkit-scrollbar-track { background: #0a0c10; }
+.dark ::-webkit-scrollbar-thumb { background: #2e343f; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #3d4550; }
 
 .dark .shadow-sm, .dark .shadow, .dark .shadow-lg, .dark .shadow-xl, .dark .shadow-2xl {
   --tw-shadow-color: rgba(0, 0, 0, 0.55);

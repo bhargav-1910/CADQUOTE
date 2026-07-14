@@ -536,6 +536,7 @@ export interface Quote {
 export interface QuoteListItem {
   id: string;
   quote_number: string;
+  cad_file_id: string | null;
   customer_name: string | null;
   total_price: number;
   status: QuoteStatus;
@@ -569,6 +570,7 @@ export interface UserProfile {
   phone_number: string | null;
   company_logo_url: string | null;
   brand_color: string | null;
+  gstin: string | null;
   plan: 'free' | 'pro';
   plan_expires_at: string | null;
   created_at: string;
@@ -579,6 +581,7 @@ export interface UpdateProfileRequest {
   company_name: string;
   company_address: string;
   phone_number?: string;
+  gstin?: string;
   brand_color?: string;
   logo?: File;
 }
@@ -593,7 +596,7 @@ export interface SignupRequest {
   email: string;
   password: string;
   company_name: string;
-  company_address: string;
+  company_address?: string;
   logo?: File;
 }
 
