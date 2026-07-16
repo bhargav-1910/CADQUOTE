@@ -518,6 +518,8 @@ export interface Quote {
   share_token?: string | null;
   responded_at?: string | null;
   customer_response_note?: string | null;
+  predicted_costing?: Record<string, unknown> | null;
+  actual_costing?: Record<string, unknown> | null;
   pdf_path: string | null;
   price_validity?: string | null;
   gst?: string | null;

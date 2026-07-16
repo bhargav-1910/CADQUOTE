@@ -425,6 +425,7 @@ class GeometryAnalysis(Base):
     # Exact B-rep features (STEP files with OCP installed); None otherwise.
     # Distinct hole-axis directions — drives the setup count in pricing.
     machining_direction_count = Column(Integer, nullable=True)
+    solid_count = Column(Integer, nullable=True)
     # Per-hole detail: [{diameter_mm, depth_mm, axis}, ...]
     brep_hole_data = Column(JSON, nullable=True)
     
@@ -524,6 +525,13 @@ class Quote(Base):
     share_token = Column(String(64), unique=True, nullable=True, index=True)
     customer_response_note = Column(Text, nullable=True)
     responded_at = Column(DateTime, nullable=True)
+
+    # Calibration loop: engine metrics snapshotted at creation, and the
+    # machinist/vendor-corrected values recorded after the job is quoted or
+    # run. Predicted-vs-actual pairs are the dataset the pricing
+    # coefficients get refit against.
+    predicted_costing = Column(JSON, nullable=True)
+    actual_costing = Column(JSON, nullable=True)
 
     # Commercial terms
     price_validity = Column(String(100), nullable=True)

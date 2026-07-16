@@ -84,9 +84,28 @@ def analyze_dfm_metrics(
     bbox_y_cm: float,
     bbox_z_cm: float,
     triangle_count: Optional[int],
+    solid_count: Optional[int] = None,
 ) -> DFMAnalysis:
     """Analyze manufacturability from geometry metrics."""
     issues: List[DFMIssue] = []
+
+    # 0) Multi-body files: an assembly quoted as one machined part gives a
+    # misleading price — volume, area and orientations sum over every body.
+    if solid_count is not None and solid_count > 1:
+        _push_issue(
+            issues,
+            severity="warning",
+            code="multi-body-file",
+            title="File contains multiple solid bodies",
+            description=(
+                f"The file contains {solid_count} separate solid bodies, so it looks like "
+                "an assembly. Pricing treats all bodies as one machined part, which "
+                "inflates material and machining estimates."
+            ),
+            recommendation="Export and upload each machined component as its own STEP file.",
+            penalty=12,
+            confidence=0.9,
+        )
 
     max_dim = max(bbox_x_cm, bbox_y_cm, bbox_z_cm)
     min_dim = max(min(bbox_x_cm, bbox_y_cm, bbox_z_cm), 0.001)
@@ -411,6 +430,7 @@ def analyze_dfm_from_geometry(geometry: GeometryAnalysis) -> DFMAnalysis:
         bbox_y_cm=geometry.bbox_y,
         bbox_z_cm=geometry.bbox_z,
         triangle_count=geometry.triangle_count,
+        solid_count=getattr(geometry, "solid_count", None),
     )
 
 

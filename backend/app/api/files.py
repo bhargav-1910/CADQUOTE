@@ -200,6 +200,7 @@ async def get_file_geometry(
         hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
         machining_direction_count=getattr(geometry, "machining_direction_count", None),
         brep_hole_data=getattr(geometry, "brep_hole_data", None),
+        solid_count=getattr(geometry, "solid_count", None),
         complexity_score=geometry.complexity_score,
         removal_ratio=geometry.removal_ratio,
         triangle_count=geometry.triangle_count,

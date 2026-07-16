@@ -99,6 +99,9 @@ class PricingInputs:
     # complexity heuristic.
     machining_direction_count: Optional[int] = None
 
+    # Distinct solid bodies in the uploaded file (>1 = assembly).
+    solid_count: Optional[int] = None
+
 
 @dataclass
 class PricingResult:
@@ -164,6 +167,16 @@ class PricingEngine:
         "en8": (90.0, 140.0),
     }
 
+    # Insert/end-mill consumption per spindle hour (INR), by material.
+    TOOLING_WEAR_PER_HOUR = {
+        "aluminum": 80.0,
+        "steel": 150.0,
+        "stainless": 250.0,
+        "brass": 100.0,
+        "plastic": 40.0,
+        "titanium": 500.0,
+    }
+
     SECONDARY_OP_COST = {
         "anodizing": (15.0, 40.0),
         "powder coating": (25.0, 70.0),
@@ -224,6 +237,7 @@ class PricingEngine:
         "tool-access-risk": {"cycle_time_pct": 6.0, "extra_setups": 1, "reason": "Narrow tool access may force smaller tools and extra setups"},
         "micro-feature-density-high": {"cycle_time_pct": 5.0, "reason": "Tiny features need small tools at low feed"},
         "mesh-very-dense": {"risk_pct": 0.5, "reason": "Analysis overhead only"},
+        "multi-body-file": {"risk_pct": 5.0, "reason": "Assembly quoted as one part; estimates need manual review"},
     }
 
     def calculate_price(self, inputs: PricingInputs) -> PricingResult:
@@ -239,10 +253,16 @@ class PricingEngine:
             bbox_y_cm=inputs.bbox_y_cm,
             bbox_z_cm=inputs.bbox_z_cm,
             triangle_count=inputs.triangle_count,
+            solid_count=inputs.solid_count,
         )
 
         process_type = self._infer_process(inputs.machine_name, inputs.removal_ratio)
         machine_type = self._infer_machine_type(inputs.machine_name)
+        # Parts needing 6+ spindle orientations are 5-axis work in practice:
+        # fewer setups, but a costlier machine-hour band.
+        orientations = int(inputs.machining_direction_count or 0)
+        if machine_type == "3-axis" and orientations >= 6:
+            machine_type = "5-axis"
         material_key = self._infer_material_key(inputs.material_name, inputs.material_category)
 
         # Complexity score is scale-robust A^(3/2)/V, where simple prismatic parts
@@ -300,6 +320,12 @@ class PricingEngine:
         material_cost = material_cost_gross
         if inputs.include_scrap_saving:
             material_cost = max(material_cost_gross - scrap_saving_cost, _to_decimal(0))
+        # No supplier sells a 30 g offcut at weight price: minimum stock +
+        # saw-cut charge per part.
+        min_stock_charge = _to_decimal(150)
+        minimum_stock_charge_applied = material_cost < min_stock_charge
+        if minimum_stock_charge_applied:
+            material_cost = min_stock_charge
 
         details["material"] = {
             "raw_weight_kg": round(raw_weight_kg, 4),
@@ -311,6 +337,7 @@ class PricingEngine:
             "scrap_cost_per_kg": float(scrap_cost_per_kg),
             "scrap_saving_cost": float(scrap_saving_cost),
             "scrap_saving_included_in_cost": inputs.include_scrap_saving,
+            "minimum_stock_charge_applied": minimum_stock_charge_applied,
             "material_cost_per_part": float(material_cost),
         }
 
@@ -334,7 +361,12 @@ class PricingEngine:
             base_mrr * _clamp(inputs.machine_efficiency, 0.1, 1.0) / max(inputs.machining_difficulty_factor, 0.1),
         )
 
-        removal_time_min = removal_cm3 / adjusted_mrr if adjusted_mrr > 0 else 0.0
+        # Bulk removal runs at roughing rates. The MRR band above is a blended
+        # full-cycle figure from before finishing was charged separately by
+        # area; without this factor, slow finishing feeds were double-counted
+        # against every roughed-out cm3 (a 17 L envelope billed 70+ hours).
+        roughing_mrr = adjusted_mrr * 3.0
+        removal_time_min = removal_cm3 / roughing_mrr if roughing_mrr > 0 else 0.0
 
         hole_seconds, hole_time_breakdown = self._hole_feature_seconds(
             inputs.hole_count, inputs.hole_diameters_mm, complexity_norm
@@ -342,15 +374,14 @@ class PricingEngine:
         thread_estimate = max(0, int(round(inputs.hole_count * 0.2)))
         thread_seconds = thread_estimate * (20.0 + (60.0 - 20.0) * complexity_norm)
 
-        pocket_depth_factor = 1.0 + 0.6 * complexity_norm
-        pocket_time_min = (
-            inputs.surface_area_cm2
-            * _clamp(inputs.removal_ratio, 0.2, 1.8)
-            * 0.01
-            * pocket_depth_factor
-        )
+        # Surface finishing passes dominate cycle time on large parts: every
+        # machined face gets covered again at finishing feeds. Benchmarked
+        # against machinist estimates this term was the single largest gap —
+        # bulk MRR alone under-called 20-35 hr jobs by 10-15x.
+        finishing_rate_cm2_min = max(10.0 - 5.0 * complexity_norm, 3.0)
+        finishing_time_min = inputs.surface_area_cm2 / finishing_rate_cm2_min
 
-        feature_time_min = (hole_seconds + thread_seconds) / 60.0 + pocket_time_min
+        feature_time_min = (hole_seconds + thread_seconds) / 60.0 + finishing_time_min
 
         tool_change_count = max(1, int(round(1 + complexity_norm * 2 + (inputs.hole_count / 8.0))))
         tool_change_time_per_event_min = 0.8 + 0.7 * complexity_norm
@@ -365,9 +396,39 @@ class PricingEngine:
         )
         dfm_adjustments = self._dfm_cost_adjustments(dfm_analysis["issues"])
 
+        # Setup count is needed here because every setup adds per-part
+        # handling time (unload, re-clamp, indicate, probe) to the cycle.
+        # Heavy parts take longer to fixture per setup (cranes, indicating,
+        # custom clamping); benchmark jobs ran ~1-1.5 h/setup at 20-50 kg.
+        heft_factor = 1.0 + min(buy_weight_kg, 60.0) / 60.0
+        setup_time_hours = _clamp(inputs.setup_time_hours * heft_factor, 0.1, 4.0)
+        # Prefer measured orientations (hole axes + milled-face normals from
+        # the exact B-rep) over the complexity heuristic when available.
+        if orientations > 0:
+            if machine_type == "5-axis":
+                # A 5-axis machine reaches most orientations in one clamping.
+                base_setups = int(_clamp(2 + (orientations - 6) // 4, 2, 5))
+            else:
+                base_setups = int(_clamp(float(orientations), 1.0, 8.0))
+                # Large machined surfaces force extra re-clamps beyond what
+                # feature orientations show (~every 1500 cm2 on the bench jobs).
+                base_setups = min(
+                    base_setups + min(3, int(inputs.surface_area_cm2 / 1500.0)), 8
+                )
+            setup_basis = "brep_machining_directions"
+        else:
+            base_setups = max(1, int(round(1 + complexity_norm * 1.5)))
+            setup_basis = "complexity_estimate"
+        number_of_setups = base_setups + int(dfm_adjustments["extra_setups"])
+
+        handling_time_min = 8.0 * number_of_setups
+
         tolerance_time_multiplier = float(tolerance["machining_time_multiplier"])
         dfm_cycle_multiplier = 1.0 + _clamp(dfm_adjustments["cycle_time_pct"], 0.0, 40.0) / 100.0
-        cycle_time_min = base_cycle_time_min * tolerance_time_multiplier * dfm_cycle_multiplier
+        cycle_time_min = (
+            base_cycle_time_min * tolerance_time_multiplier * dfm_cycle_multiplier
+            + handling_time_min
+        )
 
         machine_rate_per_hour = self._normalized_machine_rate(inputs.hourly_rate, machine_type)
         machining_cost = _to_decimal(cycle_time_min) * machine_rate_per_hour / _to_decimal(60)
@@ -384,7 +445,9 @@ class PricingEngine:
             "hole_seconds": round(hole_seconds, 2),
             "hole_time_breakdown": hole_time_breakdown,
             "thread_seconds": round(thread_seconds, 2),
-            "pocket_time_min": round(pocket_time_min, 4),
+            "finishing_time_min": round(finishing_time_min, 4),
+            "finishing_rate_cm2_min": round(finishing_rate_cm2_min, 4),
+            "handling_time_min": round(handling_time_min, 4),
             "base_cycle_time_min": round(base_cycle_time_min, 4),
             "tolerance_time_multiplier": round(tolerance_time_multiplier, 4),
             "dfm_cycle_multiplier": round(dfm_cycle_multiplier, 4),
@@ -393,17 +456,7 @@ class PricingEngine:
             "machining_cost_per_part": float(machining_cost),
         }
 
-        # C. Setup cost
-        setup_time_hours = _clamp(inputs.setup_time_hours, 0.1, 2.0)
-        # Prefer measured orientations (distinct hole-axis directions from the
-        # exact B-rep) over the complexity heuristic when they are available.
-        if inputs.machining_direction_count and inputs.machining_direction_count > 0:
-            base_setups = int(_clamp(float(inputs.machining_direction_count), 1.0, 6.0))
-            setup_basis = "brep_machining_directions"
-        else:
-            base_setups = max(1, int(round(1 + complexity_norm * 1.5)))
-            setup_basis = "complexity_estimate"
-        number_of_setups = base_setups + int(dfm_adjustments["extra_setups"])
+        # C. Setup cost (setup count itself is derived above, pre-cycle).
         setup_time_total_hours = setup_time_hours * number_of_setups
         setup_hour_rate_per_hour = max(inputs.setup_hour_rate, _to_decimal(0))
         if setup_hour_rate_per_hour <= 0:
@@ -423,12 +476,19 @@ class PricingEngine:
             "setup_cost_per_part": float(setup_cost_per_part),
         }
 
-        # C2. CAM/programming time allocation
-        cam_time_hours = (
-            0.25
-            + complexity_norm * 1.25
-            + min(inputs.hole_count, 40) * 0.01
-            + _clamp(inputs.surface_area_cm2 / 800.0, 0.0, 0.75)
+        # C2. CAM/programming time allocation. Programming effort scales with
+        # surface to be toolpathed, setups (new WCS, new stock model) and
+        # features. Deliberately NOT complexity_score-driven: A^1.5/V reads
+        # thin plates as "complex" and was inflating CAM 2-3x on sheet-like
+        # parts while the real drivers (setups, holes, area) sat capped.
+        cam_time_hours = _clamp(
+            0.5
+            + 0.3 * number_of_setups
+            + min(inputs.hole_count, 60) * 0.015
+            + _clamp(inputs.surface_area_cm2 / 600.0, 0.0, 3.0)
+            + (1.0 if machine_type == "5-axis" else 0.0),
+            0.5,
+            8.0,
         )
         cam_rate_per_hour = machine_rate_per_hour * _to_decimal(0.35)
         cam_cost_total = _to_decimal(cam_time_hours) * cam_rate_per_hour
@@ -449,12 +509,32 @@ class PricingEngine:
         large_hole_count = len([d for d in (inputs.hole_diameters_mm or []) if d > 12.0])
         tooling_feature_add += large_hole_count * 15.0
         tooling_feature_add += dfm_adjustments["tooling_add"]
-        tooling_total = _to_decimal(tooling_base + tooling_feature_add)
+        # Inserts and end mills are consumed per spindle hour, not per hole —
+        # a 20 h job eats tools regardless of feature count.
+        tooling_wear_rate_per_hour = self.TOOLING_WEAR_PER_HOUR.get(material_key, 150.0)
+        tooling_wear = (cycle_time_min / 60.0) * tooling_wear_rate_per_hour * inputs.quantity
+        tooling_total = _to_decimal(tooling_base + tooling_feature_add + tooling_wear)
         tooling_per_part = tooling_total / _to_decimal(max(inputs.quantity, 1))
 
         details["tooling"] = {
             "tooling_total": float(tooling_total),
+            "tooling_wear_per_hour": tooling_wear_rate_per_hour,
+            "tooling_wear_total": round(tooling_wear, 2),
             "tooling_cost_per_part": float(tooling_per_part),
+        }
+
+        # D2. NRE: process/fixture engineering on jobs complex enough to need
+        # it (many setups or 5-axis work). Amortized across the batch.
+        nre_hours = 0.0
+        if machine_type == "5-axis" or number_of_setups >= 6:
+            nre_hours = 2.0 + 0.5 * number_of_setups
+        nre_total = _to_decimal(nre_hours) * machine_rate_per_hour * _to_decimal(0.5)
+        nre_per_part = nre_total / _to_decimal(max(inputs.quantity, 1))
+
+        details["nre"] = {
+            "nre_hours": round(nre_hours, 2),
+            "nre_total": float(nre_total),
+            "nre_cost_per_part": float(nre_per_part),
         }
 
         # E. Secondary operation cost
@@ -530,6 +610,7 @@ class PricingEngine:
             + setup_cost_per_part
             + cam_cost_per_part
             + tooling_per_part
+            + nre_per_part
             + finish_cost
             + inspection_cost
         )
@@ -682,7 +763,7 @@ class PricingEngine:
         }
 
         # Lead time
-        machining_hours_total = (cycle_time_min * inputs.quantity) / 60.0 + setup_time_hours
+        machining_hours_total = (cycle_time_min * inputs.quantity) / 60.0 + setup_time_total_hours
         machining_days = machining_hours_total / max(6.5 * _clamp(inputs.machine_efficiency, 0.1, 1.0), 1.0)
         lead_time_days = (
             max(1.0, inputs.material_availability_factor)
@@ -719,7 +800,7 @@ class PricingEngine:
 
         return PricingResult(
             material_cost=round_price(material_cost),
-            machining_cost=round_price(machining_cost + setup_cost_per_part + cam_cost_per_part + tooling_per_part),
+            machining_cost=round_price(machining_cost + setup_cost_per_part + cam_cost_per_part + tooling_per_part + nre_per_part),
             finish_cost=round_price(finish_cost),
             inspection_cost=round_price(inspection_cost),
             subtotal=round_price(direct_cost_per_part),
@@ -843,10 +924,11 @@ class PricingEngine:
         return "3-axis"
 
     def _infer_process(self, machine_name: str, removal_ratio: float) -> str:
+        # Only the machine says "turning". A low removal ratio does NOT: a
+        # pocketed/thin-walled milled part fills little of its bounding box,
+        # and pricing it as round-bar stock was wildly wrong.
         name = (machine_name or "").lower()
         if "lathe" in name or "turn" in name:
-            return "turning"
-        if removal_ratio < 0.25:
             return "turning"
         return "milling"
 
@@ -1170,6 +1252,7 @@ async def calculate_pricing(
         hole_count=geometry.hole_count,
         hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
         machining_direction_count=getattr(geometry, "machining_direction_count", None),
+        solid_count=getattr(geometry, "solid_count", None),
         min_wall_thickness_mm=geometry.min_wall_thickness,
         triangle_count=geometry.triangle_count,
         material_name=material.name,

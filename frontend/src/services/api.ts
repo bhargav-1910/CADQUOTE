@@ -586,6 +586,19 @@ export const shareQuote = async (quoteId: string): Promise<QuoteShareResponse> =
   }
 };
 
+/** Record machinist-corrected costing values (calibration loop). */
+export const recordQuoteActuals = async (
+  quoteId: string,
+  actuals: Record<string, number | string>,
+): Promise<Quote> => {
+  try {
+    const response = await api.put<Quote>(`/quotes/${quoteId}/actuals`, actuals);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
 /** Owner-side: record a decision received outside the share link (forwarded PDF, phone call). */
 export const respondToQuote = async (
   quoteId: string,

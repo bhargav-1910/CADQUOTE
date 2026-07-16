@@ -24,6 +24,28 @@ def generate_quote_number() -> str:
     return f"QT-{date_prefix}-{random_suffix}"
 
 
+def predicted_costing_snapshot(details: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact engine metrics stored on the quote for the calibration loop.
+
+    These are the values a machinist can later correct via the actuals
+    endpoint; predicted-vs-actual pairs are what pricing coefficients get
+    refit against.
+    """
+    machining = details.get("machining", {})
+    setup = details.get("setup", {})
+    cam = details.get("cam_programming", {})
+    return {
+        "machine_type": machining.get("machine_type"),
+        "number_of_setups": setup.get("number_of_setups"),
+        "fixturing_hours": setup.get("setup_time_total_hours"),
+        "cam_time_hours": cam.get("cam_time_hours"),
+        "machining_time_min": machining.get("cycle_time_min"),
+        "material_cost": details.get("material", {}).get("material_cost_per_part"),
+        "tooling_cost": details.get("tooling", {}).get("tooling_total"),
+        "nre_cost": details.get("nre", {}).get("nre_total"),
+    }
+
+
 async def create_quote(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -171,6 +193,7 @@ async def create_quote(
         total_price=pricing_result.total_price,
         unit_price=pricing_result.unit_price,
         estimated_lead_time_days=pricing_result.estimated_lead_time_days,
+        predicted_costing=predicted_costing_snapshot(pricing_result.details),
         status=QuoteStatus.GENERATED,
         valid_until=valid_until,
         price_validity=price_validity,

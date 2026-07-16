@@ -23,14 +23,16 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - import guard exercised implicitly
+    from OCP.Bnd import Bnd_Box
     from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBndLib import BRepBndLib
     from OCP.BRepGProp import BRepGProp
     from OCP.BRepTools import BRepTools
     from OCP.GProp import GProp_GProps
     from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane
     from OCP.IFSelect import IFSelect_RetDone
     from OCP.STEPControl import STEPControl_Reader
-    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
 
@@ -42,7 +44,7 @@ except ImportError:  # pragma: no cover
 # quarter/half cylinders and must not count as drilled holes.
 _FULL_SWEEP_RAD = 5.5  # ~315 deg out of 2*pi
 _AXIS_CLUSTER_COS = math.cos(math.radians(10.0))
-_MAX_HOLES = 50
+_MAX_HOLES = 200
 
 
 @dataclass
@@ -68,6 +70,14 @@ class BRepFeatures:
     face_count: int
     cylindrical_face_count: int
     planar_face_count: int
+    # Exact mass properties (mm-based, from the solid model — trustworthy
+    # even when the tessellated mesh is open or self-intersecting).
+    volume_mm3: float = 0.0
+    surface_area_mm2: float = 0.0
+    bbox_mm: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # Distinct solid bodies in the file: >1 means an assembly was uploaded,
+    # which cannot be quoted as a single machined part.
+    solid_count: int = 1
 
     def as_analysis_fields(self) -> Dict[str, Any]:
         """Keys merged into the geometry-analysis payload."""
@@ -76,6 +86,7 @@ class BRepFeatures:
             "hole_diameters_mm": self.hole_diameters_mm or None,
             "machining_direction_count": self.machining_direction_count,
             "brep_hole_data": self.holes or None,
+            "solid_count": self.solid_count,
         }
 
 
@@ -126,6 +137,29 @@ def analyze_step_brep(file_path: str) -> Optional[BRepFeatures]:
 
     try:
         shape = _read_step_shape(file_path)
+
+        # Exact mass properties from the solid model. The STEP reader
+        # normalizes units to mm, so these are unit-safe regardless of the
+        # file's declared unit (unlike the mesh pipeline's mm assumption).
+        volume_props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape, volume_props)
+        volume_mm3 = abs(float(volume_props.Mass()))
+
+        surface_props = GProp_GProps()
+        BRepGProp.SurfaceProperties_s(shape, surface_props)
+        surface_area_mm2 = abs(float(surface_props.Mass()))
+
+        box = Bnd_Box()
+        BRepBndLib.Add_s(shape, box)
+        xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+        bbox_mm = (float(xmax - xmin), float(ymax - ymin), float(zmax - zmin))
+
+        solid_count = 0
+        solid_explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+        while solid_explorer.More():
+            solid_count += 1
+            solid_explorer.Next()
+        solid_count = max(solid_count, 1)
 
         cyl_groups: Dict[Tuple, _CylGroup] = {}
         planar_normals: List[Tuple[Tuple[float, float, float], float]] = []
@@ -208,12 +242,20 @@ def analyze_step_brep(file_path: str) -> Optional[BRepFeatures]:
         holes = holes[:_MAX_HOLES]
 
         hole_axes = [tuple(h["axis"]) for h in holes]
-        # Distinct hole-axis clusters = orientations the spindle must reach.
-        machining_direction_count = max(1, _cluster_directions(hole_axes)) if hole_axes else 1
+        hole_direction_count = max(1, _cluster_directions(hole_axes)) if hole_axes else 1
 
         significant_area = sum(area for _, area in planar_normals) * 0.01
         planar_clusters = _cluster_directions(
             [d for d, area in planar_normals if area >= significant_area]
+        )
+
+        # Orientations the part must be presented to the spindle: holes give
+        # a hard lower bound, but milled faces need presenting too. A plain
+        # block has ~3 folded planar clusters yet machines in 1-2 setups, so
+        # discount the planar count by the two clusters any billet's opposed
+        # faces contribute for free.
+        machining_direction_count = min(
+            12, max(hole_direction_count, planar_clusters - 2, 1)
         )
 
         return BRepFeatures(
@@ -225,6 +267,10 @@ def analyze_step_brep(file_path: str) -> Optional[BRepFeatures]:
             face_count=face_count,
             cylindrical_face_count=cylindrical_face_count,
             planar_face_count=planar_face_count,
+            volume_mm3=volume_mm3,
+            surface_area_mm2=surface_area_mm2,
+            bbox_mm=bbox_mm,
+            solid_count=solid_count,
         )
     except Exception as exc:
         logger.warning("B-rep analysis failed for %s: %s", file_path, exc)

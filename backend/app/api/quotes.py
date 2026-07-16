@@ -23,7 +23,7 @@ from app.schemas.schemas import (
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse, CombinedQuoteCreateRequest,
     QuoteResponse, QuoteListResponse, VendorMatchSummary,
     VendorMatchPreviewRequest, VendorMatchPreviewResponse,
-    QuoteShareResponse, PublicQuoteRespondRequest,
+    QuoteShareResponse, PublicQuoteRespondRequest, QuoteActualsUpdate,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
@@ -35,6 +35,7 @@ from app.services.quote import (
     get_quote_by_number,
     list_quotes,
     generate_quote_number,
+    predicted_costing_snapshot,
 )
 from app.services.document import generate_quote_document, ensure_quote_document
 from app.core.config import settings
@@ -450,6 +451,7 @@ async def create_combined_quotation(
 
     first_item = request.items[0]
     combined_lines: List[str] = []
+    predicted_lines: List[Dict[str, Any]] = []
     serialized_overrides = _serialize_pricing_overrides(request.pricing_overrides)
 
     combined_quote_points = settings.POINTS_COST_CREATE_QUOTE * len(request.items)
@@ -528,6 +530,10 @@ async def create_combined_quotation(
         max_lead_time = max(max_lead_time, float(pricing_result.estimated_lead_time_days))
 
         safe_filename = cad_file.original_filename.replace("|", "/")
+        predicted_lines.append(
+            {"cad_file_id": str(cad_file.id), "file_name": safe_filename,
+             **predicted_costing_snapshot(pricing_result.details)}
+        )
         # Metadata format (v2): cad_file_id|filename|qty|line_total|material_id|surface_finish_id|inspection_level_id
         # Keep pipe-separated format for backward compatibility with existing parsers.
         combined_lines.append(
@@ -592,6 +598,7 @@ async def create_combined_quotation(
         total_price=total_price,
         unit_price=total_price,
         estimated_lead_time_days=max_lead_time,
+        predicted_costing={"lines": predicted_lines},
         status=QuoteStatus.GENERATED,
         valid_until=datetime.utcnow() + timedelta(days=settings.QUOTE_VALIDITY_DAYS),
         price_validity=request.price_validity,
@@ -826,6 +833,33 @@ async def preview_quote_pdf(
     )
 
 
+@router.put("/quotes/{quote_id}/actuals", response_model=QuoteResponse)
+async def record_quote_actuals(
+    quote_id: uuid.UUID,
+    request: QuoteActualsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record machinist-corrected costing values against the engine's
+    prediction. These pairs are the dataset pricing coefficients get
+    calibrated against."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    values = request.model_dump(exclude_none=True)
+    if not values:
+        raise HTTPException(status_code=400, detail="No actual values provided")
+
+    values["recorded_at"] = datetime.utcnow().isoformat()
+    # Merge over any earlier recording so partial corrections accumulate.
+    quote.actual_costing = {**(quote.actual_costing or {}), **values}
+    await db.commit()
+
+    quote = await get_quote(db, current_user.id, quote.id)
+    return _quote_to_response(quote)
+
+
 @router.post("/quotes/{quote_id}/share", response_model=QuoteShareResponse)
 async def share_quote(
     quote_id: uuid.UUID,
@@ -975,6 +1009,8 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
         status=_effective_quote_status(quote).value,
         valid_until=quote.valid_until,
         share_token=quote.share_token,
+        predicted_costing=quote.predicted_costing,
+        actual_costing=quote.actual_costing,
         responded_at=quote.responded_at,
         customer_response_note=quote.customer_response_note,
         pdf_path=quote.pdf_path,

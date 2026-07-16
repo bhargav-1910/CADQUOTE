@@ -340,6 +340,9 @@ class GeometryAnalysisResponse(BaseSchema):
     brep_hole_data: Optional[List[dict]] = Field(
         None, description="Exact B-rep holes: [{diameter_mm, depth_mm, axis}]"
     )
+    solid_count: Optional[int] = Field(
+        None, description="Distinct solid bodies in the file; >1 means an assembly"
+    )
     complexity_score: float
     removal_ratio: float
     triangle_count: Optional[int] = None
@@ -638,6 +641,24 @@ class CombinedQuoteCreateRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class QuoteActualsUpdate(BaseSchema):
+    """Machinist/vendor-corrected costing values for the calibration loop.
+
+    All fields optional — record whatever was actually observed. Mirrors the
+    keys of the predicted_costing snapshot.
+    """
+    machine_type: Optional[str] = None
+    number_of_setups: Optional[int] = Field(None, ge=0)
+    fixturing_hours: Optional[float] = Field(None, ge=0)
+    cam_time_hours: Optional[float] = Field(None, ge=0)
+    machining_time_min: Optional[float] = Field(None, ge=0)
+    material_cost: Optional[float] = Field(None, ge=0)
+    tooling_cost: Optional[float] = Field(None, ge=0)
+    nre_cost: Optional[float] = Field(None, ge=0)
+    final_price: Optional[float] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+
 class QuoteResponse(BaseSchema):
     """Quote response schema."""
     id: UUID
@@ -700,6 +721,10 @@ class QuoteResponse(BaseSchema):
     share_token: Optional[str] = None
     responded_at: Optional[datetime] = None
     customer_response_note: Optional[str] = None
+
+    # Calibration loop: engine snapshot vs machinist-recorded values
+    predicted_costing: Optional[dict] = None
+    actual_costing: Optional[dict] = None
 
     pdf_path: Optional[str]
     price_validity: Optional[str]
