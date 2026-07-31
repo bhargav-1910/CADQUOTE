@@ -6,12 +6,14 @@ from typing import Optional
 
 from sqlalchemy import (
     Column, String, Float, Integer, Boolean, DateTime, 
-    ForeignKey, Text, Numeric, Enum as SQLEnum, JSON, TypeDecorator, CHAR
+    ForeignKey, Text, Numeric, Enum as SQLEnum, JSON, TypeDecorator, CHAR,
+    UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 import enum
 
+from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 
@@ -78,11 +80,47 @@ class User(Base):
     company_name = Column(String(200), nullable=False)
     company_address = Column(Text, nullable=False)
     phone_number = Column(String(30), nullable=True)
-    gstin = Column(String(20), nullable=True)
+    # Tax identifier: encrypted at rest, never searched.
+    gstin = Column(EncryptedString(20), nullable=True)
     company_logo_path = Column(String(500), nullable=True)
     brand_color = Column(String(7), nullable=True)  # hex accent, e.g. #0284c7
     refresh_token_hash = Column(String(128), nullable=True)
     refresh_token_expires_at = Column(DateTime, nullable=True)
+
+    # Authorization. 'user' is the default least-privilege role; 'admin'
+    # unlocks the global pricing/vendor/points-package configuration.
+    role = Column(String(20), nullable=False, default="user", server_default="user")
+
+    # Session state. session_id is regenerated on every successful login so a
+    # pre-authentication token can never be replayed (session fixation), and
+    # session_started_at anchors the absolute timeout.
+    session_id = Column(String(64), nullable=True)
+    session_started_at = Column(DateTime, nullable=True)
+    last_activity_at = Column(DateTime, nullable=True)
+
+    # Brute-force protection and credential lifecycle.
+    failed_login_count = Column(Integer, nullable=False, default=0, server_default="0")
+    locked_until = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
+    password_changed_at = Column(DateTime, nullable=True)
+    # Most recent superseded bcrypt hashes; blocks password reuse.
+    password_history = Column(JSON, nullable=True)
+
+    # Email ownership. Unverified accounts still work — verification gates
+    # privilege (the admin role) rather than everyday use, so signup keeps its
+    # current one-step flow.
+    email_verified = Column(Boolean, nullable=False, default=False, server_default="0")
+    email_verified_at = Column(DateTime, nullable=True)
+
+    # TOTP second factor (RFC 6238). The secret is encrypted at rest, so a
+    # database leak does not hand over working one-time codes.
+    totp_secret = Column(EncryptedString(64), nullable=True)
+    totp_enabled = Column(Boolean, nullable=False, default=False, server_default="0")
+    totp_confirmed_at = Column(DateTime, nullable=True)
+    # SHA-256 of each single-use recovery code; never the codes themselves.
+    totp_backup_codes = Column(JSON, nullable=True)
+    # Rejects a replayed code within its own 30-second step.
+    totp_last_used_step = Column(Integer, nullable=True)
 
     # Subscription: 'free' users may only quote the built-in sample part;
     # 'pro' unlocks everything. plan_expires_at=NULL means no expiry.
@@ -98,6 +136,60 @@ class User(Base):
     quotes = relationship("Quote", back_populates="user")
     points_wallet = relationship("PointsWallet", back_populates="user", uselist=False)
     points_ledger_entries = relationship("PointsLedgerEntry", back_populates="user")
+
+
+class PasswordResetToken(Base):
+    """Single-use, short-lived password reset grant.
+
+    Only the SHA-256 of the emailed token is stored, so a database read does
+    not yield a working reset link.
+    """
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class EmailVerificationToken(Base):
+    """Single-use email ownership proof, stored hashed like a reset token."""
+    __tablename__ = "email_verification_tokens"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class ConsentRecord(Base):
+    """Auditable cookie/privacy consent decision.
+
+    Anonymous visitors are identified by an opaque client-generated id held in
+    a first-party cookie; authenticated decisions also carry the user id.
+    """
+    __tablename__ = "consent_records"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
+    subject_key = Column(String(64), nullable=False, index=True)
+    policy_version = Column(String(40), nullable=False)
+    necessary = Column(Boolean, nullable=False, default=True)
+    preferences = Column(Boolean, nullable=False, default=False)
+    analytics = Column(Boolean, nullable=False, default=False)
+    marketing = Column(Boolean, nullable=False, default=False)
+    source = Column(String(40), nullable=False, default="banner")
+    ip_hash = Column(String(64), nullable=True)  # hashed, never the raw address
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class PointsWallet(Base):
@@ -170,7 +262,14 @@ class Material(Base):
     __tablename__ = "materials"
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False, unique=True)
+
+    # Catalog ownership. NULL user_id = system default, visible to everyone and
+    # editable only by an admin. A non-NULL user_id is that user's private row;
+    # source_id points at the system row it replaces, so the default is hidden
+    # for that user and can be restored by deleting the override.
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
+    source_id = Column(UUID(), nullable=True, index=True)
+    name = Column(String(100), nullable=False)
     common_names = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
     category = Column(String(50), nullable=False)  # e.g., "aluminum", "steel", "plastic"
@@ -193,13 +292,25 @@ class Material(Base):
     # Relationships
     quotes = relationship("Quote", back_populates="material")
 
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_materials_user_name"),
+    )
+
+
 
 class SurfaceFinish(Base):
     """Surface finish configuration."""
     __tablename__ = "surface_finishes"
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False, unique=True)
+
+    # Catalog ownership. NULL user_id = system default, visible to everyone and
+    # editable only by an admin. A non-NULL user_id is that user's private row;
+    # source_id points at the system row it replaces, so the default is hidden
+    # for that user and can be restored by deleting the override.
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
+    source_id = Column(UUID(), nullable=True, index=True)
+    name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     
     # Cost factors
@@ -223,13 +334,25 @@ class SurfaceFinish(Base):
     # Relationships
     quotes = relationship("Quote", back_populates="surface_finish")
 
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_surface_finishes_user_name"),
+    )
+
+
 
 class InspectionLevel(Base):
     """Inspection level configuration."""
     __tablename__ = "inspection_levels"
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False, unique=True)
+
+    # Catalog ownership. NULL user_id = system default, visible to everyone and
+    # editable only by an admin. A non-NULL user_id is that user's private row;
+    # source_id points at the system row it replaces, so the default is hidden
+    # for that user and can be restored by deleting the override.
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
+    source_id = Column(UUID(), nullable=True, index=True)
+    name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     
     # Cost factors
@@ -250,13 +373,25 @@ class InspectionLevel(Base):
     # Relationships
     quotes = relationship("Quote", back_populates="inspection_level")
 
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_inspection_levels_user_name"),
+    )
+
+
 
 class MachineRate(Base):
     """Machine rate configuration for pricing."""
     __tablename__ = "machine_rates"
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False, unique=True)
+
+    # Catalog ownership. NULL user_id = system default, visible to everyone and
+    # editable only by an admin. A non-NULL user_id is that user's private row;
+    # source_id points at the system row it replaces, so the default is hidden
+    # for that user and can be restored by deleting the override.
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
+    source_id = Column(UUID(), nullable=True, index=True)
+    name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     
     hourly_rate = Column(Numeric(10, 2), nullable=False)  # USD per hour
@@ -268,6 +403,10 @@ class MachineRate(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_machine_rates_user_name"),
+    )
 
 
 # ============================================================================
@@ -292,6 +431,7 @@ class Vendor(Base):
     material_expertise = relationship("VendorMaterialExpertise", back_populates="vendor", cascade="all, delete-orphan")
     certifications = relationship("VendorCertification", back_populates="vendor", cascade="all, delete-orphan")
     quotes = relationship("Quote", back_populates="matched_vendor")
+
 
 
 class VendorMachineCapability(Base):
@@ -352,11 +492,14 @@ class Customer(Base):
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
 
+    # name and company stay plaintext: the customer list searches them with
+    # LIKE, which encrypted values cannot support. Contact details and tax id
+    # are read-and-display only, so those are encrypted at rest.
     name = Column(String(200), nullable=False)
     email = Column(String(200), nullable=True, index=True)
     company = Column(String(200), nullable=True)
-    phone = Column(String(30), nullable=True)
-    gstin = Column(String(20), nullable=True)
+    phone = Column(EncryptedString(30), nullable=True)
+    gstin = Column(EncryptedString(20), nullable=True)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)

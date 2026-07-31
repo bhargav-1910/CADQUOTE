@@ -55,6 +55,10 @@ class MaterialResponse(MaterialBase, BaseSchema):
     """Material response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -100,6 +104,10 @@ class SurfaceFinishResponse(SurfaceFinishBase, BaseSchema):
     """Surface finish response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -138,6 +146,10 @@ class InspectionLevelResponse(InspectionLevelBase, BaseSchema):
     """Inspection level response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -178,6 +190,10 @@ class MachineRateResponse(MachineRateBase, BaseSchema):
     """Machine rate response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -892,6 +908,10 @@ class UserProfileResponse(BaseSchema):
     gstin: Optional[str] = None
     plan: str = "free"
     plan_expires_at: Optional[datetime] = None
+    # Drives admin-only UI. Authorization is always re-checked server side.
+    role: str = "user"
+    email_verified: bool = False
+    totp_enabled: bool = False
     created_at: datetime
 
 
@@ -899,6 +919,9 @@ class LoginRequest(BaseModel):
     """Credentials for logging in."""
     email: str = Field(..., max_length=200)
     password: str = Field(..., min_length=8, max_length=200)
+    # Present only when the account has TOTP enabled; accepts a 6-digit code
+    # or a recovery code.
+    totp_code: Optional[str] = Field(None, max_length=20)
 
 
 class AuthTokenResponse(BaseModel):
@@ -910,8 +933,109 @@ class AuthTokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    """Request payload for access token refresh."""
-    refresh_token: str
+    """Request payload for access token refresh.
+
+    Optional: the token is normally read from the HttpOnly cookie, and the
+    body field remains supported for API clients that hold it directly.
+    """
+    refresh_token: Optional[str] = None
+
+
+class PasswordResetRequest(BaseModel):
+    """Start the password reset flow."""
+    email: str = Field(..., max_length=200)
+
+
+class PasswordResetConfirm(BaseModel):
+    """Complete a password reset with the emailed token."""
+    token: str = Field(..., min_length=16, max_length=200)
+    new_password: str = Field(..., min_length=12, max_length=200)
+
+
+class PasswordChangeRequest(BaseModel):
+    """Change password while authenticated."""
+    current_password: str = Field(..., max_length=200)
+    new_password: str = Field(..., min_length=12, max_length=200)
+
+
+class AccountDeleteRequest(BaseModel):
+    """Irreversible account deletion; the password proves intent."""
+    password: str = Field(..., max_length=200)
+    confirm: str = Field(..., max_length=20)
+
+
+class MessageResponse(BaseModel):
+    """Generic acknowledgement payload."""
+    message: str
+
+
+class EmailVerificationConfirm(BaseModel):
+    """Complete email verification with the emailed token."""
+    token: str = Field(..., min_length=16, max_length=200)
+
+
+class TotpSetupResponse(BaseModel):
+    """Enrolment payload. The secret and codes are shown exactly once."""
+    secret: str
+    otpauth_uri: str
+    backup_codes: List[str]
+
+
+class TotpEnableRequest(BaseModel):
+    """Confirm enrolment by proving the app is generating valid codes."""
+    code: str = Field(..., min_length=6, max_length=10)
+
+
+class TotpDisableRequest(BaseModel):
+    """Turning off the second factor requires the password."""
+    password: str = Field(..., max_length=200)
+
+
+class TotpStatusResponse(BaseModel):
+    enabled: bool
+    confirmed_at: Optional[datetime] = None
+    backup_codes_remaining: int = 0
+
+
+class ConsentRequest(BaseModel):
+    """Cookie/privacy consent decision recorded from the banner."""
+    subject_key: str = Field(..., min_length=8, max_length=64)
+    policy_version: str = Field(..., max_length=40)
+    preferences: bool = False
+    analytics: bool = False
+    marketing: bool = False
+    source: str = Field("banner", max_length=40)
+
+
+class ConsentResponse(BaseModel):
+    """Stored consent acknowledgement."""
+    recorded_at: datetime
+    policy_version: str
+    necessary: bool = True
+    preferences: bool
+    analytics: bool
+    marketing: bool
+
+
+class LegalDocumentSummary(BaseModel):
+    """Metadata describing one published policy document."""
+    slug: str
+    title: str
+    url: str
+
+
+class LegalInfoResponse(BaseModel):
+    """Configuration-driven values rendered into the policy pages."""
+    app_name: str
+    company_name: str
+    contact_email: str
+    privacy_email: str
+    security_email: str
+    company_address: str
+    jurisdiction: str
+    policy_version: str
+    data_retention_days: int
+    documents: List[LegalDocumentSummary]
 
 
 # ============================================================================

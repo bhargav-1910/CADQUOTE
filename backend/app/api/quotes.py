@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.errors import internal_error
 from app.api.deps import get_current_user
 from app.models.models import (
     CADFile, GeometryAnalysis, Material, SurfaceFinish, 
@@ -27,6 +28,7 @@ from app.schemas.schemas import (
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
+from app.services.catalog import get_for_user
 from app.services.pricing import calculate_pricing
 from app.services.vendor_matching import match_vendor_for_quote, vendor_match_to_pricing_overrides
 from app.services.quote import (
@@ -62,7 +64,7 @@ async def preview_vendor_match(
     if not geometry:
         raise HTTPException(status_code=404, detail="Geometry analysis not found")
 
-    material = await db.get(Material, request.material_id)
+    material = await get_for_user(db, Material, request.material_id, current_user.id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
 
@@ -222,15 +224,15 @@ async def get_instant_pricing(
         raise HTTPException(status_code=404, detail="Geometry analysis not found")
     
     # Get configuration options
-    material = await db.get(Material, request.material_id)
+    material = await get_for_user(db, Material, request.material_id, current_user.id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
     
-    surface_finish = await db.get(SurfaceFinish, request.surface_finish_id)
+    surface_finish = await get_for_user(db, SurfaceFinish, request.surface_finish_id, current_user.id)
     if not surface_finish:
         raise HTTPException(status_code=404, detail="Surface finish not found")
     
-    inspection_level = await db.get(InspectionLevel, request.inspection_level_id)
+    inspection_level = await get_for_user(db, InspectionLevel, request.inspection_level_id, current_user.id)
     if not inspection_level:
         raise HTTPException(status_code=404, detail="Inspection level not found")
     
@@ -246,6 +248,7 @@ async def get_instant_pricing(
         inspection_level=inspection_level,
         quantity=request.quantity,
         pricing_overrides=effective_overrides,
+        user_id=current_user.id,
     )
     pricing_result.details["vendor_match"] = vendor_match.details
 
@@ -267,15 +270,15 @@ async def get_batch_pricing(
     current_user: User = Depends(get_current_user),
 ):
     """Get pricing for multiple CAD files with shared configuration in one request."""
-    material = await db.get(Material, request.material_id)
+    material = await get_for_user(db, Material, request.material_id, current_user.id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
 
-    surface_finish = await db.get(SurfaceFinish, request.surface_finish_id)
+    surface_finish = await get_for_user(db, SurfaceFinish, request.surface_finish_id, current_user.id)
     if not surface_finish:
         raise HTTPException(status_code=404, detail="Surface finish not found")
 
-    inspection_level = await db.get(InspectionLevel, request.inspection_level_id)
+    inspection_level = await get_for_user(db, InspectionLevel, request.inspection_level_id, current_user.id)
     if not inspection_level:
         raise HTTPException(status_code=404, detail="Inspection level not found")
 
@@ -327,6 +330,7 @@ async def get_batch_pricing(
             inspection_level=inspection_level,
             quantity=request.quantity,
             pricing_overrides=effective_overrides,
+            user_id=current_user.id,
         )
         pricing_result.details["vendor_match"] = vendor_match.details
         responses.append(
@@ -487,21 +491,21 @@ async def create_combined_quotation(
 
         material = material_cache.get(item.material_id)
         if material is None:
-            material = await db.get(Material, item.material_id)
+            material = await get_for_user(db, Material, item.material_id, current_user.id)
             if not material:
                 raise HTTPException(status_code=404, detail="Material not found")
             material_cache[item.material_id] = material
 
         surface_finish = finish_cache.get(item.surface_finish_id)
         if surface_finish is None:
-            surface_finish = await db.get(SurfaceFinish, item.surface_finish_id)
+            surface_finish = await get_for_user(db, SurfaceFinish, item.surface_finish_id, current_user.id)
             if not surface_finish:
                 raise HTTPException(status_code=404, detail="Surface finish not found")
             finish_cache[item.surface_finish_id] = surface_finish
 
         inspection_level = inspection_cache.get(item.inspection_level_id)
         if inspection_level is None:
-            inspection_level = await db.get(InspectionLevel, item.inspection_level_id)
+            inspection_level = await get_for_user(db, InspectionLevel, item.inspection_level_id, current_user.id)
             if not inspection_level:
                 raise HTTPException(status_code=404, detail="Inspection level not found")
             inspection_cache[item.inspection_level_id] = inspection_level
@@ -519,6 +523,7 @@ async def create_combined_quotation(
             inspection_level=inspection_level,
             quantity=item.quantity,
             pricing_overrides=effective_overrides,
+            user_id=current_user.id,
         )
 
         total_material_cost += Decimal(str(pricing_result.material_cost))
@@ -775,9 +780,9 @@ async def generate_quote_pdf(
         pdf_path = await generate_quote_document(db, quote, issuer=current_user)
         return {"pdf_path": pdf_path, "message": "PDF generated successfully"}
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
+        raise internal_error(
+            e, context="quote PDF generation",
+            public_message="We could not generate the quote PDF.",
         )
 
 
@@ -795,9 +800,9 @@ async def download_quote_pdf(
     try:
         pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
+        raise internal_error(
+            e, context="quote PDF generation",
+            public_message="We could not generate the quote PDF.",
         )
 
     return FileResponse(
@@ -821,9 +826,9 @@ async def preview_quote_pdf(
     try:
         pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
+        raise internal_error(
+            e, context="quote PDF generation",
+            public_message="We could not generate the quote PDF.",
         )
 
     return FileResponse(

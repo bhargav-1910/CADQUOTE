@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { LoginRequest, SignupRequest, UpdateProfileRequest, UserProfile } from '@/types';
 import {
   getAuthToken,
-  setAuthTokens,
+  setAuthToken,
   clearAuthTokens,
   loginUser,
   signupUser,
@@ -79,17 +79,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const boot = async () => {
       const token = getAuthToken();
-      if (!token) {
+      // Nothing suggests a prior session — stay anonymous rather than firing a
+      // refresh request on every visitor's first page load.
+      if (!token && !readCachedProfile()) {
         setLoading(false);
         return;
       }
 
       try {
-        const payload = decodeJwtPayload(token);
+        // A missing access token does not mean signed out: the HttpOnly
+        // refresh cookie survives a tab close, so try to restore the session.
+        const payload = token ? decodeJwtPayload(token) : null;
         const nowSeconds = Math.floor(Date.now() / 1000);
         if (!payload?.exp || payload.exp <= nowSeconds) {
           const refreshed = await refreshAccessToken();
           setUser(refreshed.user);
+          writeCachedProfile(refreshed.user);
           setLoading(false);
           return;
         }
@@ -107,9 +112,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     boot();
   }, []);
 
+  // Only the short-lived access token is kept in local storage. The refresh
+  // token stays in the HttpOnly cookie the server set, out of reach of any
+  // script that might be injected into the page.
   const login = async (payload: LoginRequest) => {
     const result = await loginUser(payload);
-    setAuthTokens(result.access_token, result.refresh_token);
+    setAuthToken(result.access_token);
     setUser(result.user);
     writeCachedProfile(result.user);
   };
@@ -117,7 +125,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Register returns tokens — log the new user straight in.
   const signup = async (payload: SignupRequest) => {
     const result = await signupUser(payload);
-    setAuthTokens(result.access_token, result.refresh_token);
+    setAuthToken(result.access_token);
     setUser(result.user);
     writeCachedProfile(result.user);
   };

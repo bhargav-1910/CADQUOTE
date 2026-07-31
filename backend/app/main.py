@@ -2,16 +2,25 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.cache import cache
-from app.api import files, config, quotes, auth, billing, public, customers
+from app.core.errors import register_exception_handlers
+from app.core.middleware import (
+    BodySizeLimitMiddleware,
+    HTTPSRedirectMiddleware,
+    SecurityHeadersMiddleware,
+)
+from app.api import files, config, quotes, auth, billing, public, customers, legal
 from app.seed import seed_if_empty
 
 # Configure logging
@@ -20,6 +29,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+# Security events go to their own logger so they can be routed to a SIEM
+# without the rest of the application's output.
+logging.getLogger("security").setLevel(logging.INFO)
 
 
 @asynccontextmanager
@@ -37,10 +49,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Seed check failed: {e}")
     
-    # Connect to Redis
+    # Connect to Redis. cache.connect() swallows its own failure, so report
+    # what actually happened rather than always claiming success.
     try:
         await cache.connect()
-        logger.info("Redis cache connected")
+        if not cache._connected:
+            logger.warning("Redis unavailable. Caching disabled.")
     except Exception as e:
         logger.warning(f"Redis connection failed: {e}. Caching disabled.")
 
@@ -100,18 +114,39 @@ app = FastAPI(
     - Total = (Subtotal × Margin Factor) - Quantity Discounts
     """,
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Interactive docs enumerate every endpoint and schema. Useful in
+    # development, free reconnaissance in production.
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
-# Configure CORS
+register_exception_handlers(app)
+
+# Middleware runs bottom-up: the last one added is the outermost. Size limit
+# and HTTPS redirect must run before anything reads the body.
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Configure CORS. Explicit methods and headers instead of "*": with
+# allow_credentials a wildcard is both invalid and, where honoured, an
+# invitation for any origin to drive the API with a victim's token.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Stripe-Signature"],
+    expose_headers=["Content-Disposition", "Retry-After"],
+    max_age=600,
 )
+
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_MB * 1024 * 1024)
+app.add_middleware(HTTPSRedirectMiddleware)
+
+# Host header allowlist: blocks host-header poisoning of absolute URLs and
+# cache entries. "*" (the default) disables the check.
+if settings.allowed_host_list != ["*"]:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 
 # Include routers
 app.include_router(auth.router, prefix="/api")
@@ -121,6 +156,7 @@ app.include_router(config.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
+app.include_router(legal.router, prefix="/api")
 
 # Serve company logos only. Never mount the whole upload dir: it also holds
 # quote PDFs and customer CAD files, which must stay behind authenticated
@@ -148,6 +184,24 @@ async def health_check():
         "status": "healthy",
         "version": settings.APP_VERSION,
     }
+
+
+@app.get("/.well-known/security.txt", response_class=PlainTextResponse, include_in_schema=False)
+@app.get("/security.txt", response_class=PlainTextResponse, include_in_schema=False)
+async def security_txt():
+    """RFC 9116 contact information for reporting vulnerabilities."""
+    base = settings.FRONTEND_BASE_URL.rstrip("/")
+    expires = datetime.utcnow().replace(microsecond=0) + timedelta(days=365)
+    return "\n".join(
+        [
+            f"Contact: mailto:{settings.LEGAL_SECURITY_EMAIL}",
+            f"Expires: {expires.isoformat()}Z",
+            "Preferred-Languages: en",
+            f"Canonical: {base}/.well-known/security.txt",
+            f"Policy: {base}/legal/disclosure",
+            "",
+        ]
+    )
 
 
 if __name__ == "__main__":

@@ -47,14 +47,33 @@ class LocalStorageBackend(StorageBackend):
     def __init__(self, base_dir: str):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._base_resolved = self.base_dir.resolve()
 
     def _resolve_path(self, path: str | Path) -> Path:
-        candidate = Path(path)
+        """Resolve a stored path, refusing anything outside the upload root.
+
+        Today these paths come from the database rather than a request, so
+        this is defence in depth: it means a future caller that forwards user
+        input — or a corrupted row — cannot read or overwrite arbitrary files
+        via ``..`` segments, an absolute path, or a symlink out of the tree.
+        """
+        candidate = Path(str(path).replace("\\", "/"))
+        if "\x00" in str(candidate):
+            raise ValueError("Storage path contains a null byte")
+
         if candidate.is_absolute():
-            return candidate
-        if candidate.parts and candidate.parts[0] == self.base_dir.name:
-            return self.base_dir / Path(*candidate.parts[1:])
-        return self.base_dir / candidate
+            target = candidate
+        elif candidate.parts and candidate.parts[0] == self.base_dir.name:
+            target = self.base_dir / Path(*candidate.parts[1:])
+        else:
+            target = self.base_dir / candidate
+
+        # resolve() collapses ".." and follows symlinks, so the containment
+        # check below cannot be fooled by either.
+        resolved = target.resolve()
+        if resolved != self._base_resolved and self._base_resolved not in resolved.parents:
+            raise ValueError("Storage path escapes the upload directory")
+        return resolved
     
     async def save(self, file_data: bytes, filename: str) -> str:
         """Save file to local filesystem."""

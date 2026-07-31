@@ -16,6 +16,11 @@ import CustomerDetail from './pages/CustomerDetail';
 import AdminPricing from './pages/AdminPricing';
 import BillingPage from './pages/BillingPage';
 import PublicQuotePage from './pages/PublicQuotePage';
+import LegalPage from './pages/LegalPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
+import CookieConsent from './components/CookieConsent';
 
 function App() {
   return (
@@ -24,6 +29,12 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/q/:token" element={<PublicQuotePage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          {/* Policy pages are public: they must be readable before signing up. */}
+          <Route path="/legal" element={<Navigate to="/legal/privacy" replace />} />
+          <Route path="/legal/:slug" element={<LegalPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="/login"
             element={(
@@ -113,7 +124,7 @@ function App() {
           <Route
             path="/admin/pricing"
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute requireAdmin>
                 <Layout>
                   <AdminPricing />
                 </Layout>
@@ -132,6 +143,7 @@ function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <CookieConsent />
       </Router>
     </AuthProvider>
   );

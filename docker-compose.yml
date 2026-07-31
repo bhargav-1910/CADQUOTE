@@ -44,6 +44,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: quote-backend
+    # Pass the whole .env through rather than enumerating variables. Listing
+    # them one by one meant every new setting silently kept its default inside
+    # the container — that is how the SMTP credentials went missing, and it
+    # would have done the same to FIELD_ENCRYPTION_KEY (you would set a key,
+    # believe columns were encrypted, and get plaintext).
+    # The explicit `environment:` entries below still win over anything in
+    # .env, so container-specific values like DATABASE_URL stay correct.
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-quote_user}:${POSTGRES_PASSWORD:-quote_password}@postgres:5432/${POSTGRES_DB:-quote_db}
       - REDIS_URL=redis://redis:6379
@@ -52,8 +61,30 @@ services:
       - AUTO_CREATE_TABLES=false
       # No insecure fallback: compose fails loudly if the secret is missing.
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
-      - ALLOWED_HOSTS=*
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
       - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost}
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost"]}
+      - FORCE_HTTPS=${FORCE_HTTPS:-false}
+      # Outbound mail. Without these the password reset email is only written
+      # to the log — the flow appears to work and no user ever receives a link.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-no-reply@localhost}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-ForgeQuote}
+      # Reserved addresses and legal identity rendered into the policy pages.
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      - LEGAL_COMPANY_NAME=${LEGAL_COMPANY_NAME:-ForgeQuote}
+      - LEGAL_CONTACT_EMAIL=${LEGAL_CONTACT_EMAIL:-support@localhost}
+      - LEGAL_PRIVACY_EMAIL=${LEGAL_PRIVACY_EMAIL:-privacy@localhost}
+      - LEGAL_SECURITY_EMAIL=${LEGAL_SECURITY_EMAIL:-security@localhost}
+      - LEGAL_COMPANY_ADDRESS=${LEGAL_COMPANY_ADDRESS:-}
+      - LEGAL_JURISDICTION=${LEGAL_JURISDICTION:-India}
+      # Billing
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
     volumes:
       - uploads_data:/app/uploads
     ports:

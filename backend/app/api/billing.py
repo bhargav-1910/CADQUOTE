@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import uuid
 import json
+from urllib.parse import urlparse
 
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin
+from app.core import ratelimit
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security_log import log_security_event
 from app.models.models import PointsLedgerEntry, PointsPackage, User
 from app.schemas.schemas import (
     CreateCheckoutSessionRequest,
@@ -41,6 +44,25 @@ def _get_stripe_client() -> stripe:
     return stripe
 
 
+def _validate_return_url(url: str | None, *, fallback: str) -> str:
+    """Only allow return URLs on our own frontend origin.
+
+    Stripe will redirect the customer wherever these point, so accepting a
+    client-supplied absolute URL turns checkout into an open redirect that
+    borrows our domain's credibility for phishing.
+    """
+    if not url:
+        return fallback
+
+    allowed = urlparse(settings.FRONTEND_BASE_URL)
+    candidate = urlparse(url)
+    if candidate.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Return URL must be http(s)")
+    if (candidate.scheme, candidate.netloc) != (allowed.scheme, allowed.netloc):
+        raise HTTPException(status_code=400, detail="Return URL must stay on this application")
+    return url
+
+
 @router.get("/packages", response_model=list[PointsPackageResponse])
 async def list_points_packages_endpoint(
     include_inactive: bool = False,
@@ -63,10 +85,14 @@ async def list_points_packages_endpoint(
 
 @router.post("/packages", response_model=PointsPackageResponse, status_code=201)
 async def create_points_package(
+    request: Request,
     payload: PointsPackageCreateRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    admin: User = Depends(require_admin),
 ) -> PointsPackageResponse:
+    """Create a points package. Admin-only: the price/points ratio here is
+    what customers are charged, so an ordinary user must not be able to mint
+    a package granting a million points for one rupee."""
     existing = await get_points_package_by_code(db, payload.package_code, active_only=False)
     if existing is not None:
         raise HTTPException(status_code=409, detail="Package code already exists")
@@ -83,6 +109,10 @@ async def create_points_package(
     db.add(package)
     await db.commit()
     await db.refresh(package)
+    log_security_event(
+        "admin.billing", request=request, user_id=admin.id, email=admin.email,
+        action="package.create", package_code=package.package_code,
+    )
 
     return PointsPackageResponse(
         id=package.package_code,
@@ -97,11 +127,13 @@ async def create_points_package(
 
 @router.patch("/packages/{package_code}", response_model=PointsPackageResponse)
 async def update_points_package(
+    request: Request,
     package_code: str,
     payload: PointsPackageUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    admin: User = Depends(require_admin),
 ) -> PointsPackageResponse:
+    """Update a points package (admin-only, see create_points_package)."""
     package = await get_points_package_by_code(db, package_code, active_only=False)
     if package is None:
         raise HTTPException(status_code=404, detail="Points package not found")
@@ -116,6 +148,10 @@ async def update_points_package(
 
     await db.commit()
     await db.refresh(package)
+    log_security_event(
+        "admin.billing", request=request, user_id=admin.id, email=admin.email,
+        action="package.update", package_code=package.package_code, fields=sorted(updates),
+    )
 
     return PointsPackageResponse(
         id=package.package_code,
@@ -167,17 +203,26 @@ async def list_wallet_ledger(
 
 @router.post("/checkout-session", response_model=CreateCheckoutSessionResponse)
 async def create_checkout_session(
+    request: Request,
     payload: CreateCheckoutSessionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CreateCheckoutSessionResponse:
+    await ratelimit.enforce(
+        request,
+        "billing.checkout",
+        limit=10,
+        window_seconds=600,
+        identifier=str(current_user.id),
+    )
     stripe_client = _get_stripe_client()
     package = await get_points_package_by_code(db, payload.package_id, active_only=True)
     if package is None:
         raise HTTPException(status_code=404, detail="Points package not found")
 
-    success_url = payload.success_url or f"{settings.FRONTEND_BASE_URL.rstrip('/')}/billing?status=success"
-    cancel_url = payload.cancel_url or f"{settings.FRONTEND_BASE_URL.rstrip('/')}/billing?status=cancel"
+    base = settings.FRONTEND_BASE_URL.rstrip("/")
+    success_url = _validate_return_url(payload.success_url, fallback=f"{base}/billing?status=success")
+    cancel_url = _validate_return_url(payload.cancel_url, fallback=f"{base}/billing?status=cancel")
 
     session = stripe_client.checkout.Session.create(
         mode="payment",
@@ -228,7 +273,14 @@ async def stripe_webhook(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid webhook signature: {str(exc)}") from exc
     else:
-        # Dev fallback: no signature verification when webhook secret is not configured.
+        # An unsigned webhook is an unauthenticated "credit my wallet" endpoint.
+        # Tolerable on a developer machine, never in production.
+        if settings.is_production:
+            log_security_event(
+                "billing.webhook", request=request, outcome="denied",
+                reason="webhook_secret_not_configured",
+            )
+            raise HTTPException(status_code=503, detail="Webhook processing is not configured")
         try:
             event = stripe.Event.construct_from(json.loads(body.decode("utf-8")), stripe.api_key)
         except Exception:

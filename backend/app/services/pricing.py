@@ -1,5 +1,6 @@
 """Rule-based CNC pricing engine with India-focused benchmark ranges."""
 import math
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, replace
@@ -1046,24 +1047,16 @@ async def calculate_pricing(
     pricing_overrides: Optional[Dict[str, Any]] = None,
     tolerance_tier: str = "general",
     include_quantity_breaks: bool = True,
+    user_id: Optional[uuid.UUID] = None,
 ) -> PricingResult:
-    """Calculate pricing for a CNC job and return a detailed breakdown."""
-    default_query = (
-        select(MachineRate)
-        .where(MachineRate.is_default == True, MachineRate.is_active == True)
-        .order_by(MachineRate.updated_at.desc())
-    )
-    default_result = await db.execute(default_query)
-    machine_rate = default_result.scalars().first()
+    """Calculate pricing for a CNC job and return a detailed breakdown.
 
-    if machine_rate is None:
-        fallback_query = (
-            select(MachineRate)
-            .where(MachineRate.is_active == True)
-            .order_by(MachineRate.is_default.desc(), MachineRate.updated_at.desc())
-        )
-        fallback_result = await db.execute(fallback_query)
-        machine_rate = fallback_result.scalars().first()
+    ``user_id`` selects the shop's own machine rate; without it the shared
+    system default is used, which keeps existing callers working.
+    """
+    from app.services.catalog import resolve_machine_rate
+
+    machine_rate = await resolve_machine_rate(db, user_id)
 
     if machine_rate:
         machine_name = machine_rate.name

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Building2, Loader2, Phone, Upload, User } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
+import AccountSecurityPanel from '@/components/AccountSecurityPanel';
 
 interface ProfileEditModalProps {
   open: boolean;
@@ -78,7 +79,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Profile Settings</h2>
@@ -218,7 +219,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
                 </span>
                 <input
                   type="file"
-                  accept=".png,.jpg,.jpeg,.svg,.webp"
+                  accept=".png,.jpg,.jpeg,.webp"
                   onChange={(e) => setLogo(e.target.files?.[0])}
                   className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:rounded file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-slate-700"
                 />
@@ -246,6 +247,8 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
             </button>
           </div>
         </form>
+
+        <AccountSecurityPanel />
       </div>
     </div>
   );

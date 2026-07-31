@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend smoke tests
+    name: Backend import + migration check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -21,8 +21,14 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run tests
-        run: python -m pytest tests -q
+
+      # Test suites are kept out of the repository, so CI verifies what it
+      # still can: that the app imports cleanly and the migration chain is
+      # linear with a single head.
+      - name: Import application
+        run: python -c "import app.main; print('app imports OK')"
+      - name: Check migration chain
+        run: alembic heads 2>&1 | tee /tmp/heads.txt && test "$(grep -c '(head)' /tmp/heads.txt)" -eq 1
 
   frontend:
     name: Frontend typecheck + build

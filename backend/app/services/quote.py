@@ -12,6 +12,7 @@ from app.models.models import (
     Quote, QuoteStatus, CADFile, GeometryAnalysis,
     Material, SurfaceFinish, InspectionLevel
 )
+from app.services.catalog import get_for_user
 from app.services.pricing import calculate_pricing, PricingResult
 from app.services.vendor_matching import match_vendor_for_quote, vendor_match_to_pricing_overrides
 from app.core.config import settings
@@ -111,15 +112,15 @@ async def create_quote(
     if not geometry:
         raise ValueError("Geometry analysis not found. Process the file first.")
     
-    material = await db.get(Material, material_id)
+    material = await get_for_user(db, Material, material_id, user_id)
     if not material:
         raise ValueError("Material not found")
     
-    surface_finish = await db.get(SurfaceFinish, surface_finish_id)
+    surface_finish = await get_for_user(db, SurfaceFinish, surface_finish_id, user_id)
     if not surface_finish:
         raise ValueError("Surface finish not found")
     
-    inspection_level = await db.get(InspectionLevel, inspection_level_id)
+    inspection_level = await get_for_user(db, InspectionLevel, inspection_level_id, user_id)
     if not inspection_level:
         raise ValueError("Inspection level not found")
     
@@ -146,8 +147,9 @@ async def create_quote(
         inspection_level=inspection_level,
         quantity=quantity,
         pricing_overrides=effective_overrides,
+        user_id=user_id,
     )
-    
+
     # Create quote
     valid_until = datetime.utcnow() + timedelta(days=settings.QUOTE_VALIDITY_DAYS)
     

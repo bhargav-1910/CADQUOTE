@@ -4,16 +4,20 @@ A quote becomes publicly reachable only after its owner generates a share
 token; the token is an unguessable capability URL. Internal cost breakdowns
 and margins are never exposed here.
 """
+import re
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core import ratelimit
 from app.core.database import get_db
+from app.core.errors import internal_error
+from app.core.security_log import log_security_event
 from app.models.models import Quote, QuoteStatus
 from app.schemas.schemas import (
     PublicQuoteLineItem,
@@ -26,7 +30,21 @@ from app.services.document import ensure_quote_document, pdf_generator
 router = APIRouter(tags=["Public Quotes"], prefix="/public")
 
 
+# A share token is a bearer capability: 24 random bytes, so guessing is not
+# feasible, but the attempt rate is still capped so the endpoint cannot be
+# used as an oracle or a resource-exhaustion lever.
+_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+def _validate_share_token(share_token: str) -> str:
+    token = share_token.strip()
+    if not _TOKEN_PATTERN.fullmatch(token):
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return token
+
+
 async def _get_shared_quote(db: AsyncSession, share_token: str) -> Quote:
+    share_token = _validate_share_token(share_token)
     query = (
         select(Quote)
         .where(Quote.share_token == share_token)
@@ -119,19 +137,25 @@ def _to_public_response(quote: Quote) -> PublicQuoteResponse:
 
 @router.get("/quotes/{share_token}", response_model=PublicQuoteResponse)
 async def get_public_quote(
+    request: Request,
     share_token: str,
     db: AsyncSession = Depends(get_db),
 ):
+    await ratelimit.enforce(request, "public.quote.view", limit=60, window_seconds=300)
     quote = await _get_shared_quote(db, share_token)
     return _to_public_response(quote)
 
 
 @router.post("/quotes/{share_token}/respond", response_model=PublicQuoteResponse)
 async def respond_to_public_quote(
+    http_request: Request,
     share_token: str,
     request: PublicQuoteRespondRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    # Unauthenticated state change guarded by the capability token; keep the
+    # attempt rate low so a leaked link cannot be hammered.
+    await ratelimit.enforce(http_request, "public.quote.respond", limit=10, window_seconds=300)
     quote = await _get_shared_quote(db, share_token)
 
     status = _public_status(quote)
@@ -148,23 +172,36 @@ async def respond_to_public_quote(
     await db.commit()
     await db.refresh(quote)
 
+    log_security_event(
+        "quote.public_response",
+        request=http_request,
+        user_id=quote.user_id,
+        quote_id=str(quote.id),
+        action=request.action,
+    )
     return _to_public_response(quote)
 
 
 @router.get("/quotes/{share_token}/pdf")
 async def download_public_quote_pdf(
+    request: Request,
     share_token: str,
     db: AsyncSession = Depends(get_db),
 ):
+    await ratelimit.enforce(request, "public.quote.pdf", limit=20, window_seconds=300)
     quote = await _get_shared_quote(db, share_token)
 
     try:
         pdf_path = await ensure_quote_document(db, quote, issuer=quote.user)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+        raise internal_error(
+            e, context="public quote PDF generation",
+            public_message="We could not generate this quote PDF.",
+        )
 
     return FileResponse(
         path=pdf_path,
         filename=f"{quote.quote_number}.pdf",
         media_type="application/pdf",
+        headers={"X-Content-Type-Options": "nosniff"},
     )

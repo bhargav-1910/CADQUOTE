@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Box, LockKeyhole } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { Button, Field, Input, PasswordInput } from '@/components/ui';
+import LegalFooter from '@/components/LegalFooter';
 
 // Same blueprint-grid texture as the landing hero, so auth feels like the
 // same product the visitor just left.
@@ -16,12 +17,24 @@ const LoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from?.pathname || '/workspace';
+  // Only ever redirect to a plain in-app path. Anything protocol-relative
+  // ("//evil.tld"), backslash-prefixed or absolute is an open redirect —
+  // react-router 6 does not reject these itself (GHSA-wrjc-x8rr-h8h6).
+  const requestedFrom = location.state?.from?.pathname;
+  const from =
+    typeof requestedFrom === 'string' &&
+    /^\/(?![/\\])/.test(requestedFrom) &&
+    !requestedFrom.includes('\\')
+      ? requestedFrom
+      : '/workspace';
   const justSignedUp = Boolean(location.state?.justSignedUp);
   const prefillEmail = (location.state?.email as string | undefined) ?? '';
 
   const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
+  // Revealed only after the server says this account carries a second factor.
+  const [totpCode, setTotpCode] = useState('');
+  const [totpRequired, setTotpRequired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,17 +44,25 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      await login({ email, password });
+      await login({ email, password, totp_code: totpCode || undefined });
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const message = err instanceof Error ? err.message : 'Login failed';
+      // The server signals "password was right, second factor still needed"
+      // with this prefix, so the code field appears without a scary error.
+      if (message.startsWith('totp_required')) {
+        setTotpRequired(true);
+        setError(totpCode ? 'That code was not valid. Try the current one.' : null);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-[100dvh] items-center overflow-x-hidden bg-[#0A0A0C] p-4 sm:p-6" style={blueprintGrid}>
+    <div className="relative flex min-h-[100dvh] items-center overflow-x-hidden bg-[#0A0A0C] p-4 pb-20 sm:p-6 sm:pb-20" style={blueprintGrid}>
       <div className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-800 bg-[#0E0E11] shadow-2xl shadow-black/60 md:grid-cols-2">
         <aside className="relative hidden border-r border-slate-800/80 p-8 md:flex md:flex-col md:justify-between">
           <div>
@@ -112,6 +133,36 @@ const LoginPage = () => {
             )}
           </Field>
 
+          <div className="-mt-1 text-right">
+            <Link to="/forgot-password" className="text-sm font-semibold text-sky-700 hover:text-sky-800">
+              Forgot password?
+            </Link>
+          </div>
+
+          {totpRequired && (
+            <Field label="Authenticator code" required>
+              {(props) => (
+                <Input
+                  {...props}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  autoFocus
+                  required
+                  className="text-center font-mono text-lg tracking-[0.3em]"
+                />
+              )}
+            </Field>
+          )}
+
+          {totpRequired && (
+            <p className="-mt-2 text-xs text-slate-500">
+              Enter the 6-digit code from your authenticator app, or one of your recovery codes.
+            </p>
+          )}
+
           {error && (
             <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
@@ -129,7 +180,23 @@ const LoginPage = () => {
               Create account
             </Link>
           </p>
+
+          <p className="text-center text-xs leading-relaxed text-slate-500">
+            By signing in you agree to our{' '}
+            <Link to="/legal/terms" className="underline underline-offset-2 hover:text-slate-700">
+              Terms &amp; Conditions
+            </Link>{' '}
+            and{' '}
+            <Link to="/legal/privacy" className="underline underline-offset-2 hover:text-slate-700">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
+      </div>
+
+      <div className="pointer-events-auto absolute inset-x-0 bottom-4">
+        <LegalFooter compact />
       </div>
     </div>
   );

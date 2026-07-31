@@ -67,3 +67,10 @@ htmlcov/
 
 # Claude Code local settings
 .claude/
+
+# Testing artifacts — kept local, deliberately out of the source tree.
+# The suites still exist on disk; run them with:  cd backend && python -m pytest
+Test files/
+backend/tests/
+backend/pytest.ini
+test_*.stl

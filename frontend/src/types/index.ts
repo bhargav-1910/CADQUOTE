@@ -111,6 +111,10 @@ export interface Material {
   machining_difficulty_factor: number;
   availability_factor: number;
   is_active: boolean;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id: string | null;
+  /** The system default this row overrides, when it is a customisation. */
+  source_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -129,6 +133,10 @@ export interface SurfaceFinish {
   lead_time_addition_days: number;
   compatible_materials: string[] | null;
   is_active: boolean;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id: string | null;
+  /** The system default this row overrides, when it is a customisation. */
+  source_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -144,6 +152,10 @@ export interface InspectionLevel {
   includes_certificate: boolean;
   includes_cmm_report: boolean;
   is_active: boolean;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id: string | null;
+  /** The system default this row overrides, when it is a customisation. */
+  source_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -575,6 +587,13 @@ export interface UserProfile {
   gstin: string | null;
   plan: 'free' | 'pro';
   plan_expires_at: string | null;
+  // Drives admin-only navigation. The server re-checks authorization on every
+  // privileged request, so this is a UI hint, never the control itself.
+  role: 'user' | 'admin';
+  /** Confirmed ownership of the signup address. Gates the admin role. */
+  email_verified: boolean;
+  /** TOTP second factor is active on this account. */
+  totp_enabled: boolean;
   created_at: string;
 }
 
@@ -591,6 +610,8 @@ export interface UpdateProfileRequest {
 export interface LoginRequest {
   email: string;
   password: string;
+  /** Six-digit authenticator code or a recovery code, when 2FA is on. */
+  totp_code?: string;
 }
 
 export interface SignupRequest {

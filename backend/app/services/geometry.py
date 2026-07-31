@@ -492,7 +492,10 @@ async def process_cad_file(
             
         except Exception as e:
             cad_file.processing_status = ProcessingStatus.FAILED
-            cad_file.processing_error = str(e)
+            # The stored value is returned to the client, so keep the raw
+            # exception (paths, library internals) in the log only.
+            logger.exception("Geometry analysis failed for %s: %s", cad_file.id, e)
+            cad_file.processing_error = "Geometry analysis failed for this file."
             await db.commit()
             raise
     
@@ -595,7 +598,7 @@ async def recover_interrupted_processing() -> None:
                     cad = await db.get(CADFile, file_id)
                     if cad:
                         cad.processing_status = ProcessingStatus.FAILED
-                        cad.processing_error = f"Processing interrupted by restart; retry failed: {exc}"
+                        cad.processing_error = "Processing was interrupted and the retry failed."
                         await db.commit()
             except Exception:
                 logger.exception("Could not mark file %s as failed", file_id)
