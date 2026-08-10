@@ -55,6 +55,10 @@ class MaterialResponse(MaterialBase, BaseSchema):
     """Material response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -100,6 +104,10 @@ class SurfaceFinishResponse(SurfaceFinishBase, BaseSchema):
     """Surface finish response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -138,6 +146,10 @@ class InspectionLevelResponse(InspectionLevelBase, BaseSchema):
     """Inspection level response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -178,6 +190,10 @@ class MachineRateResponse(MachineRateBase, BaseSchema):
     """Machine rate response schema."""
     id: UUID
     is_active: bool
+    # Catalog ownership: user_id None means a shared system default; set means
+    # this workspace's own row. source_id names the default it replaces.
+    user_id: Optional[UUID] = None
+    source_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -334,11 +350,17 @@ class GeometryAnalysisResponse(BaseSchema):
     min_wall_thickness: Optional[float] = Field(None, description="Minimum wall thickness in mm")
     hole_count: int = Field(default=0)
     hole_diameters_mm: Optional[List[float]] = Field(None, description="Fitted diameters of detected circular holes")
+    estimated_thread_count: int = Field(
+        default=0, description="Holes whose fitted diameter matches a standard ISO tap-drill size"
+    )
     machining_direction_count: Optional[int] = Field(
         None, description="Distinct hole-axis directions from the exact B-rep (STEP only)"
     )
     brep_hole_data: Optional[List[dict]] = Field(
         None, description="Exact B-rep holes: [{diameter_mm, depth_mm, axis}]"
+    )
+    solid_count: Optional[int] = Field(
+        None, description="Distinct solid bodies in the file; >1 means an assembly"
     )
     complexity_score: float
     removal_ratio: float
@@ -385,6 +407,7 @@ class PricingOverrides(BaseModel):
     min_order_value: Optional[Decimal] = Field(None, ge=0)
     negotiation_buffer_pct: Optional[float] = Field(None, ge=0, le=100)
     tolerance_tier: Optional[Literal["general", "precision", "tight"]] = None
+    lead_time_days: Optional[float] = Field(None, ge=0.5, le=365)
 
 class PricingRequest(BaseModel):
     """Request for instant pricing."""
@@ -638,6 +661,24 @@ class CombinedQuoteCreateRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class QuoteActualsUpdate(BaseSchema):
+    """Machinist/vendor-corrected costing values for the calibration loop.
+
+    All fields optional — record whatever was actually observed. Mirrors the
+    keys of the predicted_costing snapshot.
+    """
+    machine_type: Optional[str] = None
+    number_of_setups: Optional[int] = Field(None, ge=0)
+    fixturing_hours: Optional[float] = Field(None, ge=0)
+    cam_time_hours: Optional[float] = Field(None, ge=0)
+    machining_time_min: Optional[float] = Field(None, ge=0)
+    material_cost: Optional[float] = Field(None, ge=0)
+    tooling_cost: Optional[float] = Field(None, ge=0)
+    nre_cost: Optional[float] = Field(None, ge=0)
+    final_price: Optional[float] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+
 class QuoteResponse(BaseSchema):
     """Quote response schema."""
     id: UUID
@@ -700,6 +741,10 @@ class QuoteResponse(BaseSchema):
     share_token: Optional[str] = None
     responded_at: Optional[datetime] = None
     customer_response_note: Optional[str] = None
+
+    # Calibration loop: engine snapshot vs machinist-recorded values
+    predicted_costing: Optional[dict] = None
+    actual_costing: Optional[dict] = None
 
     pdf_path: Optional[str]
     price_validity: Optional[str]
@@ -867,6 +912,10 @@ class UserProfileResponse(BaseSchema):
     gstin: Optional[str] = None
     plan: str = "free"
     plan_expires_at: Optional[datetime] = None
+    # Drives admin-only UI. Authorization is always re-checked server side.
+    role: str = "user"
+    email_verified: bool = False
+    totp_enabled: bool = False
     created_at: datetime
 
 
@@ -874,6 +923,9 @@ class LoginRequest(BaseModel):
     """Credentials for logging in."""
     email: str = Field(..., max_length=200)
     password: str = Field(..., min_length=8, max_length=200)
+    # Present only when the account has TOTP enabled; accepts a 6-digit code
+    # or a recovery code.
+    totp_code: Optional[str] = Field(None, max_length=20)
 
 
 class AuthTokenResponse(BaseModel):
@@ -885,8 +937,109 @@ class AuthTokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    """Request payload for access token refresh."""
-    refresh_token: str
+    """Request payload for access token refresh.
+
+    Optional: the token is normally read from the HttpOnly cookie, and the
+    body field remains supported for API clients that hold it directly.
+    """
+    refresh_token: Optional[str] = None
+
+
+class PasswordResetRequest(BaseModel):
+    """Start the password reset flow."""
+    email: str = Field(..., max_length=200)
+
+
+class PasswordResetConfirm(BaseModel):
+    """Complete a password reset with the emailed token."""
+    token: str = Field(..., min_length=16, max_length=200)
+    new_password: str = Field(..., min_length=12, max_length=200)
+
+
+class PasswordChangeRequest(BaseModel):
+    """Change password while authenticated."""
+    current_password: str = Field(..., max_length=200)
+    new_password: str = Field(..., min_length=12, max_length=200)
+
+
+class AccountDeleteRequest(BaseModel):
+    """Irreversible account deletion; the password proves intent."""
+    password: str = Field(..., max_length=200)
+    confirm: str = Field(..., max_length=20)
+
+
+class MessageResponse(BaseModel):
+    """Generic acknowledgement payload."""
+    message: str
+
+
+class EmailVerificationConfirm(BaseModel):
+    """Complete email verification with the emailed token."""
+    token: str = Field(..., min_length=16, max_length=200)
+
+
+class TotpSetupResponse(BaseModel):
+    """Enrolment payload. The secret and codes are shown exactly once."""
+    secret: str
+    otpauth_uri: str
+    backup_codes: List[str]
+
+
+class TotpEnableRequest(BaseModel):
+    """Confirm enrolment by proving the app is generating valid codes."""
+    code: str = Field(..., min_length=6, max_length=10)
+
+
+class TotpDisableRequest(BaseModel):
+    """Turning off the second factor requires the password."""
+    password: str = Field(..., max_length=200)
+
+
+class TotpStatusResponse(BaseModel):
+    enabled: bool
+    confirmed_at: Optional[datetime] = None
+    backup_codes_remaining: int = 0
+
+
+class ConsentRequest(BaseModel):
+    """Cookie/privacy consent decision recorded from the banner."""
+    subject_key: str = Field(..., min_length=8, max_length=64)
+    policy_version: str = Field(..., max_length=40)
+    preferences: bool = False
+    analytics: bool = False
+    marketing: bool = False
+    source: str = Field("banner", max_length=40)
+
+
+class ConsentResponse(BaseModel):
+    """Stored consent acknowledgement."""
+    recorded_at: datetime
+    policy_version: str
+    necessary: bool = True
+    preferences: bool
+    analytics: bool
+    marketing: bool
+
+
+class LegalDocumentSummary(BaseModel):
+    """Metadata describing one published policy document."""
+    slug: str
+    title: str
+    url: str
+
+
+class LegalInfoResponse(BaseModel):
+    """Configuration-driven values rendered into the policy pages."""
+    app_name: str
+    company_name: str
+    contact_email: str
+    privacy_email: str
+    security_email: str
+    company_address: str
+    jurisdiction: str
+    policy_version: str
+    data_retention_days: int
+    documents: List[LegalDocumentSummary]
 
 
 # ============================================================================

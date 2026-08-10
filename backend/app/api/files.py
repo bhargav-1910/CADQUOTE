@@ -15,9 +15,16 @@ from app.schemas.schemas import (
     CADFileUploadResponse, CADFileResponse, 
     GeometryAnalysisResponse, BoundingBox
 )
-from app.services.upload import upload_cad_file, get_cad_file, get_cad_file_content
+from app.core.errors import internal_error
+from app.services.upload import (
+    content_disposition,
+    get_cad_file,
+    get_cad_file_content,
+    upload_cad_file,
+)
 from app.services.geometry import process_cad_file, get_geometry_analysis
 from app.services.dfm import analyze_dfm_from_geometry
+from app.services.threads import classify_threaded_holes
 from app.services.billing import consume_points, InsufficientPointsError, has_active_subscription
 from app.core.config import settings
 
@@ -108,7 +115,8 @@ async def upload_file(
                     cad = await get_cad_file(session, file_id, current_user.id)
                     if cad:
                         cad.processing_status = ProcessingStatus.FAILED
-                        cad.processing_error = str(e)
+                        # Client-visible field: keep the raw exception in logs.
+                        cad.processing_error = "Geometry analysis failed for this file."
                         await session.commit()
             except Exception as inner_e:
                 logger.error(f"Failed to update error status: {inner_e}")
@@ -174,19 +182,27 @@ async def get_file_geometry(
             detail="File is being processed"
         )
     elif cad_file.processing_status == ProcessingStatus.FAILED:
+        # The stored error is a raw parser exception (paths, library
+        # internals). Log it, hand the user something actionable.
+        logger.warning(
+            "Geometry unavailable for file %s: %s", cad_file.id, cad_file.processing_error
+        )
         raise HTTPException(
             status_code=422,
-            detail=f"Processing failed: {cad_file.processing_error}"
+            detail="We could not analyze this CAD file. Try re-exporting it, or upload a different file.",
         )
     
     # Get geometry
     geometry = await get_geometry_analysis(db, file_id)
     if not geometry:
         raise HTTPException(status_code=404, detail="Geometry analysis not found")
-    
+
+    thread_count, _ = classify_threaded_holes(getattr(geometry, "hole_diameters_mm", None))
+
     return GeometryAnalysisResponse(
         id=geometry.id,
         cad_file_id=geometry.cad_file_id,
+        estimated_thread_count=thread_count,
         volume=geometry.volume,
         surface_area=geometry.surface_area,
         bounding_box=BoundingBox(
@@ -200,6 +216,7 @@ async def get_file_geometry(
         hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
         machining_direction_count=getattr(geometry, "machining_direction_count", None),
         brep_hole_data=getattr(geometry, "brep_hole_data", None),
+        solid_count=getattr(geometry, "solid_count", None),
         complexity_score=geometry.complexity_score,
         removal_ratio=geometry.removal_ratio,
         triangle_count=geometry.triangle_count,
@@ -247,10 +264,13 @@ async def trigger_processing(
             "status": "completed",
             "geometry_id": str(geometry.id),
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Processing failed: {str(e)}"
+        # Parser exceptions carry absolute paths and library internals.
+        raise internal_error(
+            e, context="geometry processing",
+            public_message="We could not process this CAD file.",
         )
 
 
@@ -274,7 +294,10 @@ async def download_file(
         content=content,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{cad_file.original_filename}"'
+            # Built through the RFC 6266 helper; interpolating the stored name
+            # directly would allow header injection via a crafted filename.
+            "Content-Disposition": content_disposition("attachment", cad_file.original_filename),
+            "X-Content-Type-Options": "nosniff",
         },
     )
 
@@ -333,7 +356,8 @@ async def preview_file(
             content=content,
             media_type="model/stl",
             headers={
-                "Content-Disposition": f'inline; filename="{cad_file.original_filename}"'
+                "Content-Disposition": content_disposition("inline", cad_file.original_filename),
+                "X-Content-Type-Options": "nosniff",
             },
         )
     
@@ -379,8 +403,11 @@ async def preview_file(
                     content=glb_content,
                     media_type="model/gltf-binary",
                     headers={
-                        "Content-Disposition": f'inline; filename="{cad_file.original_filename}.glb"'
-                    }
+                        "Content-Disposition": content_disposition(
+                            "inline", f"{cad_file.original_filename}.glb"
+                        ),
+                        "X-Content-Type-Options": "nosniff",
+                    },
                 )
             finally:
                 if os.path.exists(step_path):
@@ -396,9 +423,9 @@ async def preview_file(
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to convert STEP file for preview: {str(e)}"
+            raise internal_error(
+                e, context="STEP preview conversion",
+                public_message="We could not build a 3D preview for this file.",
             )
     
     raise HTTPException(

@@ -12,6 +12,7 @@ import {
   Factory,
   Layers,
   Ruler,
+  AlertTriangle,
 } from 'lucide-react';
 import type { PricingResponse, PricingOverrides, QuantityBreak } from '@/types';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
@@ -24,7 +25,17 @@ interface PricingDisplayProps {
   onPricingOverridesChange?: (patch: PricingOverrides) => void;
 }
 
-type EditableField = 'material_cost_per_kg' | 'scrap_cost_per_kg' | 'machine_hourly_rate';
+type EditableField =
+  | 'material_cost_per_kg'
+  | 'scrap_cost_per_kg'
+  | 'machine_hourly_rate'
+  | 'lead_time_days'
+  | 'vendor_margin_pct';
+
+const FIELD_MIN: Partial<Record<EditableField, number>> = {
+  lead_time_days: 0.5,
+  vendor_margin_pct: 0,
+};
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
@@ -128,12 +139,12 @@ const PricingDisplay = ({
   const camProgramming = explanation?.cam_programming ?? {};
   const manufacturingCharges = explanation?.manufacturing_charges ?? {};
   const tooling = explanation?.tooling ?? {};
+  const nre = explanation?.nre ?? {};
   const quality = explanation?.quality ?? {};
   const material = explanation?.material ?? {};
   const rawMaterial = explanation?.raw_material ?? {};
   const tolerance = explanation?.tolerance ?? {};
   const marketplace = explanation?.marketplace ?? {};
-  const vendorMatch = explanation?.vendor_match ?? {};
   const quantityBreaks = (explanation?.quantity_breaks ?? []) as QuantityBreak[];
 
   const stockDims = rawMaterial?.raw_material_stock_dimensions_mm as
@@ -153,13 +164,13 @@ const PricingDisplay = ({
   const effectiveMaterialRate = Number(pricingOverrides.material_cost_per_kg ?? fallbackMaterialRate);
   const effectiveScrapRate = Number(pricingOverrides.scrap_cost_per_kg ?? fallbackScrapRate);
   const effectiveMachineRate = Number(pricingOverrides.machine_hourly_rate ?? fallbackMachineRate);
+  const effectiveLeadTime = Number(pricingOverrides.lead_time_days ?? pricing.estimated_lead_time_days);
+  const fallbackVendorMarginPct = Number(marketplace.vendor_margin_pct ?? 18);
+  const effectiveVendorMarginPct = Number(pricingOverrides.vendor_margin_pct ?? fallbackVendorMarginPct);
   const includeScrapSaving =
     pricingOverrides.include_scrap_saving ??
     Boolean(rawMaterial.scrap_saving_included_in_cost ?? material.scrap_saving_included_in_cost);
 
-  const confidence = pricing.dfm_analysis?.confidence_score;
-  const matchedVendorName = vendorMatch?.selected?.vendor_name as string | undefined;
-  const vendorLoadPct = marketplace?.vendor_load_pct as number | undefined;
   const holeBreakdown = machining?.hole_time_breakdown as
     | { small?: number; medium?: number; large?: number; sized_from_cad?: boolean }
     | undefined;
@@ -179,7 +190,7 @@ const PricingDisplay = ({
       setEditingField(null);
       return;
     }
-    onPricingOverridesChange({ [field]: Math.max(0, parsed) } as PricingOverrides);
+    onPricingOverridesChange({ [field]: Math.max(FIELD_MIN[field] ?? 0, parsed) } as PricingOverrides);
     setEditingField(null);
   };
 
@@ -188,16 +199,21 @@ const PricingDisplay = ({
     setEditDraft('');
   };
 
-  const editableValue = (field: EditableField, value: number) =>
-    editingField === field ? (
+  const editableValue = (
+    field: EditableField,
+    value: number,
+    options?: { step?: string; format?: (v: number) => string; inputWidth?: string },
+  ) => {
+    const format = options?.format ?? formatCurrency;
+    return editingField === field ? (
       <span className="inline-flex items-center gap-1.5">
         <input
           type="number"
-          min="0"
-          step="0.01"
+          min={FIELD_MIN[field] ?? 0}
+          step={options?.step ?? '0.01'}
           value={editDraft}
           onChange={(e) => setEditDraft(e.target.value)}
-          className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-xs"
+          className={`${options?.inputWidth ?? 'w-24'} px-1.5 py-0.5 border border-gray-300 rounded text-xs`}
           autoFocus
         />
         <button type="button" onClick={() => commitEdit(field)} className="text-green-700 hover:text-green-800">
@@ -209,7 +225,7 @@ const PricingDisplay = ({
       </span>
     ) : (
       <span className="inline-flex items-center gap-1.5">
-        {formatCurrency(value)}
+        {format(value)}
         {canEdit && (
           <button
             type="button"
@@ -221,6 +237,7 @@ const PricingDisplay = ({
         )}
       </span>
     );
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -228,11 +245,11 @@ const PricingDisplay = ({
       <div className="bg-gradient-to-br from-primary-600 to-primary-700 text-white p-6">
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-primary-100 text-sm font-medium">Total Price</p>
+            <p className="text-primary-100 text-sm font-medium">Total Price <span className="font-normal">(excl. GST)</span></p>
             <p className="text-3xl font-bold tracking-tight tabular-nums">{formatCurrency(animatedTotal)}</p>
           </div>
           <div className="text-right">
-            <p className="text-primary-100 text-sm">Unit Price</p>
+            <p className="text-primary-100 text-sm">Unit Price <span className="font-normal">(excl. GST)</span></p>
             <p className="text-xl font-semibold tabular-nums">
               {formatCurrency(animatedUnit)}
               <span className="text-sm font-normal text-primary-200">/unit</span>
@@ -247,7 +264,40 @@ const PricingDisplay = ({
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="w-4 h-4 text-primary-200" />
-            <span>{formatNumber(pricing.estimated_lead_time_days, 1)} days lead time</span>
+            {editingField === 'lead_time_days' ? (
+              <span className="inline-flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  className="w-16 px-1.5 py-0.5 rounded text-xs text-gray-900"
+                  autoFocus
+                />
+                <span>days lead time</span>
+                <button type="button" onClick={() => commitEdit('lead_time_days')} className="text-white hover:text-primary-100">
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={cancelEdit} className="text-primary-200 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                {formatNumber(effectiveLeadTime, 1)} days lead time
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => beginEdit('lead_time_days', effectiveLeadTime)}
+                    className="text-primary-200 hover:text-white"
+                    title="Lead time varies by shop schedule — edit it directly"
+                  >
+                    <PencilLine className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </span>
+            )}
           </div>
           {tolerance?.label && (
             <div className="flex items-center gap-1.5">
@@ -256,13 +306,6 @@ const PricingDisplay = ({
             </div>
           )}
         </div>
-
-        {typeof confidence === 'number' && (
-          <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium">
-            <ScanSearch className="w-3.5 h-3.5" />
-            Estimated from mesh analysis · {(confidence * 100).toFixed(0)}% confidence
-          </div>
-        )}
       </div>
 
       <div className="p-5 space-y-5">
@@ -288,13 +331,27 @@ const PricingDisplay = ({
               <span className="text-sm text-gray-500">{formatCurrency(breakdown.subtotal)}</span>
             </div>
             <div className="flex justify-between items-baseline py-1.5">
-              <span className="text-sm text-gray-500">
-                Margin &amp; marketplace ({((breakdown.margin_factor - 1) * 100).toFixed(0)}%)
+              <span className="text-sm text-amber-700 inline-flex items-center gap-1.5">
+                Margin &amp; marketplace
+                {editableValue('vendor_margin_pct', effectiveVendorMarginPct, {
+                  step: '0.5',
+                  inputWidth: 'w-16',
+                  format: (v) => `${v.toFixed(1)}%`,
+                })}
+                <span className="text-gray-400">
+                  (effective {((breakdown.margin_factor - 1) * 100).toFixed(0)}%)
+                </span>
               </span>
               <span className="text-sm text-gray-500">
                 {formatCurrency(breakdown.unit_price - breakdown.subtotal)}
               </span>
             </div>
+            {canEdit && (
+              <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                Default margin runs high — lower the vendor margin above for a more competitive quote.
+              </p>
+            )}
           </div>
         </div>
 
@@ -383,12 +440,19 @@ const PricingDisplay = ({
                   value={`${formatNumber(Number(rawMaterial.scrap_weight_kg ?? material.scrap_weight_kg ?? 0), 3)} kg`}
                 />
                 <DetailRow label="Scrap Rate per Kg" value={editableValue('scrap_cost_per_kg', effectiveScrapRate)} />
+                {Boolean(material.stock_size_capped) && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+                    This part's shape (long/thin or mostly hollow) doesn't fit the standard billet
+                    stock model well — the stock estimate is capped and worth a manual check before
+                    quoting.
+                  </p>
+                )}
               </div>
             </ReceiptSection>
 
             <ReceiptSection
               title="Machining"
-              amount={formatCurrency(breakdown.machining_cost)}
+              amount={formatCurrency(Number(machining.machining_cost_per_part ?? 0))}
               icon={<Factory className="w-4 h-4 text-gray-400" />}
             >
               <div className="space-y-1.5">
@@ -411,6 +475,12 @@ const PricingDisplay = ({
                     value={`${holeBreakdown.small ?? 0} / ${holeBreakdown.medium ?? 0} / ${holeBreakdown.large ?? 0}`}
                   />
                 )}
+                {Number(machining.thread_count ?? 0) > 0 && (
+                  <DetailRow
+                    label="Threaded Holes (tapped)"
+                    value={String(machining.thread_count)}
+                  />
+                )}
                 <DetailRow
                   label="Tool Change Time"
                   value={formatDurationMinutes(Number(manufacturingCharges.tool_change_time_min ?? machining.tool_change_time_min ?? 0))}
@@ -431,11 +501,12 @@ const PricingDisplay = ({
             </ReceiptSection>
 
             <ReceiptSection
-              title="Setup, CAM & Tooling"
+              title="Setup, CAM, Tooling & NRE"
               amount={formatCurrency(
                 Number(setup.setup_cost_per_part ?? 0) +
                   Number(camProgramming.cam_cost_per_part ?? 0) +
-                  Number(tooling.tooling_cost_per_part ?? 0),
+                  Number(tooling.tooling_cost_per_part ?? 0) +
+                  Number(nre.nre_cost_per_part ?? 0),
               )}
               icon={<Info className="w-4 h-4 text-gray-400" />}
             >
@@ -458,6 +529,13 @@ const PricingDisplay = ({
                   value={`${formatCurrency(Number(camProgramming.cam_cost_per_part ?? 0))}/part`}
                   emphasize
                 />
+                {Number(nre.nre_hours ?? 0) > 0 && (
+                  <DetailRow
+                    label={`NRE / Fixture Engineering (${formatNumber(Number(nre.nre_hours), 1)} h)`}
+                    value={`${formatCurrency(Number(nre.nre_cost_per_part ?? 0))}/part`}
+                    emphasize
+                  />
+                )}
                 <DetailRow
                   label="Tooling Allocation"
                   value={`${formatCurrency(Number(tooling.tooling_cost_per_part ?? 0))}/part`}
@@ -473,38 +551,44 @@ const PricingDisplay = ({
             >
               <div className="space-y-1.5">
                 <DetailRow label="Inspection Level" value={String(quality.inspection_level ?? pricing.inspection_level.name)} />
+                <DetailRow
+                  label="Base Inspection Cost"
+                  value={formatCurrency(Number(quality.base_quality_cost ?? 0))}
+                />
+                {Number(quality.inspection_fixed_cost_total ?? 0) > 0 && (
+                  <DetailRow
+                    label={`Report/Cert Fee (${formatCurrency(Number(quality.inspection_fixed_cost_total))} total)`}
+                    value={`${formatCurrency(Number(quality.inspection_fixed_cost_allocated ?? 0))}/part`}
+                  />
+                )}
+                {Number(quality.inspection_percentage_cost_pct ?? 0) > 0 && (
+                  <DetailRow
+                    label={`Percentage-based QC (${formatNumber(Number(quality.inspection_percentage_cost_pct), 1)}%)`}
+                    value={formatCurrency(Number(quality.inspection_percentage_cost_amount ?? 0))}
+                  />
+                )}
                 {Number(quality.tolerance_inspection_multiplier ?? 1) > 1 && (
                   <DetailRow
                     label="Tolerance Inspection Factor"
                     value={`× ${formatNumber(Number(quality.tolerance_inspection_multiplier), 2)}`}
                   />
                 )}
-                <DetailRow label="Complexity Score" value={formatNumber(pricing.complexity_score, 2)} />
+                {Number(quality.dfm_inspection_multiplier ?? 1) > 1 && (
+                  <DetailRow
+                    label="DFM Inspection Factor"
+                    value={`× ${formatNumber(Number(quality.dfm_inspection_multiplier), 2)}`}
+                  />
+                )}
+                {quality.is_first_article_amortized && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+                    First article inspection — one article is fully inspected, so this cost is
+                    spread across all {Number(quality.amortized_batch_size ?? pricing.quantity)} unit
+                    {Number(quality.amortized_batch_size ?? pricing.quantity) > 1 ? 's' : ''} instead of
+                    repeating per part.
+                  </p>
+                )}
               </div>
             </ReceiptSection>
-
-            {(matchedVendorName || typeof vendorLoadPct === 'number') && (
-              <ReceiptSection
-                title="Production Partner"
-                icon={<Factory className="w-4 h-4 text-gray-400" />}
-              >
-                <div className="space-y-1.5">
-                  {matchedVendorName && <DetailRow label="Matched Vendor" value={matchedVendorName} emphasize />}
-                  {typeof vendorLoadPct === 'number' && (
-                    <DetailRow label="Current Shop Load" value={`${formatNumber(vendorLoadPct, 0)}%`} />
-                  )}
-                  {marketplace.dynamic_multiplier !== undefined && (
-                    <DetailRow
-                      label="Load-based Price Factor"
-                      value={`× ${formatNumber(Number(marketplace.dynamic_multiplier), 3)}`}
-                    />
-                  )}
-                  <p className="text-xs text-gray-400 pt-1">
-                    Pricing reflects the matched shop's live capacity — quieter shops price lower.
-                  </p>
-                </div>
-              </ReceiptSection>
-            )}
           </div>
         </div>
       </div>

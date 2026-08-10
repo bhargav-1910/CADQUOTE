@@ -1,9 +1,12 @@
 """Upload service for CAD file handling."""
 import os
+import re
+import unicodedata
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple
+from urllib.parse import quote
 
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +19,49 @@ from app.services.storage import storage, compute_file_hash
 
 # Allowed extensions
 ALLOWED_EXTENSIONS = {'.step', '.stp', '.stl'}
+
+# Anything outside this set is stripped from a stored filename. Covers path
+# separators (traversal), NUL and control bytes (null-byte injection, header
+# splitting) and the quoting characters that break Content-Disposition.
+_UNSAFE_FILENAME_CHARS = re.compile(r'[^A-Za-z0-9._ -]')
+MAX_FILENAME_LENGTH = 120
+
+
+def sanitize_filename(filename: str | None, *, fallback: str = "upload") -> str:
+    """Reduce a client-supplied filename to a safe, displayable basename.
+
+    Applied once at upload time so every later consumer — storage, headers,
+    PDF text, the UI — works from a value that is already safe.
+    """
+    if not filename:
+        return fallback
+
+    # Take the basename under both separator conventions: a Windows client can
+    # send "..\\..\\evil.stl" which posixpath alone would keep intact.
+    base = os.path.basename(filename.replace("\\", "/")).strip()
+    # Normalize so lookalike Unicode cannot smuggle a separator through.
+    base = unicodedata.normalize("NFKC", base)
+    base = base.replace("\x00", "")
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("_", base).strip(" .")
+    if not cleaned or cleaned in {".", ".."}:
+        return fallback
+
+    stem, dot, suffix = cleaned.rpartition(".")
+    if dot and len(cleaned) > MAX_FILENAME_LENGTH:
+        keep = max(1, MAX_FILENAME_LENGTH - len(suffix) - 1)
+        cleaned = f"{stem[:keep]}.{suffix}"
+    return cleaned[:MAX_FILENAME_LENGTH]
+
+
+def content_disposition(disposition: str, filename: str) -> str:
+    """Build an RFC 6266 Content-Disposition value.
+
+    The plain ``filename`` is sanitized to ASCII and the exact name is carried
+    in ``filename*``; interpolating a raw name here is header injection.
+    """
+    safe = sanitize_filename(filename)
+    ascii_name = safe.encode("ascii", "replace").decode("ascii").replace('"', "_")
+    return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe)}"
 
 
 def validate_file_extension(filename: str) -> str:
@@ -103,16 +149,29 @@ async def upload_cad_file(
     Returns:
         Tuple of (CADFile, is_duplicate)
     """
-    # Read file content
-    content = await file.read()
-    file_size = len(content)
-    
-    # Validate
-    validate_file_size(file_size)
-    extension = validate_file_extension(file.filename)
+    # Check the declared extension before touching the payload, so a rejected
+    # type costs nothing.
+    safe_filename = sanitize_filename(file.filename, fallback="part.stl")
+    extension = validate_file_extension(safe_filename)
     file_format = normalize_file_format(extension)
+
+    # Read with a hard ceiling instead of slurping the whole stream: an
+    # oversized upload must be refused before it is resident in memory.
+    max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+    content = await file.read(max_bytes + 1)
+    file_size = len(content)
+
+    validate_file_size(file_size)
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
     validate_file_content(content, file_format)
-    
+
+    # Every CAD file reaches storage through this function, so scanning here
+    # covers all upload paths. No-op unless CLAMAV_ENABLED.
+    from app.services.antivirus import assert_clean
+
+    await assert_clean(content, filename=safe_filename)
+
     # Compute hash
     file_hash = compute_file_hash(content)
     
@@ -136,7 +195,7 @@ async def upload_cad_file(
     cad_file = CADFile(
         id=file_id,
         user_id=user_id,
-        original_filename=file.filename,
+        original_filename=safe_filename,
         stored_filename=stored_filename,
         file_path=file_path,
         file_hash=file_hash,

@@ -6,7 +6,7 @@ import {
   Link2, Check, XCircle,
 } from 'lucide-react';
 import type { Quote } from '@/types';
-import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote, respondToQuote } from '@/services/api';
+import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote, respondToQuote, recordQuoteActuals } from '@/services/api';
 import { StatusPill } from '@/components/ui';
 
 interface CombinedFileLine {
@@ -616,6 +616,8 @@ const QuoteDetail = () => {
             </div>
           )}
 
+          <ActualCostingCard quote={quote} onSaved={setQuote} />
+
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">RFQ and Commercial Terms</h2>
             <div className="grid sm:grid-cols-2 gap-4 text-sm">
@@ -869,6 +871,110 @@ const QuoteDetail = () => {
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+const ACTUAL_FIELDS: { key: string; label: string }[] = [
+  { key: 'number_of_setups', label: 'Setups' },
+  { key: 'fixturing_hours', label: 'Fixturing (hrs)' },
+  { key: 'cam_time_hours', label: 'CAM (hrs)' },
+  { key: 'machining_time_min', label: 'Machining (min)' },
+  { key: 'material_cost', label: 'Material (₹)' },
+  { key: 'tooling_cost', label: 'Tooling (₹)' },
+  { key: 'nre_cost', label: 'NRE (₹)' },
+  { key: 'final_price', label: 'Final price (₹)' },
+];
+
+/**
+ * Calibration loop: record what the job actually took next to what the
+ * engine predicted. Every saved correction becomes a data point the pricing
+ * coefficients get tuned against.
+ */
+const ActualCostingCard = ({ quote, onSaved }: { quote: Quote; onSaved: (q: Quote) => void }) => {
+  const predicted = (quote.predicted_costing ?? {}) as Record<string, unknown>;
+  const actual = (quote.actual_costing ?? {}) as Record<string, unknown>;
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fmt = (v: unknown) =>
+    typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(1)) : null;
+
+  const handleSave = async () => {
+    const payload: Record<string, number | string> = {};
+    for (const [key, raw] of Object.entries(values)) {
+      const trimmed = raw.trim();
+      if (trimmed !== '' && Number.isFinite(Number(trimmed))) payload[key] = Number(trimmed);
+    }
+    if (notes.trim()) payload.notes = notes.trim();
+    if (Object.keys(payload).length === 0) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await recordQuoteActuals(quote.id, payload);
+      onSaved(updated);
+      setValues({});
+      setNotes('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save actuals');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasInput = Object.values(values).some((v) => v.trim() !== '') || notes.trim() !== '';
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">Actual Costing (Calibration)</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Record what the job really took — corrections are compared against the engine's
+        prediction to improve future quotes.
+      </p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {ACTUAL_FIELDS.map(({ key, label }) => (
+          <div key={key}>
+            <label className="block text-xs text-gray-500 mb-1">{label}</label>
+            <input
+              type="number"
+              min="0"
+              value={values[key] ?? ''}
+              onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
+              placeholder={fmt(predicted[key]) ?? '—'}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {fmt(actual[key]) != null
+                ? `Recorded: ${fmt(actual[key])}`
+                : fmt(predicted[key]) != null
+                  ? `Predicted: ${fmt(predicted[key])}`
+                  : 'No prediction'}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex gap-3 items-start">
+        <input
+          type="text"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notes (tooling issues, rework, why it differed...)"
+          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+        />
+        <button
+          onClick={handleSave}
+          disabled={saving || !hasInput}
+          className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save actuals'}
+        </button>
+      </div>
+      {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
     </div>
   );
 };

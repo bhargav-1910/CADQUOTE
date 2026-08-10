@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.errors import internal_error
 from app.api.deps import get_current_user
 from app.models.models import (
     CADFile, GeometryAnalysis, Material, SurfaceFinish, 
@@ -23,10 +24,11 @@ from app.schemas.schemas import (
     QuoteCreateRequest, BatchQuoteCreateRequest, BatchQuoteResponse, CombinedQuoteCreateRequest,
     QuoteResponse, QuoteListResponse, VendorMatchSummary,
     VendorMatchPreviewRequest, VendorMatchPreviewResponse,
-    QuoteShareResponse, PublicQuoteRespondRequest,
+    QuoteShareResponse, PublicQuoteRespondRequest, QuoteActualsUpdate,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
+from app.services.catalog import get_for_user
 from app.services.pricing import calculate_pricing
 from app.services.vendor_matching import match_vendor_for_quote, vendor_match_to_pricing_overrides
 from app.services.quote import (
@@ -35,6 +37,7 @@ from app.services.quote import (
     get_quote_by_number,
     list_quotes,
     generate_quote_number,
+    predicted_costing_snapshot,
 )
 from app.services.document import generate_quote_document, ensure_quote_document
 from app.core.config import settings
@@ -61,7 +64,7 @@ async def preview_vendor_match(
     if not geometry:
         raise HTTPException(status_code=404, detail="Geometry analysis not found")
 
-    material = await db.get(Material, request.material_id)
+    material = await get_for_user(db, Material, request.material_id, current_user.id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
 
@@ -221,15 +224,15 @@ async def get_instant_pricing(
         raise HTTPException(status_code=404, detail="Geometry analysis not found")
     
     # Get configuration options
-    material = await db.get(Material, request.material_id)
+    material = await get_for_user(db, Material, request.material_id, current_user.id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
     
-    surface_finish = await db.get(SurfaceFinish, request.surface_finish_id)
+    surface_finish = await get_for_user(db, SurfaceFinish, request.surface_finish_id, current_user.id)
     if not surface_finish:
         raise HTTPException(status_code=404, detail="Surface finish not found")
     
-    inspection_level = await db.get(InspectionLevel, request.inspection_level_id)
+    inspection_level = await get_for_user(db, InspectionLevel, request.inspection_level_id, current_user.id)
     if not inspection_level:
         raise HTTPException(status_code=404, detail="Inspection level not found")
     
@@ -245,6 +248,7 @@ async def get_instant_pricing(
         inspection_level=inspection_level,
         quantity=request.quantity,
         pricing_overrides=effective_overrides,
+        user_id=current_user.id,
     )
     pricing_result.details["vendor_match"] = vendor_match.details
 
@@ -266,15 +270,15 @@ async def get_batch_pricing(
     current_user: User = Depends(get_current_user),
 ):
     """Get pricing for multiple CAD files with shared configuration in one request."""
-    material = await db.get(Material, request.material_id)
+    material = await get_for_user(db, Material, request.material_id, current_user.id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
 
-    surface_finish = await db.get(SurfaceFinish, request.surface_finish_id)
+    surface_finish = await get_for_user(db, SurfaceFinish, request.surface_finish_id, current_user.id)
     if not surface_finish:
         raise HTTPException(status_code=404, detail="Surface finish not found")
 
-    inspection_level = await db.get(InspectionLevel, request.inspection_level_id)
+    inspection_level = await get_for_user(db, InspectionLevel, request.inspection_level_id, current_user.id)
     if not inspection_level:
         raise HTTPException(status_code=404, detail="Inspection level not found")
 
@@ -326,6 +330,7 @@ async def get_batch_pricing(
             inspection_level=inspection_level,
             quantity=request.quantity,
             pricing_overrides=effective_overrides,
+            user_id=current_user.id,
         )
         pricing_result.details["vendor_match"] = vendor_match.details
         responses.append(
@@ -450,6 +455,7 @@ async def create_combined_quotation(
 
     first_item = request.items[0]
     combined_lines: List[str] = []
+    predicted_lines: List[Dict[str, Any]] = []
     serialized_overrides = _serialize_pricing_overrides(request.pricing_overrides)
 
     combined_quote_points = settings.POINTS_COST_CREATE_QUOTE * len(request.items)
@@ -485,21 +491,21 @@ async def create_combined_quotation(
 
         material = material_cache.get(item.material_id)
         if material is None:
-            material = await db.get(Material, item.material_id)
+            material = await get_for_user(db, Material, item.material_id, current_user.id)
             if not material:
                 raise HTTPException(status_code=404, detail="Material not found")
             material_cache[item.material_id] = material
 
         surface_finish = finish_cache.get(item.surface_finish_id)
         if surface_finish is None:
-            surface_finish = await db.get(SurfaceFinish, item.surface_finish_id)
+            surface_finish = await get_for_user(db, SurfaceFinish, item.surface_finish_id, current_user.id)
             if not surface_finish:
                 raise HTTPException(status_code=404, detail="Surface finish not found")
             finish_cache[item.surface_finish_id] = surface_finish
 
         inspection_level = inspection_cache.get(item.inspection_level_id)
         if inspection_level is None:
-            inspection_level = await db.get(InspectionLevel, item.inspection_level_id)
+            inspection_level = await get_for_user(db, InspectionLevel, item.inspection_level_id, current_user.id)
             if not inspection_level:
                 raise HTTPException(status_code=404, detail="Inspection level not found")
             inspection_cache[item.inspection_level_id] = inspection_level
@@ -517,6 +523,7 @@ async def create_combined_quotation(
             inspection_level=inspection_level,
             quantity=item.quantity,
             pricing_overrides=effective_overrides,
+            user_id=current_user.id,
         )
 
         total_material_cost += Decimal(str(pricing_result.material_cost))
@@ -528,6 +535,10 @@ async def create_combined_quotation(
         max_lead_time = max(max_lead_time, float(pricing_result.estimated_lead_time_days))
 
         safe_filename = cad_file.original_filename.replace("|", "/")
+        predicted_lines.append(
+            {"cad_file_id": str(cad_file.id), "file_name": safe_filename,
+             **predicted_costing_snapshot(pricing_result.details)}
+        )
         # Metadata format (v2): cad_file_id|filename|qty|line_total|material_id|surface_finish_id|inspection_level_id
         # Keep pipe-separated format for backward compatibility with existing parsers.
         combined_lines.append(
@@ -592,6 +603,7 @@ async def create_combined_quotation(
         total_price=total_price,
         unit_price=total_price,
         estimated_lead_time_days=max_lead_time,
+        predicted_costing={"lines": predicted_lines},
         status=QuoteStatus.GENERATED,
         valid_until=datetime.utcnow() + timedelta(days=settings.QUOTE_VALIDITY_DAYS),
         price_validity=request.price_validity,
@@ -768,9 +780,9 @@ async def generate_quote_pdf(
         pdf_path = await generate_quote_document(db, quote, issuer=current_user)
         return {"pdf_path": pdf_path, "message": "PDF generated successfully"}
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
+        raise internal_error(
+            e, context="quote PDF generation",
+            public_message="We could not generate the quote PDF.",
         )
 
 
@@ -788,9 +800,9 @@ async def download_quote_pdf(
     try:
         pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
+        raise internal_error(
+            e, context="quote PDF generation",
+            public_message="We could not generate the quote PDF.",
         )
 
     return FileResponse(
@@ -814,9 +826,9 @@ async def preview_quote_pdf(
     try:
         pdf_path = await ensure_quote_document(db, quote, issuer=current_user)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
+        raise internal_error(
+            e, context="quote PDF generation",
+            public_message="We could not generate the quote PDF.",
         )
 
     return FileResponse(
@@ -824,6 +836,33 @@ async def preview_quote_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{quote.quote_number}.pdf"'},
     )
+
+
+@router.put("/quotes/{quote_id}/actuals", response_model=QuoteResponse)
+async def record_quote_actuals(
+    quote_id: uuid.UUID,
+    request: QuoteActualsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record machinist-corrected costing values against the engine's
+    prediction. These pairs are the dataset pricing coefficients get
+    calibrated against."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    values = request.model_dump(exclude_none=True)
+    if not values:
+        raise HTTPException(status_code=400, detail="No actual values provided")
+
+    values["recorded_at"] = datetime.utcnow().isoformat()
+    # Merge over any earlier recording so partial corrections accumulate.
+    quote.actual_costing = {**(quote.actual_costing or {}), **values}
+    await db.commit()
+
+    quote = await get_quote(db, current_user.id, quote.id)
+    return _quote_to_response(quote)
 
 
 @router.post("/quotes/{quote_id}/share", response_model=QuoteShareResponse)
@@ -975,6 +1014,8 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
         status=_effective_quote_status(quote).value,
         valid_until=quote.valid_until,
         share_token=quote.share_token,
+        predicted_costing=quote.predicted_costing,
+        actual_costing=quote.actual_costing,
         responded_at=quote.responded_at,
         customer_response_note=quote.customer_response_note,
         pdf_path=quote.pdf_path,

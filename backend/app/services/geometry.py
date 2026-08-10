@@ -154,24 +154,29 @@ class GeometryProcessor:
             
             volume_cm3 = abs(mesh.volume) * (scale_factor ** 3)
             surface_area_cm2 = mesh.area * (scale_factor ** 2)
-            
+
             # Bounding box
             bounds = mesh.bounds * scale_factor
             bbox_dimensions = bounds[1] - bounds[0]
             bbox_x, bbox_y, bbox_z = bbox_dimensions
             bounding_box_volume = float(np.prod(bbox_dimensions))
-            
-            # Scale-robust complexity score (dimensionless): A^(3/2) / V
-            # This is less sensitive to absolute part size than A/V.
-            complexity_score = (
-                (surface_area_cm2 ** 1.5) / volume_cm3
-                if volume_cm3 > 0 and surface_area_cm2 > 0
-                else 0
-            )
-            
-            # Removal ratio (how much material needs to be removed)
-            removal_ratio = volume_cm3 / bounding_box_volume if bounding_box_volume > 0 else 0
-            
+
+            # trimesh volume is meaningless on open/self-intersecting meshes
+            # (concatenated assembly shells) and was observed exceeding the
+            # bounding box. The convex hull is a true upper bound for any
+            # solid, so clamp to it — downstream removal volume and material
+            # weight both depend on this.
+            try:
+                hull_volume_cm3 = float(mesh.convex_hull.volume) * (scale_factor ** 3)
+            except Exception:
+                hull_volume_cm3 = bounding_box_volume
+            if hull_volume_cm3 > 0 and volume_cm3 > hull_volume_cm3:
+                logger.warning(
+                    "Mesh volume %.1f cm3 exceeds convex hull %.1f cm3; clamping",
+                    volume_cm3, hull_volume_cm3,
+                )
+                volume_cm3 = hull_volume_cm3
+
             # Hole detection: cluster boundary loops and fit circle radii,
             # falling back to genus for watertight meshes.
             hole_count, hole_diameters_mm = self._detect_holes(mesh)
@@ -188,10 +193,11 @@ class GeometryProcessor:
                     logger.debug("Thumbnail render failed", exc_info=True)
 
             # STEP files carry an exact boundary representation — prefer
-            # B-rep hole/orientation features over the mesh heuristics.
+            # B-rep features AND exact mass properties over mesh heuristics.
             analysis_library = "trimesh"
             machining_direction_count = None
             brep_hole_data = None
+            solid_count = None
             if file_format == "step":
                 from app.services.brep import analyze_step_brep
 
@@ -201,7 +207,31 @@ class GeometryProcessor:
                     hole_diameters_mm = brep.hole_diameters_mm or None
                     machining_direction_count = brep.machining_direction_count
                     brep_hole_data = brep.holes or None
+                    solid_count = brep.solid_count
                     analysis_library = "trimesh+ocp-brep"
+
+                    # Exact solid volume/area/bbox (mm from OCC → cm) replace
+                    # the tessellation-derived values, which are unreliable on
+                    # multi-body or non-watertight files.
+                    if brep.volume_mm3 > 0:
+                        volume_cm3 = brep.volume_mm3 * 1e-3
+                        analysis_library = "ocp-brep-exact"
+                    if brep.surface_area_mm2 > 0:
+                        surface_area_cm2 = brep.surface_area_mm2 * 1e-2
+                    if all(d > 0 for d in brep.bbox_mm):
+                        bbox_x, bbox_y, bbox_z = (d * 0.1 for d in brep.bbox_mm)
+                        bounding_box_volume = float(bbox_x * bbox_y * bbox_z)
+
+            # Derived metrics — computed after the exact-geometry override so
+            # complexity and removal ratio never mix mesh and B-rep sources.
+            complexity_score = (
+                (surface_area_cm2 ** 1.5) / volume_cm3
+                if volume_cm3 > 0 and surface_area_cm2 > 0
+                else 0
+            )
+            removal_ratio = (
+                volume_cm3 / bounding_box_volume if bounding_box_volume > 0 else 0
+            )
 
             analysis_time = time.time() - start_time
 
@@ -217,6 +247,7 @@ class GeometryProcessor:
                 "hole_diameters_mm": hole_diameters_mm,
                 "machining_direction_count": machining_direction_count,
                 "brep_hole_data": brep_hole_data,
+                "solid_count": solid_count,
                 "complexity_score": round(complexity_score, 4),
                 "removal_ratio": round(removal_ratio, 4),
                 "triangle_count": len(mesh.faces),
@@ -314,8 +345,8 @@ class GeometryProcessor:
         except Exception:
             pass
 
-        hole_count = min(hole_count, 50)
-        diameters_mm = sorted(diameters_mm)[:50]
+        hole_count = min(hole_count, 200)
+        diameters_mm = sorted(diameters_mm)[:200]
         return hole_count, (diameters_mm if diameters_mm else None)
 
     def _boundary_loops(self, mesh) -> list:
@@ -461,7 +492,10 @@ async def process_cad_file(
             
         except Exception as e:
             cad_file.processing_status = ProcessingStatus.FAILED
-            cad_file.processing_error = str(e)
+            # The stored value is returned to the client, so keep the raw
+            # exception (paths, library internals) in the log only.
+            logger.exception("Geometry analysis failed for %s: %s", cad_file.id, e)
+            cad_file.processing_error = "Geometry analysis failed for this file."
             await db.commit()
             raise
     
@@ -479,6 +513,7 @@ async def process_cad_file(
         hole_diameters_mm=analysis_data.get("hole_diameters_mm"),
         machining_direction_count=analysis_data.get("machining_direction_count"),
         brep_hole_data=analysis_data.get("brep_hole_data"),
+        solid_count=analysis_data.get("solid_count"),
         complexity_score=analysis_data["complexity_score"],
         removal_ratio=analysis_data["removal_ratio"],
         triangle_count=analysis_data.get("triangle_count"),
@@ -563,7 +598,59 @@ async def recover_interrupted_processing() -> None:
                     cad = await db.get(CADFile, file_id)
                     if cad:
                         cad.processing_status = ProcessingStatus.FAILED
-                        cad.processing_error = f"Processing interrupted by restart; retry failed: {exc}"
+                        cad.processing_error = "Processing was interrupted and the retry failed."
                         await db.commit()
             except Exception:
                 logger.exception("Could not mark file %s as failed", file_id)
+
+
+async def reanalyze_stale_brep_geometry() -> None:
+    """Re-run analysis for STEP files processed before exact B-rep geometry.
+
+    Uploads dedup by user+file hash and reuse the stored geometry row, so
+    analyses from older engine versions never self-heal. Rows whose
+    analysis_library is 'trimesh+ocp-brep' were produced by a build where OCP
+    parsed the file but volume/area still came from the (unreliable) mesh —
+    re-analysis converges them to 'ocp-brep-exact' and they are never
+    revisited. Pure-'trimesh' rows are left alone (OCP could not parse those).
+    Called once at startup, after interrupted-processing recovery.
+    """
+    from app.core.database import get_db_session
+
+    try:
+        async with get_db_session() as db:
+            result = await db.execute(
+                select(GeometryAnalysis.id, GeometryAnalysis.cad_file_id)
+                .join(CADFile, CADFile.id == GeometryAnalysis.cad_file_id)
+                .where(
+                    GeometryAnalysis.analysis_library == "trimesh+ocp-brep",
+                    CADFile.file_format == "step",
+                    CADFile.processing_status == ProcessingStatus.COMPLETED,
+                )
+            )
+            stale = result.all()
+    except Exception:
+        logger.exception("Stale-geometry scan failed")
+        return
+
+    if not stale:
+        return
+
+    logger.warning("Re-analyzing %d geometry row(s) from an older engine version", len(stale))
+    for analysis_id, cad_file_id in stale:
+        try:
+            async with get_db_session() as db:
+                cad = await db.get(CADFile, cad_file_id)
+                if cad is None:
+                    continue
+                # Drop the stale row and cached payload so process_cad_file
+                # runs a fresh analysis instead of resurrecting old numbers.
+                old_row = await db.get(GeometryAnalysis, analysis_id)
+                if old_row is not None:
+                    await db.delete(old_row)
+                    await db.commit()
+                await cache.delete(cache.geometry_key(cad.file_hash))
+                await process_cad_file(db, cad)
+                logger.info("Re-analyzed geometry for file %s", cad_file_id)
+        except Exception:
+            logger.exception("Re-analysis failed for file %s", cad_file_id)

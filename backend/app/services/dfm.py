@@ -84,9 +84,28 @@ def analyze_dfm_metrics(
     bbox_y_cm: float,
     bbox_z_cm: float,
     triangle_count: Optional[int],
+    solid_count: Optional[int] = None,
 ) -> DFMAnalysis:
     """Analyze manufacturability from geometry metrics."""
     issues: List[DFMIssue] = []
+
+    # 0) Multi-body files: an assembly quoted as one machined part gives a
+    # misleading price — volume, area and orientations sum over every body.
+    if solid_count is not None and solid_count > 1:
+        _push_issue(
+            issues,
+            severity="warning",
+            code="multi-body-file",
+            title="File contains multiple solid bodies",
+            description=(
+                f"The file contains {solid_count} separate solid bodies, so it looks like "
+                "an assembly. Pricing treats all bodies as one machined part, which "
+                "inflates material and machining estimates."
+            ),
+            recommendation="Export and upload each machined component as its own STEP file.",
+            penalty=12,
+            confidence=0.9,
+        )
 
     max_dim = max(bbox_x_cm, bbox_y_cm, bbox_z_cm)
     min_dim = max(min(bbox_x_cm, bbox_y_cm, bbox_z_cm), 0.001)
@@ -151,8 +170,15 @@ def analyze_dfm_metrics(
             confidence=_confidence_from_threshold(min_wall_thickness_mm, 2.0, 1.0, direction="lt"),
         )
 
-    # 2) Complexity checks (scale-robust metric A^(3/2)/V)
-    if complexity_score > 32:
+    # 2) Complexity checks (scale-robust metric A^(3/2)/V).
+    # A cube scores ~15 on this metric, but so does any thin-walled or
+    # sheet-like part — surface-area-to-volume ratio tracks "thinness", not
+    # necessarily "hard to machine". Real CNC quotes (brackets, enclosures,
+    # plates) routinely land in the 100-300 range without being unusually
+    # complex jobs; thresholds below are calibrated off that population
+    # (2026-08 recalibration) rather than the bare geometric baseline, so
+    # the flag means "genuinely unusual", not "has any thickness at all".
+    if complexity_score > 400:
         _push_issue(
             issues,
             severity="error",
@@ -163,9 +189,9 @@ def analyze_dfm_metrics(
             ),
             recommendation="Simplify non-critical features and merge tiny details where possible.",
             penalty=20,
-            confidence=_confidence_from_threshold(complexity_score, 32.0, 16.0, direction="gt"),
+            confidence=_confidence_from_threshold(complexity_score, 400.0, 200.0, direction="gt"),
         )
-    elif complexity_score > 24:
+    elif complexity_score > 200:
         _push_issue(
             issues,
             severity="warning",
@@ -176,9 +202,9 @@ def analyze_dfm_metrics(
             ),
             recommendation="Reduce unnecessary feature transitions and sharp local geometry.",
             penalty=12,
-            confidence=_confidence_from_threshold(complexity_score, 24.0, 14.0, direction="gt"),
+            confidence=_confidence_from_threshold(complexity_score, 200.0, 150.0, direction="gt"),
         )
-    elif complexity_score > 18:
+    elif complexity_score > 80:
         _push_issue(
             issues,
             severity="info",
@@ -187,11 +213,16 @@ def analyze_dfm_metrics(
             description=f"Complexity score is {complexity_score:.2f}.",
             recommendation="Expect moderate impact on cycle time.",
             penalty=4,
-            confidence=_confidence_from_threshold(complexity_score, 18.0, 10.0, direction="gt"),
+            confidence=_confidence_from_threshold(complexity_score, 80.0, 80.0, direction="gt"),
         )
 
-    # 3) Material removal efficiency
-    if removal_ratio < 0.2:
+    # 3) Material removal efficiency. Thin-walled/hollow parts (enclosures,
+    # housings) inherently occupy a small fraction of their bounding box —
+    # that's their shape, not necessarily wasted stock. Thresholds below
+    # target genuinely extreme cases (near-empty bounding boxes, usually a
+    # long/thin envelope or a mostly-hollow shell) rather than ordinary
+    # hollow parts, which commonly sit at 5-20% (2026-08 recalibration).
+    if removal_ratio < 0.01:
         _push_issue(
             issues,
             severity="error",
@@ -202,9 +233,9 @@ def analyze_dfm_metrics(
             ),
             recommendation="Consider near-net stock or redesign for better stock utilization.",
             penalty=20,
-            confidence=_confidence_from_threshold(removal_ratio, 0.2, 0.2, direction="lt"),
+            confidence=_confidence_from_threshold(removal_ratio, 0.01, 0.01, direction="lt"),
         )
-    elif removal_ratio < 0.35:
+    elif removal_ratio < 0.08:
         _push_issue(
             issues,
             severity="warning",
@@ -215,7 +246,7 @@ def analyze_dfm_metrics(
             ),
             recommendation="Reduce bounding stock envelope or simplify outer profile.",
             penalty=12,
-            confidence=_confidence_from_threshold(removal_ratio, 0.35, 0.2, direction="lt"),
+            confidence=_confidence_from_threshold(removal_ratio, 0.08, 0.07, direction="lt"),
         )
 
     # 4) Hole density and feature crowding
@@ -411,6 +442,7 @@ def analyze_dfm_from_geometry(geometry: GeometryAnalysis) -> DFMAnalysis:
         bbox_y_cm=geometry.bbox_y,
         bbox_z_cm=geometry.bbox_z,
         triangle_count=geometry.triangle_count,
+        solid_count=getattr(geometry, "solid_count", None),
     )
 
 

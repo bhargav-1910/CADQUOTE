@@ -24,7 +24,6 @@ import type {
 import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile, deleteQuote } from '@/services/api';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
-import { analyzeDFM } from '@/services/dfm';
 
 interface MultiFileEntry {
   cadFile: CADFile;
@@ -159,15 +158,6 @@ const parseCombinedEditItems = (rawNotes?: string | null): CombinedEditItem[] =>
 
 const formatINR = (v: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(v);
-
-const getDFXSeverity = (geometry: GeometryAnalysis | null): 'error' | 'warning' | 'ok' => {
-  if (!geometry) return 'ok';
-
-  const analysis = analyzeDFM(geometry);
-  if (analysis.has_blocking_issue) return 'error';
-  if (analysis.score < 80 || analysis.issues.length > 0) return 'warning';
-  return 'ok';
-};
 
 const buildPricingOverridesPayload = (
   enabled: boolean,
@@ -1307,20 +1297,6 @@ const QuoteBuilder = () => {
                       <p className="font-semibold text-gray-900">{value}</p>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {config.geometry && getDFXSeverity(config.geometry) !== 'ok' && (
-                <div
-                  className={`mt-4 rounded-lg border p-3 text-sm ${
-                    getDFXSeverity(config.geometry) === 'error'
-                      ? 'bg-red-50 border-red-200 text-red-800'
-                      : 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                  }`}
-                >
-                  {getDFXSeverity(config.geometry) === 'error'
-                    ? 'DFX Error: This model has manufacturability risks that can block production quality.'
-                    : 'DFX Warning: This model may increase machining risk, cost, or lead time.'}
                 </div>
               )}
             </div>

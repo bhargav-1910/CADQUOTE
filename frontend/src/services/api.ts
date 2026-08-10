@@ -51,6 +51,10 @@ const api: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // Required so the HttpOnly, SameSite=Strict refresh cookie is sent to
+  // /api/auth/refresh. The API is same-origin in dev (Vite proxy) and in
+  // production (nginx), so this does not widen the CORS surface.
+  withCredentials: true,
 });
 
 let refreshPromise: Promise<AuthTokenResponse> | null = null;
@@ -317,21 +321,129 @@ export const getRefreshToken = (): string | null => {
 };
 
 export const refreshAccessToken = async (): Promise<AuthTokenResponse> => {
+  // The refresh token normally travels in the HttpOnly cookie, which this code
+  // cannot read — that is the point. The stored copy is only a fallback for
+  // browsers where the cookie was blocked.
   const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
-  }
 
   try {
     const response = await api.post<AuthTokenResponse>('/auth/refresh', {
       refresh_token: refreshToken,
     });
-    setAuthTokens(response.data.access_token, response.data.refresh_token);
+    setAuthToken(response.data.access_token);
+    // Keep the fallback copy only if we were already relying on it.
+    if (refreshToken) {
+      setRefreshToken(response.data.refresh_token);
+    }
     return response.data;
   } catch (error) {
     clearAuthTokens();
     return handleError(error as AxiosError);
   }
+};
+
+// ============================================================================
+// Password recovery and account management
+// ============================================================================
+
+export const requestPasswordReset = async (email: string): Promise<{ message: string }> => {
+  try {
+    const response = await api.post<{ message: string }>('/auth/forgot-password', { email });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const confirmPasswordReset = async (
+  token: string,
+  newPassword: string,
+): Promise<{ message: string }> => {
+  try {
+    const response = await api.post<{ message: string }>('/auth/reset-password', {
+      token,
+      new_password: newPassword,
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const changePassword = async (
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ message: string }> => {
+  try {
+    const response = await api.post<{ message: string }>('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const deleteAccount = async (
+  password: string,
+  confirm: string,
+): Promise<{ message: string }> => {
+  try {
+    const response = await api.delete<{ message: string }>('/auth/me', {
+      data: { password, confirm },
+    });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+/** Whether the client should present a challenge before the next sign-in. */
+export const getLoginChallenge = async (email?: string): Promise<boolean> => {
+  try {
+    const response = await api.get<{ challenge_required: boolean }>('/auth/login-challenge', {
+      params: email ? { email } : undefined,
+    });
+    return response.data.challenge_required;
+  } catch {
+    return false;
+  }
+};
+
+// ============================================================================
+// Legal & consent
+// ============================================================================
+
+export interface LegalInfoResponse {
+  app_name: string;
+  company_name: string;
+  contact_email: string;
+  privacy_email: string;
+  security_email: string;
+  company_address: string;
+  jurisdiction: string;
+  policy_version: string;
+  data_retention_days: number;
+  documents: { slug: string; title: string; url: string }[];
+}
+
+export const getLegalInfo = async (): Promise<LegalInfoResponse> => {
+  const response = await api.get<LegalInfoResponse>('/legal/info');
+  return response.data;
+};
+
+export interface ConsentPayload {
+  subject_key: string;
+  policy_version: string;
+  preferences: boolean;
+  analytics: boolean;
+  marketing: boolean;
+  source: string;
+}
+
+export const recordConsent = async (payload: ConsentPayload): Promise<void> => {
+  await api.post('/legal/consent', payload);
 };
 
 export const logoutUser = async (): Promise<void> => {
@@ -586,6 +698,19 @@ export const shareQuote = async (quoteId: string): Promise<QuoteShareResponse> =
   }
 };
 
+/** Record machinist-corrected costing values (calibration loop). */
+export const recordQuoteActuals = async (
+  quoteId: string,
+  actuals: Record<string, number | string>,
+): Promise<Quote> => {
+  try {
+    const response = await api.put<Quote>(`/quotes/${quoteId}/actuals`, actuals);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
 /** Owner-side: record a decision received outside the share link (forwarded PDF, phone call). */
 export const respondToQuote = async (
   quoteId: string,
@@ -700,30 +825,169 @@ export const createStripeCheckoutSession = async (
 };
 
 // ============================================================================
-// Admin / Pricing Config API
+// Email verification & two-factor authentication
 // ============================================================================
 
-export const updateMaterial = async (materialId: string, data: Partial<Material>): Promise<Material> => {
+export interface TotpStatus {
+  enabled: boolean;
+  confirmed_at: string | null;
+  backup_codes_remaining: number;
+}
+
+export interface TotpSetup {
+  secret: string;
+  otpauth_uri: string;
+  backup_codes: string[];
+}
+
+export const verifyEmail = async (token: string): Promise<{ message: string }> => {
   try {
-    const response = await api.patch<Material>(`/config/materials/${materialId}`, data);
+    const response = await api.post<{ message: string }>('/auth/verify-email', { token });
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);
   }
 };
 
-export const updateSurfaceFinish = async (finishId: string, data: Partial<SurfaceFinish>): Promise<SurfaceFinish> => {
+export const resendVerification = async (): Promise<{ message: string }> => {
   try {
-    const response = await api.patch<SurfaceFinish>(`/config/finishes/${finishId}`, data);
+    const response = await api.post<{ message: string }>('/auth/resend-verification');
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);
   }
 };
 
-export const updateInspectionLevel = async (inspectionId: string, data: Partial<InspectionLevel>): Promise<InspectionLevel> => {
+export const getTotpStatus = async (): Promise<TotpStatus> => {
   try {
-    const response = await api.patch<InspectionLevel>(`/config/inspections/${inspectionId}`, data);
+    const response = await api.get<TotpStatus>('/auth/totp');
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+/** Begin enrolment. The secret and recovery codes are returned exactly once. */
+export const setupTotp = async (): Promise<TotpSetup> => {
+  try {
+    const response = await api.post<TotpSetup>('/auth/totp/setup');
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const enableTotp = async (code: string): Promise<{ message: string }> => {
+  try {
+    const response = await api.post<{ message: string }>('/auth/totp/enable', { code });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const disableTotp = async (password: string): Promise<{ message: string }> => {
+  try {
+    const response = await api.post<{ message: string }>('/auth/totp/disable', { password });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+// ============================================================================
+// Pricing Catalog API (per workspace)
+//
+// Editing a system default copies it into your workspace first, so the PATCH
+// response may carry a different id than the row you edited. Callers must key
+// off the returned row rather than assuming the id is stable.
+// ============================================================================
+
+/** Scope of a catalog write: your own workspace, or the shared default (admin). */
+export type CatalogScope = 'mine' | 'global';
+
+const scopeQuery = (scope: CatalogScope) => (scope === 'global' ? '?scope=global' : '');
+
+/** True when this row is a customisation rather than the shared default. */
+export const isCustomised = (row: { user_id?: string | null }): boolean =>
+  Boolean(row.user_id);
+
+export const updateMaterial = async (
+  materialId: string,
+  data: Partial<Material>,
+  scope: CatalogScope = 'mine',
+): Promise<Material> => {
+  try {
+    const response = await api.patch<Material>(`/config/materials/${materialId}${scopeQuery(scope)}`, data);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const updateSurfaceFinish = async (
+  finishId: string,
+  data: Partial<SurfaceFinish>,
+  scope: CatalogScope = 'mine',
+): Promise<SurfaceFinish> => {
+  try {
+    const response = await api.patch<SurfaceFinish>(`/config/finishes/${finishId}${scopeQuery(scope)}`, data);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const updateInspectionLevel = async (
+  inspectionId: string,
+  data: Partial<InspectionLevel>,
+  scope: CatalogScope = 'mine',
+): Promise<InspectionLevel> => {
+  try {
+    const response = await api.patch<InspectionLevel>(`/config/inspections/${inspectionId}${scopeQuery(scope)}`, data);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+/** Delete a customisation, restoring the shared system default. */
+export const resetMaterial = async (materialId: string): Promise<void> => {
+  try {
+    await api.delete(`/config/materials/${materialId}`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const resetSurfaceFinish = async (finishId: string): Promise<void> => {
+  try {
+    await api.delete(`/config/finishes/${finishId}`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const resetInspectionLevel = async (inspectionId: string): Promise<void> => {
+  try {
+    await api.delete(`/config/inspections/${inspectionId}`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const resetMachineRate = async (rateId: string): Promise<void> => {
+  try {
+    await api.delete(`/config/machine-rates/${rateId}`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+/** Count of catalog rows this workspace has customised, per table. */
+export const getCatalogOverrides = async (): Promise<Record<string, number>> => {
+  try {
+    const response = await api.get<Record<string, number>>('/config/overrides');
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);
@@ -732,6 +996,9 @@ export const updateInspectionLevel = async (inspectionId: string, data: Partial<
 
 export interface MachineRate {
   id: string;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id?: string | null;
+  source_id?: string | null;
   name: string;
   description: string | null;
   hourly_rate: number;
@@ -797,9 +1064,13 @@ export const getMachineRates = async (): Promise<MachineRate[]> => {
   }
 };
 
-export const updateMachineRate = async (rateId: string, data: Partial<MachineRate>): Promise<MachineRate> => {
+export const updateMachineRate = async (
+  rateId: string,
+  data: Partial<MachineRate>,
+  scope: CatalogScope = 'mine',
+): Promise<MachineRate> => {
   try {
-    const response = await api.patch<MachineRate>(`/config/machine-rates/${rateId}`, data);
+    const response = await api.patch<MachineRate>(`/config/machine-rates/${rateId}${scopeQuery(scope)}`, data);
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);

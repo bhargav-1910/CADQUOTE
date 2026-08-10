@@ -12,6 +12,7 @@ from app.models.models import (
     Quote, QuoteStatus, CADFile, GeometryAnalysis,
     Material, SurfaceFinish, InspectionLevel
 )
+from app.services.catalog import get_for_user
 from app.services.pricing import calculate_pricing, PricingResult
 from app.services.vendor_matching import match_vendor_for_quote, vendor_match_to_pricing_overrides
 from app.core.config import settings
@@ -22,6 +23,28 @@ def generate_quote_number() -> str:
     date_prefix = datetime.utcnow().strftime("%Y%m%d")
     random_suffix = uuid.uuid4().hex[:6].upper()
     return f"QT-{date_prefix}-{random_suffix}"
+
+
+def predicted_costing_snapshot(details: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact engine metrics stored on the quote for the calibration loop.
+
+    These are the values a machinist can later correct via the actuals
+    endpoint; predicted-vs-actual pairs are what pricing coefficients get
+    refit against.
+    """
+    machining = details.get("machining", {})
+    setup = details.get("setup", {})
+    cam = details.get("cam_programming", {})
+    return {
+        "machine_type": machining.get("machine_type"),
+        "number_of_setups": setup.get("number_of_setups"),
+        "fixturing_hours": setup.get("setup_time_total_hours"),
+        "cam_time_hours": cam.get("cam_time_hours"),
+        "machining_time_min": machining.get("cycle_time_min"),
+        "material_cost": details.get("material", {}).get("material_cost_per_part"),
+        "tooling_cost": details.get("tooling", {}).get("tooling_total"),
+        "nre_cost": details.get("nre", {}).get("nre_total"),
+    }
 
 
 async def create_quote(
@@ -89,15 +112,15 @@ async def create_quote(
     if not geometry:
         raise ValueError("Geometry analysis not found. Process the file first.")
     
-    material = await db.get(Material, material_id)
+    material = await get_for_user(db, Material, material_id, user_id)
     if not material:
         raise ValueError("Material not found")
     
-    surface_finish = await db.get(SurfaceFinish, surface_finish_id)
+    surface_finish = await get_for_user(db, SurfaceFinish, surface_finish_id, user_id)
     if not surface_finish:
         raise ValueError("Surface finish not found")
     
-    inspection_level = await db.get(InspectionLevel, inspection_level_id)
+    inspection_level = await get_for_user(db, InspectionLevel, inspection_level_id, user_id)
     if not inspection_level:
         raise ValueError("Inspection level not found")
     
@@ -124,8 +147,9 @@ async def create_quote(
         inspection_level=inspection_level,
         quantity=quantity,
         pricing_overrides=effective_overrides,
+        user_id=user_id,
     )
-    
+
     # Create quote
     valid_until = datetime.utcnow() + timedelta(days=settings.QUOTE_VALIDITY_DAYS)
     
@@ -171,6 +195,7 @@ async def create_quote(
         total_price=pricing_result.total_price,
         unit_price=pricing_result.unit_price,
         estimated_lead_time_days=pricing_result.estimated_lead_time_days,
+        predicted_costing=predicted_costing_snapshot(pricing_result.details),
         status=QuoteStatus.GENERATED,
         valid_until=valid_until,
         price_validity=price_validity,

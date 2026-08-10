@@ -24,21 +24,34 @@ import {
   CheckCircle,
   XCircle,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
 import { useAuth } from '@/components/AuthProvider';
 import ProfileEditModal from '@/components/ProfileEditModal';
+import LegalFooter from './LegalFooter';
 import CommandPalette from '@/components/CommandPalette';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
-const NAV = [
+// `adminOnly` entries are hidden from ordinary users. The API enforces the
+// same rule, so hiding a link is presentation, not protection. Nothing is
+// admin-only today — Cost Master edits are private to each workspace — but
+// the flag stays wired for the next privileged screen.
+const NAV: Array<{
+  path: string;
+  icon: LucideIcon;
+  label: string;
+  exact: boolean;
+  adminOnly?: boolean;
+}> = [
   { path: '/workspace', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { path: '/quote', icon: Layers, label: 'New Quote', exact: true },
   { path: '/quotes', icon: FolderOpen, label: 'My Quotes', exact: false },
   { path: '/customers', icon: Users, label: 'Customers', exact: false },
+  // Every shop tunes its own rates here; edits are private to the workspace.
   { path: '/admin/pricing', icon: SlidersHorizontal, label: 'Cost Master', exact: false },
   { path: '/billing', icon: CreditCard, label: 'Billing', exact: false },
 ];
@@ -62,6 +75,9 @@ const getInitialTheme = (): 'light' | 'dark' => {
 const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const { user, logout } = useAuth();
+  // Hide privileged destinations from ordinary users; the API rejects them
+  // regardless, this just avoids a dead link.
+  const visibleNav = NAV.filter((item) => !item.adminOnly || user?.role === 'admin');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -397,7 +413,7 @@ const Layout = ({ children }: LayoutProps) => {
                 {group.label}
               </p>
               <div className="space-y-1">
-                {NAV.filter((item) => group.paths.includes(item.path)).map(
+                {visibleNav.filter((item) => group.paths.includes(item.path)).map(
                   ({ path, icon: Icon, label, exact }) => {
                     const active = isActive(path, exact);
                     return (
@@ -507,6 +523,11 @@ const Layout = ({ children }: LayoutProps) => {
         {children}
       </main>
 
+      {/* Policy links stay reachable from inside the workspace too. */}
+      <div className="lg:pl-60 relative z-10 pb-24 lg:pb-0">
+        <LegalFooter />
+      </div>
+
       <ProfileEditModal
         open={profileSettingsOpen}
         onClose={() => setProfileSettingsOpen(false)}
@@ -562,7 +583,7 @@ const Layout = ({ children }: LayoutProps) => {
         aria-label="Primary"
       >
         <div className="flex items-stretch justify-around px-1 py-1">
-          {NAV.map(({ path, icon: Icon, label, exact }) => {
+          {visibleNav.map(({ path, icon: Icon, label, exact }) => {
             const active = isActive(path, exact);
             return (
               <Link

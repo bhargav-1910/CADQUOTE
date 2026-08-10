@@ -82,7 +82,8 @@ const ConfigurationPanel = ({
           onMaterialChange(mats[0].id);
         }
         if (!surfaceFinishId && fins.length > 0) {
-          onSurfaceFinishChange(fins[0].id);
+          const asMachined = fins.find((f) => f.name.trim().toLowerCase() === 'as machined');
+          onSurfaceFinishChange((asMachined ?? fins[0]).id);
         }
         if (!inspectionLevelId && insps.length > 0) {
           onInspectionLevelChange(insps[0].id);

@@ -2,8 +2,15 @@ import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
 
-const ProtectedRoute = ({ children }: { children: ReactNode }) => {
-  const { isAuthenticated, loading } = useAuth();
+interface ProtectedRouteProps {
+  children: ReactNode;
+  /** Also require the admin role. Server-side authorization is enforced
+   *  independently; this only avoids showing a screen that would 403. */
+  requireAdmin?: boolean;
+}
+
+const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps) => {
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -16,6 +23,10 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (requireAdmin && user?.role !== 'admin') {
+    return <Navigate to="/workspace" replace />;
   }
 
   return <>{children}</>;

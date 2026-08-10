@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Box, Building2, Check, Circle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { Button, Field, Input, PasswordInput } from '@/components/ui';
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULES } from '@/components/PasswordRequirements';
+import LegalFooter from '@/components/LegalFooter';
 
 const blueprintGrid = {
   backgroundImage:
@@ -10,15 +12,9 @@ const blueprintGrid = {
   backgroundSize: '36px 36px',
 };
 
-// Live password rules — shown as a checklist that ticks while typing, so the
-// policy is never a surprise at submit time.
-const PASSWORD_RULES: Array<{ label: string; test: (value: string) => boolean }> = [
-  { label: 'At least 10 characters', test: (v) => v.length >= 10 },
-  { label: 'An uppercase letter', test: (v) => /[A-Z]/.test(v) },
-  { label: 'A lowercase letter', test: (v) => /[a-z]/.test(v) },
-  { label: 'A number', test: (v) => /\d/.test(v) },
-  { label: 'A special character', test: (v) => /[^A-Za-z0-9]/.test(v) },
-];
+// Password rules come from the shared checklist so this screen can never
+// drift from the server policy. The server is still the authority — it also
+// rejects common, sequential and identity-derived passwords.
 
 const SignupPage = () => {
   const { signup } = useAuth();
@@ -59,7 +55,7 @@ const SignupPage = () => {
   };
 
   return (
-    <div className="flex min-h-[100dvh] items-center overflow-x-hidden bg-[#0A0A0C] p-4 sm:p-6" style={blueprintGrid}>
+    <div className="relative flex min-h-[100dvh] items-center overflow-x-hidden bg-[#0A0A0C] p-4 pb-20 sm:p-6 sm:pb-20" style={blueprintGrid}>
       <div className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-800 bg-[#0E0E11] shadow-2xl shadow-black/60 md:grid-cols-2">
         <aside className="relative hidden border-r border-slate-800/80 p-8 md:flex md:flex-col md:justify-between">
           <div>
@@ -132,7 +128,7 @@ const SignupPage = () => {
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                minLength={10}
+                minLength={PASSWORD_MIN_LENGTH}
                 required
               />
             )}
@@ -189,7 +185,27 @@ const SignupPage = () => {
               Login
             </Link>
           </p>
+
+          <p className="text-center text-xs leading-relaxed text-slate-500">
+            By creating an account you agree to our{' '}
+            <Link to="/legal/terms" className="underline underline-offset-2 hover:text-slate-700">
+              Terms &amp; Conditions
+            </Link>
+            ,{' '}
+            <Link to="/legal/privacy" className="underline underline-offset-2 hover:text-slate-700">
+              Privacy Policy
+            </Link>{' '}
+            and{' '}
+            <Link to="/legal/cookies" className="underline underline-offset-2 hover:text-slate-700">
+              Cookie Policy
+            </Link>
+            .
+          </p>
         </form>
+      </div>
+
+      <div className="pointer-events-auto absolute inset-x-0 bottom-4">
+        <LegalFooter compact />
       </div>
     </div>
   );

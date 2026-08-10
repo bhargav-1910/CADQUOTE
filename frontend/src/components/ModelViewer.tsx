@@ -105,8 +105,12 @@ const computeNormalization = (shapes: ParsedShape[]) => {
   return { scale, offset: center.clone().multiplyScalar(-scale), center, size };
 };
 
-/** Wireframe bounding box with X/Y/Z edge dimension labels (file units mm). */
-const BoundingBoxOverlay = ({ shapes }: { shapes: ParsedShape[] }) => {
+/** Wireframe bounding box with X/Y/Z edge dimension labels (file units mm).
+ * The wireframe itself is drawn from the mesh (it has to align with what's
+ * rendered), but the printed numbers prefer the backend's exact B-rep
+ * bounding box — the tessellated mesh can undershoot slightly on curved
+ * edges, which read as a "wrong" dimension next to Part Info's number. */
+const BoundingBoxOverlay = ({ shapes, geometry }: { shapes: ParsedShape[]; geometry?: GeometryAnalysis }) => {
   const { scale, offset, center, size } = useMemo(() => computeNormalization(shapes), [shapes]);
 
   const edgesGeometry = useMemo(() => {
@@ -121,10 +125,14 @@ const BoundingBoxOverlay = ({ shapes }: { shapes: ParsedShape[] }) => {
   const min = center.clone().sub(size.clone().multiplyScalar(0.5));
   const max = center.clone().add(size.clone().multiplyScalar(0.5));
 
+  const labelSize = geometry
+    ? { x: geometry.bounding_box.x * 10, y: geometry.bounding_box.y * 10, z: geometry.bounding_box.z * 10 }
+    : { x: size.x, y: size.y, z: size.z };
+
   const labels: Array<{ position: [number, number, number]; text: string }> = [
-    { position: [center.x, min.y, max.z], text: `X ${size.x.toFixed(1)} mm` },
-    { position: [min.x, center.y, max.z], text: `Y ${size.y.toFixed(1)} mm` },
-    { position: [max.x, min.y, center.z], text: `Z ${size.z.toFixed(1)} mm` },
+    { position: [center.x, min.y, max.z], text: `X ${labelSize.x.toFixed(1)} mm` },
+    { position: [min.x, center.y, max.z], text: `Y ${labelSize.y.toFixed(1)} mm` },
+    { position: [max.x, min.y, center.z], text: `Z ${labelSize.z.toFixed(1)} mm` },
   ];
 
   return (
@@ -213,7 +221,11 @@ const ShapesGroup = ({
                 : undefined
             }
           >
+            {/* vertexColors requires a shader recompile (material.needsUpdate)
+                that R3F's prop-diffing won't trigger on an existing material
+                instance — key it so toggling heatmap mounts a fresh one. */}
             <meshStandardMaterial
+              key={heatmap ? 'heatmap' : 'shaded'}
               color={heatmap ? '#ffffff' : shape.color ?? '#8b93a7'}
               vertexColors={heatmap}
               metalness={heatmap ? 0.1 : 0.35}
@@ -278,6 +290,8 @@ const MeasureOverlay = ({
   );
 };
 
+/** Icon-only toolbar button with a fast custom tooltip — the native `title`
+ * attribute has a ~1.5s hover delay and plain OS styling, easy to miss. */
 const ToolbarButton = ({
   title,
   active = false,
@@ -289,18 +303,26 @@ const ToolbarButton = ({
   onClick: () => void;
   children: React.ReactNode;
 }) => (
-  <button
-    type="button"
-    title={title}
-    onClick={onClick}
-    className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
-      active
-        ? 'bg-primary-600 text-white'
-        : 'bg-white/90 text-gray-600 hover:bg-white hover:text-gray-900'
-    } shadow-sm backdrop-blur-sm`}
-  >
-    {children}
-  </button>
+  <div className="relative group/tip">
+    <button
+      type="button"
+      aria-label={title}
+      onClick={onClick}
+      className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+        active
+          ? 'bg-primary-600 text-white'
+          : 'bg-white/90 text-gray-600 hover:bg-white hover:text-gray-900'
+      } shadow-sm backdrop-blur-sm`}
+    >
+      {children}
+    </button>
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-100 group-hover/tip:opacity-100"
+    >
+      {title}
+    </span>
+  </div>
 );
 
 const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerProps) => {
@@ -604,11 +626,13 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
         <div className="absolute top-20 right-3 z-10 w-60 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3.5 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Part info</p>
           <dl className="space-y-1.5 text-xs text-gray-700">
-            {meshSize && (
+            {(geometry || meshSize) && (
               <div className="flex justify-between gap-2">
                 <dt className="text-gray-500">Dimensions</dt>
                 <dd className="font-mono text-right">
-                  {meshSize.x.toFixed(1)} × {meshSize.y.toFixed(1)} × {meshSize.z.toFixed(1)} mm
+                  {geometry
+                    ? `${(geometry.bounding_box.x * 10).toFixed(1)} × ${(geometry.bounding_box.y * 10).toFixed(1)} × ${(geometry.bounding_box.z * 10).toFixed(1)} mm`
+                    : `${meshSize!.x.toFixed(1)} × ${meshSize!.y.toFixed(1)} × ${meshSize!.z.toFixed(1)} mm`}
                 </dd>
               </div>
             )}
@@ -636,6 +660,12 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
               <div className="flex justify-between gap-2">
                 <dt className="text-gray-500">Holes detected</dt>
                 <dd className="font-mono">{geometry.hole_count}</dd>
+              </div>
+            )}
+            {Boolean(geometry?.estimated_thread_count) && (
+              <div className="flex justify-between gap-2">
+                <dt className="text-gray-500">Threaded (est.)</dt>
+                <dd className="font-mono">{geometry!.estimated_thread_count}</dd>
               </div>
             )}
             {geometry?.min_wall_thickness != null && (
@@ -798,7 +828,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
         <MeasureOverlay points={measurePoints} modelScale={modelScale} />
 
-        {showBoundingBox && shapes && !explodeEnabled && <BoundingBoxOverlay shapes={shapes} />}
+        {showBoundingBox && shapes && !explodeEnabled && <BoundingBoxOverlay shapes={shapes} geometry={geometry} />}
 
         <Grid
           position={[0, -MODEL_SIZE / 2 - 0.35, 0]}

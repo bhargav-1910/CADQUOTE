@@ -98,7 +98,11 @@ def gst_breakup(
     Returns None when no rate can be parsed (PDF falls back to
     "As applicable", the pre-GST-breakup behavior).
     """
-    match = re.search(r"(\d+(?:\.\d+)?)", gst_text or "")
+    text = gst_text or ""
+    # Prefer a number immediately followed by "%" — free text like "HSN 8479,
+    # GST 18%" would otherwise match the HSN code first since it appears
+    # earlier in the string.
+    match = re.search(r"(\d+(?:\.\d+)?)\s*%", text) or re.search(r"(\d+(?:\.\d+)?)", text)
     if not match:
         return None
     rate = float(match.group(1))

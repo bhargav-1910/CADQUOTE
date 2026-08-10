@@ -111,6 +111,10 @@ export interface Material {
   machining_difficulty_factor: number;
   availability_factor: number;
   is_active: boolean;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id: string | null;
+  /** The system default this row overrides, when it is a customisation. */
+  source_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -129,6 +133,10 @@ export interface SurfaceFinish {
   lead_time_addition_days: number;
   compatible_materials: string[] | null;
   is_active: boolean;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id: string | null;
+  /** The system default this row overrides, when it is a customisation. */
+  source_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -144,6 +152,10 @@ export interface InspectionLevel {
   includes_certificate: boolean;
   includes_cmm_report: boolean;
   is_active: boolean;
+  /** null = shared system default; set = this workspace's own row. */
+  user_id: string | null;
+  /** The system default this row overrides, when it is a customisation. */
+  source_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -175,6 +187,7 @@ export interface GeometryAnalysis {
   min_wall_thickness: number | null;
   hole_count: number;
   hole_diameters_mm?: number[] | null;
+  estimated_thread_count?: number;
   complexity_score: number;
   removal_ratio: number;
   triangle_count: number | null;
@@ -216,7 +229,10 @@ export interface PricingOverrides {
   machine_setup_time_hours?: number;
   machine_name?: string;
   margin_factor?: number;
+  vendor_margin_pct?: number;
+  platform_commission_pct?: number;
   tolerance_tier?: ToleranceTier;
+  lead_time_days?: number;
 }
 
 export interface ProcessRoutingOperation {
@@ -518,6 +534,8 @@ export interface Quote {
   share_token?: string | null;
   responded_at?: string | null;
   customer_response_note?: string | null;
+  predicted_costing?: Record<string, unknown> | null;
+  actual_costing?: Record<string, unknown> | null;
   pdf_path: string | null;
   price_validity?: string | null;
   gst?: string | null;
@@ -573,6 +591,13 @@ export interface UserProfile {
   gstin: string | null;
   plan: 'free' | 'pro';
   plan_expires_at: string | null;
+  // Drives admin-only navigation. The server re-checks authorization on every
+  // privileged request, so this is a UI hint, never the control itself.
+  role: 'user' | 'admin';
+  /** Confirmed ownership of the signup address. Gates the admin role. */
+  email_verified: boolean;
+  /** TOTP second factor is active on this account. */
+  totp_enabled: boolean;
   created_at: string;
 }
 
@@ -589,6 +614,8 @@ export interface UpdateProfileRequest {
 export interface LoginRequest {
   email: string;
   password: string;
+  /** Six-digit authenticator code or a recovery code, when 2FA is on. */
+  totp_code?: string;
 }
 
 export interface SignupRequest {
