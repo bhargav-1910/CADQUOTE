@@ -17,6 +17,7 @@ from app.models.models import (
 )
 from app.core.config import settings
 from app.services.dfm import analyze_dfm_metrics
+from app.services.threads import classify_threaded_holes
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -102,6 +103,10 @@ class PricingInputs:
 
     # Distinct solid bodies in the uploaded file (>1 = assembly).
     solid_count: Optional[int] = None
+
+    # Manual override for the computed lead time — shop schedules vary in
+    # ways the formula can't see (backlog, material on hand, holidays).
+    lead_time_override_days: Optional[float] = None
 
 
 @dataclass
@@ -283,7 +288,6 @@ class PricingEngine:
             # Parting/facing allowance on bar stock.
             stock_volume_cm3 = max(bar_volume_cm3, inputs.volume_cm3) * 1.05
             buy_weight_kg = (stock_volume_cm3 * inputs.material_density) / 1000.0
-            wastage_pct = (buy_weight_kg / raw_weight_kg - 1.0) if raw_weight_kg > 0 else 0.0
             stock_dimensions = {
                 "form": "round_bar",
                 "diameter_mm": round(stock_diameter_cm * 10.0, 2),
@@ -301,13 +305,25 @@ class PricingEngine:
             billet_volume_cm3 = stock_x_cm * stock_y_cm * stock_z_cm
             stock_volume_cm3 = max(billet_volume_cm3, inputs.volume_cm3)
             buy_weight_kg = (stock_volume_cm3 * inputs.material_density) / 1000.0
-            wastage_pct = (buy_weight_kg / raw_weight_kg - 1.0) if raw_weight_kg > 0 else 0.0
             stock_dimensions = {
                 "form": "rectangular_block",
                 "x": round(stock_x_cm * 10.0, 2),
                 "y": round(stock_y_cm * 10.0, 2),
                 "z": round(stock_z_cm * 10.0, 2),
             }
+
+        # A high-aspect-ratio or very-hollow part (e.g. a long rail, or a
+        # bounding box dominated by an internal cavity) can blow the bbox/bar
+        # stock model up to dozens of times the finished part's weight. A
+        # real shop would switch to extruded/near-net/sheet stock rather than
+        # actually machine a billet that large — cap the wastage multiple so
+        # those shapes get a sane (if imperfect) number instead of a wildly
+        # inflated one, and flag it so the quote gets a manual look.
+        max_wastage_multiple = 15.0
+        stock_capped = raw_weight_kg > 0 and buy_weight_kg > raw_weight_kg * max_wastage_multiple
+        if stock_capped:
+            buy_weight_kg = raw_weight_kg * max_wastage_multiple
+        wastage_pct = (buy_weight_kg / raw_weight_kg - 1.0) if raw_weight_kg > 0 else 0.0
 
         effective_material_rate = self._normalized_material_rate(
             inputs.material_cost_per_kg,
@@ -322,8 +338,9 @@ class PricingEngine:
         if inputs.include_scrap_saving:
             material_cost = max(material_cost_gross - scrap_saving_cost, _to_decimal(0))
         # No supplier sells a 30 g offcut at weight price: minimum stock +
-        # saw-cut charge per part.
-        min_stock_charge = _to_decimal(150)
+        # saw-cut charge per part, scaled by material so a titanium offcut
+        # isn't floored at the same rupee amount as an aluminum one.
+        min_stock_charge = max(_to_decimal(150), effective_material_rate * _to_decimal(0.5))
         minimum_stock_charge_applied = material_cost < min_stock_charge
         if minimum_stock_charge_applied:
             material_cost = min_stock_charge
@@ -339,6 +356,8 @@ class PricingEngine:
             "scrap_saving_cost": float(scrap_saving_cost),
             "scrap_saving_included_in_cost": inputs.include_scrap_saving,
             "minimum_stock_charge_applied": minimum_stock_charge_applied,
+            "min_stock_charge": float(min_stock_charge),
+            "stock_size_capped": stock_capped,
             "material_cost_per_part": float(material_cost),
         }
 
@@ -372,8 +391,13 @@ class PricingEngine:
         hole_seconds, hole_time_breakdown = self._hole_feature_seconds(
             inputs.hole_count, inputs.hole_diameters_mm, complexity_norm
         )
-        thread_estimate = max(0, int(round(inputs.hole_count * 0.2)))
-        thread_seconds = thread_estimate * (20.0 + (60.0 - 20.0) * complexity_norm)
+        # Tapped holes are detected from fitted diameters landing on standard
+        # tap-drill sizes when the exact B-rep gave us real diameters; falls
+        # back to the old flat 20%-of-holes guess otherwise.
+        thread_count, thread_matches = classify_threaded_holes(inputs.hole_diameters_mm)
+        if not inputs.hole_diameters_mm:
+            thread_count = max(0, int(round(inputs.hole_count * 0.2)))
+        thread_seconds = thread_count * (20.0 + (60.0 - 20.0) * complexity_norm)
 
         # Surface finishing passes dominate cycle time on large parts: every
         # machined face gets covered again at finishing feeds. Benchmarked
@@ -445,6 +469,8 @@ class PricingEngine:
             "tool_change_time_min": round(tool_change_time_min, 4),
             "hole_seconds": round(hole_seconds, 2),
             "hole_time_breakdown": hole_time_breakdown,
+            "thread_count": thread_count,
+            "threaded_holes": thread_matches,
             "thread_seconds": round(thread_seconds, 2),
             "finishing_time_min": round(finishing_time_min, 4),
             "finishing_rate_cm2_min": round(finishing_rate_cm2_min, 4),
@@ -571,12 +597,29 @@ class PricingEngine:
             "finish_cost_per_part": float(finish_cost),
         }
 
-        # F. Quality cost
+        # F. Quality cost. Most inspection levels re-check every part (visual,
+        # dimensional, CMM), so their cost is a genuine per-part charge. A
+        # First Article Inspection is different: AS9102 practice inspects ONE
+        # article from the run, not every part, so its cost (base + report
+        # fee + % of that one article's direct cost) is a single batch-level
+        # charge amortized across the batch — not repeated on every unit.
+        is_first_article = "first article" in (inputs.inspection_name or "").lower()
         quality_base = self._quality_cost(inputs.inspection_name)
-        quality_with_config = quality_base + inputs.inspection_fixed_cost / _to_decimal(max(inputs.quantity, 1))
-        if inputs.inspection_percentage_cost > 0:
-            base_for_pct = material_cost + machining_cost + setup_cost_per_part
-            quality_with_config += base_for_pct * _to_decimal(inputs.inspection_percentage_cost / 100.0)
+        # FAI's percentage is a share of what it actually costs to produce
+        # the ONE article being inspected — that article needed the full
+        # setup, not a batch-diluted slice of it, so use setup_cost_total
+        # here rather than setup_cost_per_part (which shrinks with quantity).
+        setup_for_pct = setup_cost_total if is_first_article else setup_cost_per_part
+        base_for_pct = material_cost + machining_cost + setup_for_pct
+        percentage_cost = base_for_pct * _to_decimal(inputs.inspection_percentage_cost / 100.0)
+
+        if is_first_article:
+            one_time_total = quality_base + inputs.inspection_fixed_cost + percentage_cost
+            quality_with_config = one_time_total / _to_decimal(max(inputs.quantity, 1))
+        else:
+            quality_with_config = quality_base + inputs.inspection_fixed_cost / _to_decimal(max(inputs.quantity, 1))
+            if inputs.inspection_percentage_cost > 0:
+                quality_with_config += percentage_cost
 
         tolerance_inspection_multiplier = float(tolerance["inspection_multiplier"])
         dfm_inspection_multiplier = 1.0 + _clamp(dfm_adjustments["inspection_pct"], 0.0, 25.0) / 100.0
@@ -588,9 +631,13 @@ class PricingEngine:
 
         details["quality"] = {
             "inspection_level": inputs.inspection_name,
-            "base_quality_cost_per_part": float(quality_base),
+            "is_first_article_amortized": is_first_article,
+            "amortized_batch_size": inputs.quantity if is_first_article else 1,
+            "base_quality_cost": float(quality_base),
+            "inspection_fixed_cost_total": float(inputs.inspection_fixed_cost),
             "inspection_fixed_cost_allocated": float(inputs.inspection_fixed_cost / _to_decimal(max(inputs.quantity, 1))),
-            "inspection_percentage_cost": inputs.inspection_percentage_cost,
+            "inspection_percentage_cost_pct": inputs.inspection_percentage_cost,
+            "inspection_percentage_cost_amount": float(percentage_cost),
             "tolerance_inspection_multiplier": round(tolerance_inspection_multiplier, 4),
             "dfm_inspection_multiplier": round(dfm_inspection_multiplier, 4),
             "inspection_cost_per_part": float(inspection_cost),
@@ -758,7 +805,7 @@ class PricingEngine:
 
         details["quantity"] = {
             "quantity": inputs.quantity,
-            "discount_percentage": 0.0,
+            "discount_percentage": round(volume_discount_pct * 100, 2),
             "unit_price": float(unit_price),
             "total_price": float(total_price),
         }
@@ -785,7 +832,13 @@ class PricingEngine:
         if normalized_urgent_pct > 0:
             lead_time_days *= 0.85
 
-        estimated_lead_time = max(1.0, round(lead_time_days * 2) / 2)
+        calculated_lead_time = max(1.0, round(lead_time_days * 2) / 2)
+        lead_time_overridden = inputs.lead_time_override_days is not None
+        estimated_lead_time = (
+            max(0.5, float(inputs.lead_time_override_days))
+            if lead_time_overridden
+            else calculated_lead_time
+        )
 
         details["lead_time"] = {
             "machining_hours_total": round(machining_hours_total, 3),
@@ -793,6 +846,8 @@ class PricingEngine:
             "inspection_lead_time_days": inputs.inspection_lead_time_days,
             "dfm_lead_time_add_days": dfm_lead_time_add,
             "material_availability_factor": inputs.material_availability_factor,
+            "calculated_lead_time_days": calculated_lead_time,
+            "lead_time_overridden": lead_time_overridden,
             "estimated_lead_time_days": estimated_lead_time,
         }
 
@@ -951,13 +1006,11 @@ class PricingEngine:
 
     def _normalized_machine_rate(self, configured_rate: Decimal, machine_type: str) -> Decimal:
         min_rate, max_rate = self.MACHINE_RATES[machine_type]
-        rate = float(configured_rate)
-
-        # Existing seed data may still carry legacy inflated rates.
-        if rate > 3000:
-            rate = rate / 10.0
-
-        rate = _clamp(rate, min_rate, max_rate)
+        # The clamp alone is enough to neutralize legacy inflated seed data —
+        # a blind "/10 if over 3000" rule can't tell stale data apart from a
+        # genuinely configured premium rate, and would silently mangle the
+        # latter (e.g. 3500 -> 350 -> clamped back up to a wrong number).
+        rate = _clamp(float(configured_rate), min_rate, max_rate)
         return _to_decimal(rate)
 
     def _normalized_material_rate(
@@ -1018,8 +1071,9 @@ class PricingEngine:
             # Up to 10% cheaper when load is very low
             return 1.0 - (40.0 - load) / 40.0 * 0.10
         if load > 80.0:
-            # 10% to 20% uplift once load crosses 80%
-            return 1.10 + (load - 80.0) / 20.0 * 0.10
+            # Ramps continuously from the neutral 1.0 at 80% up to +20% at
+            # 100% load — was jumping straight to +10% just past 80%.
+            return 1.0 + (load - 80.0) / 20.0 * 0.20
         return 1.0
 
     def _normalized_urgent_pct(self, urgent_factor_pct: float) -> float:
@@ -1095,6 +1149,7 @@ async def calculate_pricing(
     negotiation_buffer_pct = 7.0
     scrap_cost_per_kg = _to_decimal(material_scrap_cost_per_kg)
     include_scrap_saving = True
+    lead_time_override_days: Optional[float] = None
 
     complexity_risk = _clamp(((geometry.complexity_score - 14.0) / 20.0) * 8.0, 0.0, 8.0)
     inferred_risk_pct = _clamp(
@@ -1228,6 +1283,10 @@ async def calculate_pricing(
             tolerance_tier = str(pricing_overrides["tolerance_tier"]).lower()
             applied_overrides["tolerance_tier"] = tolerance_tier
 
+        if pricing_overrides.get("lead_time_days") is not None:
+            lead_time_override_days = float(pricing_overrides["lead_time_days"])
+            applied_overrides["lead_time_days"] = lead_time_override_days
+
     # Optional explicit margin_factor function arg, preserved for compatibility.
     if margin_factor is not None:
         vendor_margin_pct = max(0.0, (float(margin_factor) - 1.0) * 100.0)
@@ -1284,6 +1343,7 @@ async def calculate_pricing(
         negotiation_buffer_pct=negotiation_buffer_pct,
         min_order_value=min_order_value,
         tolerance_tier=(tolerance_tier or "general").lower(),
+        lead_time_override_days=lead_time_override_days,
     )
 
     result = pricing_engine.calculate_price(inputs)

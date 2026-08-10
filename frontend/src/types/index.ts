@@ -187,6 +187,7 @@ export interface GeometryAnalysis {
   min_wall_thickness: number | null;
   hole_count: number;
   hole_diameters_mm?: number[] | null;
+  estimated_thread_count?: number;
   complexity_score: number;
   removal_ratio: number;
   triangle_count: number | null;
@@ -228,7 +229,10 @@ export interface PricingOverrides {
   machine_setup_time_hours?: number;
   machine_name?: string;
   margin_factor?: number;
+  vendor_margin_pct?: number;
+  platform_commission_pct?: number;
   tolerance_tier?: ToleranceTier;
+  lead_time_days?: number;
 }
 
 export interface ProcessRoutingOperation {

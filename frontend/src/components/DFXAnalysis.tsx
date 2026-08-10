@@ -140,6 +140,7 @@ const DFXAnalysis = ({ geometry, costImpacts }: DFXAnalysisProps) => {
             value: geometry.min_wall_thickness ? `${geometry.min_wall_thickness.toFixed(1)} mm` : 'N/A',
           },
           { label: 'Holes', value: String(geometry.hole_count) },
+          { label: 'Threaded (est.)', value: String(geometry.estimated_thread_count ?? 0) },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>

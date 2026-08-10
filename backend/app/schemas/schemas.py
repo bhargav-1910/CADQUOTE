@@ -350,6 +350,9 @@ class GeometryAnalysisResponse(BaseSchema):
     min_wall_thickness: Optional[float] = Field(None, description="Minimum wall thickness in mm")
     hole_count: int = Field(default=0)
     hole_diameters_mm: Optional[List[float]] = Field(None, description="Fitted diameters of detected circular holes")
+    estimated_thread_count: int = Field(
+        default=0, description="Holes whose fitted diameter matches a standard ISO tap-drill size"
+    )
     machining_direction_count: Optional[int] = Field(
         None, description="Distinct hole-axis directions from the exact B-rep (STEP only)"
     )
@@ -404,6 +407,7 @@ class PricingOverrides(BaseModel):
     min_order_value: Optional[Decimal] = Field(None, ge=0)
     negotiation_buffer_pct: Optional[float] = Field(None, ge=0, le=100)
     tolerance_tier: Optional[Literal["general", "precision", "tight"]] = None
+    lead_time_days: Optional[float] = Field(None, ge=0.5, le=365)
 
 class PricingRequest(BaseModel):
     """Request for instant pricing."""

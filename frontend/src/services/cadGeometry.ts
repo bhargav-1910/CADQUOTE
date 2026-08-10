@@ -75,6 +75,12 @@ export const parseStlBuffer = (buffer: ArrayBuffer): ParsedShape[] => {
   return [{ geometry, color: null }];
 };
 
+/** glTF's base unit is meters (spec section 3.7.1.1); the rest of this app's
+ * client-side pipeline (dimensions, wall-thickness raycasting) assumes file
+ * units are mm, matching the backend. Without this, a 155 mm part reads as
+ * "0.2 mm" and thickness raycasts operate at the wrong epsilon scale. */
+const GLB_METERS_TO_MM = 1000;
+
 /** Parse a GLB blob (backend STEP conversion fallback) into flat shapes. */
 export const parseGlbBuffer = (buffer: ArrayBuffer): Promise<ParsedShape[]> =>
   new Promise((resolve, reject) => {
@@ -88,6 +94,7 @@ export const parseGlbBuffer = (buffer: ArrayBuffer): Promise<ParsedShape[]> =>
           if (child instanceof THREE.Mesh && child.geometry) {
             const geometry = child.geometry.clone() as THREE.BufferGeometry;
             geometry.applyMatrix4(child.matrixWorld);
+            geometry.scale(GLB_METERS_TO_MM, GLB_METERS_TO_MM, GLB_METERS_TO_MM);
             if (!geometry.getAttribute('normal')) {
               geometry.computeVertexNormals();
             }
@@ -185,8 +192,11 @@ export const computeThicknessHeatmap = async (shapes: ParsedShape[]): Promise<Pa
   (THREE.BufferGeometry.prototype as any).disposeBoundsTree = disposeBoundsTree;
   (THREE.Mesh.prototype as any).raycast = acceleratedRaycast;
 
+  // firstHitOnly stays off: the tessellation seams between adjacent B-rep
+  // faces produce near-coincident triangles right at the ray origin, so the
+  // "first" hit is often a self-intersection a few microns away rather than
+  // the true opposite wall. We need the full sorted hit list to skip those.
   const raycaster = new THREE.Raycaster();
-  (raycaster as any).firstHitOnly = true;
 
   const results: ParsedShape[] = [];
 
@@ -212,6 +222,9 @@ export const computeThicknessHeatmap = async (shapes: ParsedShape[]): Promise<Pa
     const edge1 = new THREE.Vector3();
     const edge2 = new THREE.Vector3();
     const epsilon = 1e-3;
+    // Hits closer than this are almost always the seam between two adjacent
+    // B-rep faces meeting at the ray origin, not a real opposite wall.
+    const minValidHitDistance = 0.05;
 
     let lastColor: [number, number, number] = [0.55, 0.65, 0.78];
 
@@ -231,7 +244,10 @@ export const computeThicknessHeatmap = async (shapes: ParsedShape[]): Promise<Pa
           normal.clone().negate(),
         );
         const hits = raycaster.intersectObject(probeMesh, false);
-        const thickness = hits.length > 0 ? hits[0].distance + epsilon : Infinity;
+        // three.js sorts intersectObject results by ascending distance —
+        // take the first hit that clears the seam-noise threshold.
+        const realHit = hits.find((hit) => hit.distance > minValidHitDistance);
+        const thickness = realHit ? realHit.distance + epsilon : Infinity;
         lastColor = thicknessColor(thickness);
       }
 

@@ -24,6 +24,7 @@ from app.services.upload import (
 )
 from app.services.geometry import process_cad_file, get_geometry_analysis
 from app.services.dfm import analyze_dfm_from_geometry
+from app.services.threads import classify_threaded_holes
 from app.services.billing import consume_points, InsufficientPointsError, has_active_subscription
 from app.core.config import settings
 
@@ -195,10 +196,13 @@ async def get_file_geometry(
     geometry = await get_geometry_analysis(db, file_id)
     if not geometry:
         raise HTTPException(status_code=404, detail="Geometry analysis not found")
-    
+
+    thread_count, _ = classify_threaded_holes(getattr(geometry, "hole_diameters_mm", None))
+
     return GeometryAnalysisResponse(
         id=geometry.id,
         cad_file_id=geometry.cad_file_id,
+        estimated_thread_count=thread_count,
         volume=geometry.volume,
         surface_area=geometry.surface_area,
         bounding_box=BoundingBox(

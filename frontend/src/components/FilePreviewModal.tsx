@@ -184,6 +184,12 @@ const FilePreviewModal = ({ cadFile, geometry, onClose }: FilePreviewModalProps)
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-sm text-gray-600 font-medium">Threaded Holes (est.)</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{geometry!.estimated_thread_count ?? 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">matched to standard tap-drill sizes</p>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600 font-medium">Removal Ratio</p>
                     <p className="text-2xl font-bold text-gray-900 mt-1">{(geometry!.removal_ratio * 100).toFixed(1)}%</p>
                   </div>
