@@ -19,6 +19,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   const [logo, setLogo] = useState<File | undefined>(undefined);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +36,16 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
     setLogoPreviewUrl(null);
     setError(null);
   }, [open, user]);
+
+  // Deliberately keyed on `open` alone, not `user`: a successful save updates
+  // the `user` object from context, which would otherwise re-run an
+  // `[open, user]` effect and reset `saved` back to false before the
+  // confirmation message ever gets painted.
+  useEffect(() => {
+    if (open) {
+      setSaved(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!logo) {
@@ -69,7 +80,8 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
         brand_color: brandColor,
         logo,
       });
-      onClose();
+      setSaved(true);
+      window.setTimeout(onClose, 1100);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update profile');
     } finally {
@@ -228,6 +240,11 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
           </div>
 
           {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {saved && (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              Profile saved.
+            </p>
+          )}
 
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
             <button
@@ -239,11 +256,11 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || saved}
               className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save Changes
+              {saved ? 'Saved' : 'Save Changes'}
             </button>
           </div>
         </form>
