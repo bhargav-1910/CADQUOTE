@@ -79,12 +79,24 @@ const QuoteList = () => {
   const navigate = useNavigate();
   const batchResult = location.state as { batchIds?: string[]; batchTotal?: number } | null;
 
-  useEffect(() => {
+  const loadQuotes = () => {
+    setLoading(true);
+    setError(null);
     listQuotes(0, 200)
       .then(setQuotes)
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load quotes'))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadQuotes();
   }, []);
+
+  const filtersActive = search.trim() !== '' || statusFilter !== 'all';
+  const resetFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -214,17 +226,6 @@ const QuoteList = () => {
         </div>
       </div>
 
-      {/* Error display */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-red-800 font-medium">Error</p>
-            <p className="text-sm text-red-600">{error}</p>
-          </div>
-        </div>
-      )}
-
       {/* Table */}
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -237,6 +238,21 @@ const QuoteList = () => {
             </div>
           ))}
         </div>
+      ) : error ? (
+        // A load failure is not the same as "no quotes" — showing the empty
+        // state here would look like the account's data disappeared.
+        <div className="bg-red-50 border border-red-200 rounded-xl p-12 text-center">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-red-900 mb-2">Couldn't load your quotes</h2>
+          <p className="text-red-700 mb-6">{error}</p>
+          <button
+            type="button"
+            onClick={loadQuotes}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -248,7 +264,7 @@ const QuoteList = () => {
               ? 'Create your first quote by uploading a CAD file'
               : 'Try a different search term or status filter'}
           </p>
-          {quotes.length === 0 && (
+          {quotes.length === 0 ? (
             <Link
               to="/quote"
               className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors"
@@ -256,6 +272,14 @@ const QuoteList = () => {
               <Plus className="w-5 h-5" />
               Create Quote
             </Link>
+          ) : filtersActive && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-2 px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Reset filters
+            </button>
           )}
         </div>
       ) : (

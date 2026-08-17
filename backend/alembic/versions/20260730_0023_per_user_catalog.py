@@ -89,7 +89,9 @@ def upgrade() -> None:
                 op.drop_constraint(name, table, type_="unique")
             for name in indexes:
                 op.drop_index(name, table_name=table)
-            op.create_unique_constraint(constraint_name, table, ["user_id", "name"])
+            existing = {c["name"] for c in inspector.get_unique_constraints(table)}
+            if constraint_name not in existing:
+                op.create_unique_constraint(constraint_name, table, ["user_id", "name"])
 
 
 def downgrade() -> None:

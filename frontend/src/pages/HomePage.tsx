@@ -164,12 +164,19 @@ const HomePage = () => {
   // Recent quotes for "Recent uploads" widget
   const [quotes, setQuotes] = useState<QuoteListItem[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(true);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadRecentQuotes = () => {
+    setQuotesLoading(true);
+    setQuotesError(null);
     listQuotes(0, 50)
       .then(setQuotes)
-      .catch(() => {})
+      .catch((err) => setQuotesError(err instanceof Error ? err.message : 'Failed to load quotes'))
       .finally(() => setQuotesLoading(false));
+  };
+
+  useEffect(() => {
+    loadRecentQuotes();
   }, []);
 
   const uploading = uploadingCount > 0;
@@ -490,6 +497,20 @@ const HomePage = () => {
           {quotesLoading ? (
             <div className="flex justify-center py-10">
               <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+            </div>
+          ) : quotesError ? (
+            // A load failure is not the same as "no quotes" — showing the
+            // empty state here would look like the account's data disappeared.
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+              <p className="text-red-800 font-medium">Couldn't load recent quotes</p>
+              <p className="text-sm text-red-600 mt-1">{quotesError}</p>
+              <button
+                type="button"
+                onClick={loadRecentQuotes}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
             </div>
           ) : quotes.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">

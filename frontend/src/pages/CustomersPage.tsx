@@ -17,10 +17,13 @@ const CustomersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const data = await listCustomers(search || undefined);
         if (!cancelled) setCustomers(data);
@@ -35,7 +38,7 @@ const CustomersPage = () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search]);
+  }, [search, retryToken]);
 
   const totals = useMemo(
     () => ({
@@ -70,16 +73,24 @@ const CustomersPage = () => {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      )}
-
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        </div>
+      ) : error ? (
+        // A load failure is not the same as "no customers" — showing the
+        // empty state here would look like the account's data disappeared.
+        <div className="bg-red-50 border border-red-200 rounded-xl p-12 text-center">
+          <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <h2 className="font-semibold text-red-900 mb-1">Couldn't load customers</h2>
+          <p className="text-sm text-red-700 mb-4">{error}</p>
+          <button
+            type="button"
+            onClick={() => setRetryToken((n) => n + 1)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Retry
+          </button>
         </div>
       ) : customers.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -92,6 +103,22 @@ const CustomersPage = () => {
               ? 'Try a different name, company or email.'
               : 'Customers are created automatically when you add their details to a quote.'}
           </p>
+          {search ? (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Reset search
+            </button>
+          ) : (
+            <Link
+              to="/quote"
+              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
+            >
+              Create Quote
+            </Link>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

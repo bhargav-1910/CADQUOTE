@@ -20,6 +20,7 @@ import LegalPage from './pages/LegalPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
+import NotFoundPage from './pages/NotFoundPage';
 import CookieConsent from './components/CookieConsent';
 
 function App() {
@@ -141,7 +142,7 @@ function App() {
               </ProtectedRoute>
             )}
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <CookieConsent />
       </Router>
