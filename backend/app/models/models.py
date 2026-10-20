@@ -569,6 +569,8 @@ class GeometryAnalysis(Base):
     # Distinct hole-axis directions — drives the setup count in pricing.
     machining_direction_count = Column(Integer, nullable=True)
     solid_count = Column(Integer, nullable=True)
+    # B-rep face count — drives per-feature machining time in pricing.
+    face_count = Column(Integer, nullable=True)
     # Per-hole detail: [{diameter_mm, depth_mm, axis}, ...]
     brep_hole_data = Column(JSON, nullable=True)
     

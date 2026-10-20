@@ -198,16 +198,23 @@ class GeometryProcessor:
             machining_direction_count = None
             brep_hole_data = None
             solid_count = None
+            face_count = None
             if file_format == "step":
                 from app.services.brep import analyze_step_brep
 
                 brep = analyze_step_brep(file_path)
-                if brep is not None:
+                if brep is None:
+                    # Distinct from legacy plain 'trimesh' STEP rows (written
+                    # while an OCP 8 API break silently disabled B-rep), so
+                    # the startup janitor retries those once, not these forever.
+                    analysis_library = "trimesh-brep-failed"
+                else:
                     hole_count = brep.hole_count
                     hole_diameters_mm = brep.hole_diameters_mm or None
                     machining_direction_count = brep.machining_direction_count
                     brep_hole_data = brep.holes or None
                     solid_count = brep.solid_count
+                    face_count = brep.face_count
                     analysis_library = "trimesh+ocp-brep"
 
                     # Exact solid volume/area/bbox (mm from OCC → cm) replace
@@ -221,6 +228,22 @@ class GeometryProcessor:
                     if all(d > 0 for d in brep.bbox_mm):
                         bbox_x, bbox_y, bbox_z = (d * 0.1 for d in brep.bbox_mm)
                         bounding_box_volume = float(bbox_x * bbox_y * bbox_z)
+
+            # A part modelled tilted in its file (a flat ring rotated 12° about
+            # X read 113 mm tall instead of 34.5) inflates the axis-aligned
+            # box, and every stock/removal number with it. Shops square the
+            # part up first, so use the oriented box when it is drastically
+            # smaller. Organic shapes whose OBB is merely diagonal (~70% of
+            # the AABB) still get bought as axis-aligned stock, hence 0.5.
+            # ponytail: trimesh OBB heuristic, true min-stock search if it misfires.
+            try:
+                obb = sorted(float(e) * scale_factor for e in mesh.bounding_box_oriented.primitive.extents)
+                if obb[0] > 0 and obb[0] * obb[1] * obb[2] < 0.5 * bounding_box_volume:
+                    bbox_z, bbox_y, bbox_x = obb
+                    bounding_box_volume = obb[0] * obb[1] * obb[2]
+                    analysis_library += "+obb"
+            except Exception:
+                logger.debug("Oriented bounding box failed", exc_info=True)
 
             # Derived metrics — computed after the exact-geometry override so
             # complexity and removal ratio never mix mesh and B-rep sources.
@@ -248,6 +271,7 @@ class GeometryProcessor:
                 "machining_direction_count": machining_direction_count,
                 "brep_hole_data": brep_hole_data,
                 "solid_count": solid_count,
+                "face_count": face_count,
                 "complexity_score": round(complexity_score, 4),
                 "removal_ratio": round(removal_ratio, 4),
                 "triangle_count": len(mesh.faces),
@@ -514,6 +538,7 @@ async def process_cad_file(
         machining_direction_count=analysis_data.get("machining_direction_count"),
         brep_hole_data=analysis_data.get("brep_hole_data"),
         solid_count=analysis_data.get("solid_count"),
+        face_count=analysis_data.get("face_count"),
         complexity_score=analysis_data["complexity_score"],
         removal_ratio=analysis_data["removal_ratio"],
         triangle_count=analysis_data.get("triangle_count"),
@@ -605,14 +630,17 @@ async def recover_interrupted_processing() -> None:
 
 
 async def reanalyze_stale_brep_geometry() -> None:
-    """Re-run analysis for STEP files processed before exact B-rep geometry.
+    """Re-run analysis for STEP files processed by an older engine version
+    (no face_count: pre exact B-rep, OCP-8-broken, or pre face-time pricing).
 
     Uploads dedup by user+file hash and reuse the stored geometry row, so
     analyses from older engine versions never self-heal. Rows whose
     analysis_library is 'trimesh+ocp-brep' were produced by a build where OCP
     parsed the file but volume/area still came from the (unreliable) mesh —
     re-analysis converges them to 'ocp-brep-exact' and they are never
-    revisited. Pure-'trimesh' rows are left alone (OCP could not parse those).
+    revisited. Plain-'trimesh' STEP rows came from builds where OCP 8 API
+    changes made every B-rep call throw; they are retried once too — a real
+    parse failure now records 'trimesh-brep-failed' and is left alone.
     Called once at startup, after interrupted-processing recovery.
     """
     from app.core.database import get_db_session
@@ -623,7 +651,11 @@ async def reanalyze_stale_brep_geometry() -> None:
                 select(GeometryAnalysis.id, GeometryAnalysis.cad_file_id)
                 .join(CADFile, CADFile.id == GeometryAnalysis.cad_file_id)
                 .where(
-                    GeometryAnalysis.analysis_library == "trimesh+ocp-brep",
+                    # face_count arrived after these engine versions, so a
+                    # NULL marks every STEP row older than the current one.
+                    GeometryAnalysis.face_count.is_(None),
+                    # Prefix match: the OBB step can append "+obb".
+                    ~GeometryAnalysis.analysis_library.like("trimesh-brep-failed%"),
                     CADFile.file_format == "step",
                     CADFile.processing_status == ProcessingStatus.COMPLETED,
                 )

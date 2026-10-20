@@ -249,6 +249,28 @@ def analyze_dfm_metrics(
             confidence=_confidence_from_threshold(removal_ratio, 0.08, 0.07, direction="lt"),
         )
 
+    # 3b) Distortion risk. Cutting away >80% of the stock releases residual
+    # stress and the part moves; shops quote skim passes after relaxation,
+    # stress relief, rest time and a scrap allowance (all 8 parts on the
+    # 2026-10 vendor warp sheet sat at 4-19% of their stock).
+    if removal_ratio < 0.2:
+        _push_issue(
+            issues,
+            severity="warning",
+            code="warp-risk",
+            title="Distortion / Warp Risk",
+            description=(
+                f"Only {removal_ratio * 100:.1f}% of the stock remains after machining; released "
+                "stresses typically distort the part between roughing and finishing."
+            ),
+            recommendation=(
+                "Expect rough-rest-finish machining with stress relief. Thicker walls, ribs or a "
+                "less pocketed design reduce movement."
+            ),
+            penalty=6,
+            confidence=_confidence_from_threshold(removal_ratio, 0.2, 0.1, direction="lt"),
+        )
+
     # 4) Hole density and feature crowding
     if holes_per_100cm3 > 40:
         _push_issue(

@@ -36,6 +36,9 @@ try:  # pragma: no cover - import guard exercised implicitly
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
 
+    # OCP 8.x renamed the static downcast TopoDS.Face_s -> TopoDS.Face.
+    _to_face = getattr(TopoDS, "Face_s", None) or TopoDS.Face
+
     OCP_AVAILABLE = True
 except ImportError:  # pragma: no cover
     OCP_AVAILABLE = False
@@ -109,6 +112,28 @@ def _cluster_directions(directions: List[Tuple[float, float, float]]) -> int:
     return len(clusters)
 
 
+def _single_index_axis(directions: List[Tuple[float, float, float]], tol: float = 0.05) -> bool:
+    """True if one axis A exists with every direction parallel or perpendicular
+    to it, i.e. the part is reachable by rotating about A (4th-axis indexing).
+    Candidates are the directions themselves and their pairwise normals."""
+    dirs = list({tuple(round(c, 3) for c in d) for d in directions})
+    if len(dirs) > 60:  # O(n^3) search; that many directions isn't indexing work
+        return False
+    candidates = list(dirs)
+    for i in range(len(dirs)):
+        for j in range(i + 1, len(dirs)):
+            (ax, ay, az), (bx, by, bz) = dirs[i], dirs[j]
+            cx, cy, cz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+            n = math.sqrt(cx * cx + cy * cy + cz * cz)
+            if n > 1e-6:
+                candidates.append((cx / n, cy / n, cz / n))
+    for a in candidates:
+        dots = (abs(d[0] * a[0] + d[1] * a[1] + d[2] * a[2]) for d in dirs)
+        if all(dot < tol or dot > 1 - tol for dot in dots):
+            return True
+    return False
+
+
 def _read_step_shape(file_path: str):
     reader = STEPControl_Reader()
     if reader.ReadFile(file_path) != IFSelect_RetDone:
@@ -150,9 +175,13 @@ def analyze_step_brep(file_path: str) -> Optional[BRepFeatures]:
         surface_area_mm2 = abs(float(surface_props.Mass()))
 
         box = Bnd_Box()
-        BRepBndLib.Add_s(shape, box)
-        xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
-        bbox_mm = (float(xmax - xmin), float(ymax - ymin), float(zmax - zmin))
+        # Add() boxes B-spline control polygons and overshot real stock by
+        # 20-50% on curved parts; AddOptimal bounds the actual surfaces.
+        BRepBndLib.AddOptimal_s(shape, box, True, False)
+        # Bnd_Box.Get() returns an unbindable Limits struct on OCP 8.x;
+        # CornerMin/CornerMax work on 7.x and 8.x alike.
+        lo, hi = box.CornerMin(), box.CornerMax()
+        bbox_mm = (hi.X() - lo.X(), hi.Y() - lo.Y(), hi.Z() - lo.Z())
 
         solid_count = 0
         solid_explorer = TopExp_Explorer(shape, TopAbs_SOLID)
@@ -169,7 +198,7 @@ def analyze_step_brep(file_path: str) -> Optional[BRepFeatures]:
 
         explorer = TopExp_Explorer(shape, TopAbs_FACE)
         while explorer.More():
-            face = TopoDS.Face_s(explorer.Current())
+            face = _to_face(explorer.Current())
             explorer.Next()
             face_count += 1
 
@@ -257,6 +286,14 @@ def analyze_step_brep(file_path: str) -> Optional[BRepFeatures]:
         machining_direction_count = min(
             12, max(hole_direction_count, planar_clusters - 2, 1)
         )
+        # Radial features around one axis (housings turned from bar with
+        # cross holes at 45/60/90 deg) are indexed on a 4th axis or angle
+        # plate — not 5-axis work. The optics housing (7 directions, all in
+        # one plane + its normal) priced 2x over vendors who all quoted
+        # 2-6 setups (median 4) on 3/4-axis machines.
+        all_dirs = hole_axes + [d for d, area in planar_normals if area >= significant_area]
+        if machining_direction_count > 4 and _single_index_axis(all_dirs):
+            machining_direction_count = 4
 
         return BRepFeatures(
             hole_count=len(holes),
