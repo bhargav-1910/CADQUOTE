@@ -140,6 +140,7 @@ const PricingDisplay = ({
   const manufacturingCharges = explanation?.manufacturing_charges ?? {};
   const tooling = explanation?.tooling ?? {};
   const nre = explanation?.nre ?? {};
+  const warp = explanation?.warp_control ?? {};
   const quality = explanation?.quality ?? {};
   const material = explanation?.material ?? {};
   const rawMaterial = explanation?.raw_material ?? {};
@@ -506,7 +507,8 @@ const PricingDisplay = ({
                 Number(setup.setup_cost_per_part ?? 0) +
                   Number(camProgramming.cam_cost_per_part ?? 0) +
                   Number(tooling.tooling_cost_per_part ?? 0) +
-                  Number(nre.nre_cost_per_part ?? 0),
+                  Number(nre.nre_cost_per_part ?? 0) +
+                  Number(warp.stress_relief_per_part ?? 0),
               )}
               icon={<Info className="w-4 h-4 text-gray-400" />}
             >
@@ -533,6 +535,13 @@ const PricingDisplay = ({
                   <DetailRow
                     label={`NRE / Fixture Engineering (${formatNumber(Number(nre.nre_hours), 1)} h)`}
                     value={`${formatCurrency(Number(nre.nre_cost_per_part ?? 0))}/part`}
+                    emphasize
+                  />
+                )}
+                {warp.warp_prone && (
+                  <DetailRow
+                    label={`Warp Control (stress relief; +${formatNumber(Number(warp.skim_time_min ?? 0), 0)} min skim passes in cycle, ${formatNumber(Number(warp.scrap_allowance_pct ?? 0), 0)}% scrap allowance)`}
+                    value={`${formatCurrency(Number(warp.stress_relief_per_part ?? 0))}/part`}
                     emphasize
                   />
                 )}

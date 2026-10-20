@@ -104,6 +104,9 @@ class PricingInputs:
     # Distinct solid bodies in the uploaded file (>1 = assembly).
     solid_count: Optional[int] = None
 
+    # Exact B-rep face count (STEP + OCP only) — per-feature machining time.
+    face_count: Optional[int] = None
+
     # Manual override for the computed lead time — shop schedules vary in
     # ways the formula can't see (backlog, material on hand, holidays).
     lead_time_override_days: Optional[float] = None
@@ -244,6 +247,21 @@ class PricingEngine:
         "micro-feature-density-high": {"cycle_time_pct": 5.0, "reason": "Tiny features need small tools at low feed"},
         "mesh-very-dense": {"risk_pct": 0.5, "reason": "Analysis overhead only"},
         "multi-body-file": {"risk_pct": 5.0, "reason": "Assembly quoted as one part; estimates need manual review"},
+        # Skim/stress-relief/scrap are priced explicitly via WARP_CONTROL;
+        # the rule itself only adds the re-measure-after-relaxation QC.
+        "warp-risk": {"inspection_pct": 20.0, "reason": "Skim passes after relaxation, stress relief, rest time and remake risk"},
+    }
+
+    # Warp-prone parts (DFM 'warp-risk'), from medians of 5-6 vendor quotes
+    # per part on the 2026-10 warp-analysis sheet: skim passes ran ~40% of
+    # rough+finish hours, in-house stress relief ~$10-20/batch, scrap/remake
+    # premium ~25% of price (overlapping our base risk factor), and rest +
+    # stress relief added 1-2 days.
+    WARP_CONTROL = {
+        "skim_pct": 0.40,
+        "stress_relief_inr": 1500.0,
+        "scrap_pct": 0.12,
+        "lead_time_add_days": 2.0,
     }
 
     def calculate_price(self, inputs: PricingInputs) -> PricingResult:
@@ -406,7 +424,14 @@ class PricingEngine:
         finishing_rate_cm2_min = max(10.0 - 5.0 * complexity_norm, 3.0)
         finishing_time_min = inputs.surface_area_cm2 / finishing_rate_cm2_min
 
-        feature_time_min = (hole_seconds + thread_seconds) / 60.0 + finishing_time_min
+        # Every B-rep face is a feature someone has to toolpath: small
+        # detailed parts (60 mm housings, ~150-300 faces) ran 3x over the
+        # area/volume terms alone. Sub-linear because features share tools
+        # and passes. Fit on 11 benchmark parts (warp-analysis vendor sheet +
+        # machinist sheet): log error 5.3 -> 0.7, all within 0.67-1.38x.
+        face_time_min = 2.5 * float(inputs.face_count) ** 0.65 if inputs.face_count else 0.0
+
+        feature_time_min = (hole_seconds + thread_seconds) / 60.0 + finishing_time_min + face_time_min
 
         tool_change_count = max(1, int(round(1 + complexity_norm * 2 + (inputs.hole_count / 8.0))))
         tool_change_time_per_event_min = 0.8 + 0.7 * complexity_norm
@@ -450,9 +475,14 @@ class PricingEngine:
 
         tolerance_time_multiplier = float(tolerance["machining_time_multiplier"])
         dfm_cycle_multiplier = 1.0 + _clamp(dfm_adjustments["cycle_time_pct"], 0.0, 40.0) / 100.0
+        warp_prone = any(issue["code"] == "warp-risk" for issue in dfm_analysis["issues"])
+        warp_skim_pct = self.WARP_CONTROL["skim_pct"] if warp_prone else 0.0
         cycle_time_min = (
-            base_cycle_time_min * tolerance_time_multiplier * dfm_cycle_multiplier
+            base_cycle_time_min * (1.0 + warp_skim_pct) * tolerance_time_multiplier * dfm_cycle_multiplier
             + handling_time_min
+        )
+        warp_skim_time_min = (
+            base_cycle_time_min * warp_skim_pct * tolerance_time_multiplier * dfm_cycle_multiplier
         )
 
         machine_rate_per_hour = self._normalized_machine_rate(inputs.hourly_rate, machine_type)
@@ -474,6 +504,8 @@ class PricingEngine:
             "thread_seconds": round(thread_seconds, 2),
             "finishing_time_min": round(finishing_time_min, 4),
             "finishing_rate_cm2_min": round(finishing_rate_cm2_min, 4),
+            "face_count": inputs.face_count,
+            "face_time_min": round(face_time_min, 4),
             "handling_time_min": round(handling_time_min, 4),
             "base_cycle_time_min": round(base_cycle_time_min, 4),
             "tolerance_time_multiplier": round(tolerance_time_multiplier, 4),
@@ -563,6 +595,10 @@ class PricingEngine:
             "nre_total": float(nre_total),
             "nre_cost_per_part": float(nre_per_part),
         }
+
+        # D3. Warp control: stress relief is one furnace/oven cycle per batch.
+        warp_stress_relief_total = _to_decimal(self.WARP_CONTROL["stress_relief_inr"] if warp_prone else 0.0)
+        warp_stress_relief_per_part = warp_stress_relief_total / _to_decimal(max(inputs.quantity, 1))
 
         # E. Secondary operation cost
         secondary_per_part = self._secondary_cost(inputs.finish_name)
@@ -659,6 +695,7 @@ class PricingEngine:
             + cam_cost_per_part
             + tooling_per_part
             + nre_per_part
+            + warp_stress_relief_per_part
             + finish_cost
             + inspection_cost
         )
@@ -699,7 +736,10 @@ class PricingEngine:
         if dfm_analysis["has_blocking_issue"]:
             dfm_penalty_pct = max(dfm_penalty_pct, 3.0)
         dfm_multiplier = 1.0 + (dfm_penalty_pct / 100.0)
-        dfm_adjusted_cost = risk_adjusted_cost * _to_decimal(dfm_multiplier)
+        # Warp scrap/remake allowance sits outside the 10% DFM cap: vendors
+        # priced it at ~25% on its own.
+        warp_scrap_pct = self.WARP_CONTROL["scrap_pct"] if warp_prone else 0.0
+        dfm_adjusted_cost = risk_adjusted_cost * _to_decimal(dfm_multiplier * (1.0 + warp_scrap_pct))
 
         # Per-issue cost attribution so customers can see what fixing each
         # DFM issue would roughly save (per part).
@@ -714,6 +754,12 @@ class PricingEngine:
                 + float(quality_with_config) * impact["inspection_pct"] / 100.0
                 + float(risk_adjusted_cost) * impact["risk_pct"] / 100.0
             )
+            if impact["code"] == "warp-risk":
+                estimated_cost += (
+                    warp_skim_time_min * float(machine_rate_per_hour) / 60.0
+                    + float(warp_stress_relief_per_part)
+                    + float(risk_adjusted_cost) * dfm_multiplier * warp_scrap_pct
+                )
             issue_cost_impacts.append(
                 {
                     "code": impact["code"],
@@ -730,6 +776,15 @@ class PricingEngine:
             "risk_factor_pct": round((risk_multiplier - 1.0) * 100, 2),
             "cost_after_overheads_per_part": float(after_overhead_cost),
             "risk_adjusted_cost_per_part": float(risk_adjusted_cost),
+        }
+        details["warp_control"] = {
+            "warp_prone": warp_prone,
+            "skim_pct": warp_skim_pct,
+            "skim_time_min": round(warp_skim_time_min, 2),
+            "stress_relief_total": float(warp_stress_relief_total),
+            "stress_relief_per_part": float(warp_stress_relief_per_part),
+            "scrap_allowance_pct": round(warp_scrap_pct * 100, 2),
+            "lead_time_add_days": self.WARP_CONTROL["lead_time_add_days"] if warp_prone else 0.0,
         }
         details["dfm"] = {
             "analysis": dfm_analysis,
@@ -826,6 +881,8 @@ class PricingEngine:
             dfm_lead_time_add += 1.0
         if dfm_analysis["score"] < 70:
             dfm_lead_time_add += 0.5
+        if warp_prone:
+            dfm_lead_time_add += self.WARP_CONTROL["lead_time_add_days"]
         lead_time_days += dfm_lead_time_add
 
         # Urgent jobs reduce lead time at the expense of surcharge
@@ -856,7 +913,10 @@ class PricingEngine:
 
         return PricingResult(
             material_cost=round_price(material_cost),
-            machining_cost=round_price(machining_cost + setup_cost_per_part + cam_cost_per_part + tooling_per_part + nre_per_part),
+            machining_cost=round_price(
+                machining_cost + setup_cost_per_part + cam_cost_per_part + tooling_per_part
+                + nre_per_part + warp_stress_relief_per_part
+            ),
             finish_cost=round_price(finish_cost),
             inspection_cost=round_price(inspection_cost),
             subtotal=round_price(direct_cost_per_part),
@@ -1305,6 +1365,7 @@ async def calculate_pricing(
         hole_diameters_mm=getattr(geometry, "hole_diameters_mm", None),
         machining_direction_count=getattr(geometry, "machining_direction_count", None),
         solid_count=getattr(geometry, "solid_count", None),
+        face_count=getattr(geometry, "face_count", None),
         min_wall_thickness_mm=geometry.min_wall_thickness,
         triangle_count=geometry.triangle_count,
         material_name=material.name,
