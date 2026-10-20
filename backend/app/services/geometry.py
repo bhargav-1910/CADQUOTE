@@ -654,7 +654,8 @@ async def reanalyze_stale_brep_geometry() -> None:
                     # face_count arrived after these engine versions, so a
                     # NULL marks every STEP row older than the current one.
                     GeometryAnalysis.face_count.is_(None),
-                    GeometryAnalysis.analysis_library != "trimesh-brep-failed",
+                    # Prefix match: the OBB step can append "+obb".
+                    ~GeometryAnalysis.analysis_library.like("trimesh-brep-failed%"),
                     CADFile.file_format == "step",
                     CADFile.processing_status == ProcessingStatus.COMPLETED,
                 )
