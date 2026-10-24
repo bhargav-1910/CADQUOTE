@@ -6,11 +6,6 @@ import PasswordRequirements, { meetsPasswordPolicy } from '@/components/Password
 import { confirmPasswordReset } from '@/services/api';
 import LegalFooter from '@/components/LegalFooter';
 
-const blueprintGrid = {
-  backgroundImage:
-    'linear-gradient(to right, rgba(143,174,245,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(143,174,245,0.05) 1px, transparent 1px)',
-  backgroundSize: '36px 36px',
-};
 
 const ResetPasswordPage = () => {
   const [searchParams] = useSearchParams();
@@ -52,10 +47,9 @@ const ResetPasswordPage = () => {
 
   const shell = (children: React.ReactNode) => (
     <div
-      className="flex min-h-[100dvh] flex-col items-center justify-center overflow-x-hidden bg-[#0A0A0C] p-4 sm:p-6"
-      style={blueprintGrid}
+      className="flex min-h-[100dvh] flex-col items-center justify-center overflow-x-hidden p-4 sm:p-6"
     >
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-800 bg-white shadow-2xl shadow-black/60">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-surface shadow-xl">
         <div className="flex flex-col gap-4 p-6 sm:p-9">{children}</div>
       </div>
       <div className="mt-8">
@@ -69,11 +63,11 @@ const ResetPasswordPage = () => {
   if (!token) {
     return shell(
       <>
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden />
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4">
+          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
           <div>
-            <h1 className="font-display text-lg text-amber-900">Reset link incomplete</h1>
-            <p className="mt-1 text-sm leading-relaxed text-amber-800">
+            <h1 className="text-lg text-amber-900 dark:text-amber-300">Reset link incomplete</h1>
+            <p className="mt-1 text-sm leading-relaxed text-amber-800 dark:text-amber-300">
               This page needs the link from your reset email. Open it directly from the email, or
               request a new one.
             </p>
@@ -81,7 +75,7 @@ const ResetPasswordPage = () => {
         </div>
         <Link
           to="/forgot-password"
-          className="text-sm font-semibold text-sky-700 hover:text-sky-800"
+          className="text-sm font-semibold text-primary-700 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-300"
         >
           Request a new reset link
         </Link>
@@ -92,11 +86,11 @@ const ResetPasswordPage = () => {
   if (done) {
     return shell(
       <>
-        <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+        <div className="flex items-start gap-3 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 p-4">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
           <div>
-            <h1 className="font-display text-lg text-emerald-900">Password updated</h1>
-            <p className="mt-1 text-sm leading-relaxed text-emerald-800">
+            <h1 className="text-lg text-emerald-900 dark:text-emerald-300">Password updated</h1>
+            <p className="mt-1 text-sm leading-relaxed text-emerald-800 dark:text-emerald-300">
               Your password has been changed and every other session was signed out. You can sign
               in with your new password now.
             </p>
@@ -112,7 +106,7 @@ const ResetPasswordPage = () => {
 
   return shell(
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 text-sky-700">
+      <div className="flex items-center gap-2 text-primary-700 dark:text-primary-300">
         <ShieldCheck className="h-5 w-5" aria-hidden />
         <span className="font-mono text-xs font-semibold uppercase tracking-[0.2em]">
           Choose a new password
@@ -120,8 +114,8 @@ const ResetPasswordPage = () => {
       </div>
 
       <div>
-        <h1 className="font-display text-2xl text-slate-900">Set a new password</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="text-2xl text-ink">Set a new password</h1>
+        <p className="mt-1 text-sm text-ink-secondary">
           Pick something you have not used on this account before.
         </p>
       </div>
@@ -155,11 +149,11 @@ const ResetPasswordPage = () => {
       </Field>
 
       {confirmPassword.length > 0 && !matches && (
-        <p className="text-xs text-red-600">The two passwords do not match.</p>
+        <p className="text-xs text-red-600 dark:text-red-400">The two passwords do not match.</p>
       )}
 
       {error && (
-        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {error}
         </p>
       )}
@@ -175,7 +169,7 @@ const ResetPasswordPage = () => {
         {loading ? 'Updating…' : 'Update password'}
       </Button>
 
-      <Link to="/login" className="text-center text-sm font-semibold text-sky-700 hover:text-sky-800">
+      <Link to="/login" className="text-center text-sm font-semibold text-primary-700 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-300">
         Back to sign in
       </Link>
     </form>,

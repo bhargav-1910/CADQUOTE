@@ -31,7 +31,7 @@ const PasswordRequirements = ({ value }: { value: string }) => (
       return (
         <li
           key={rule.label}
-          className={`flex items-center gap-1.5 text-xs ${passed ? 'text-emerald-700' : 'text-slate-500'}`}
+          className={`flex items-center gap-1.5 text-xs ${passed ? 'text-emerald-700 dark:text-emerald-300' : 'text-ink-muted'}`}
         >
           {passed ? (
             <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Settings, Save, Loader2, AlertCircle, CheckCircle, ChevronDown, ChevronUp , RotateCcw} from 'lucide-react';
 import type { Material, SurfaceFinish, InspectionLevel } from '@/types';
+import { Button, Input, SkeletonList } from '@/components/ui';
 import {
   getMaterials, getSurfaceFinishes, getInspectionLevels,
   updateMaterial, updateSurfaceFinish, updateInspectionLevel,
   resetMaterial, resetSurfaceFinish, resetInspectionLevel, resetMachineRate,
-  getMachineRates, updateMachineRate, type MachineRate,
+  getMachineRates, updateMachineRate, type MachineRate, type CatalogScope,
 } from '@/services/api';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -95,18 +96,18 @@ function PricingSection<T extends { id: string; name: string }>({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-surface rounded-xl border border-edge overflow-hidden">
       <button
-        className="w-full flex items-center justify-between px-4 sm:px-6 py-4 text-left hover:bg-gray-50"
+        className="w-full flex items-center justify-between px-4 sm:px-6 py-4 text-left hover:bg-surface-muted"
         onClick={() => setOpen((o) => !o)}
       >
-        <h2 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h2>
-        {open ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+        <h2 className="text-base sm:text-lg font-semibold text-ink">{title}</h2>
+        {open ? <ChevronUp className="w-5 h-5 text-ink-subtle" /> : <ChevronDown className="w-5 h-5 text-ink-subtle" />}
       </button>
 
       {open && (
-        <div className="border-t border-gray-100">
-          <div className="hidden md:grid grid-cols-[1fr_auto_auto] gap-x-4 px-6 py-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <div className="border-t border-edge">
+          <div className="hidden md:grid grid-cols-[1fr_auto_auto] gap-x-4 px-6 py-3 bg-surface-muted text-xs font-semibold text-ink-muted uppercase tracking-wide">
             <span>Name</span>
             <span className="text-right w-48">{fieldLabel} ({fieldUnit})</span>
             <span className="w-20" />
@@ -121,72 +122,72 @@ function PricingSection<T extends { id: string; name: string }>({
             return (
               <div
                 key={item.id}
-                className="px-4 sm:px-6 py-3 border-t border-gray-100"
+                className="px-4 sm:px-6 py-3 border-t border-edge"
               >
                 <div className="md:grid md:grid-cols-[1fr_auto_auto] md:gap-x-4 md:items-center">
                   <div className="mb-3 md:mb-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium text-gray-900">{item.name}</p>
+                      <p className="font-medium text-ink">{item.name}</p>
                       {customised && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700 ring-1 ring-primary-200">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 dark:bg-primary-500/10 px-2 py-0.5 text-[11px] font-semibold text-primary-700 dark:text-primary-300 ring-1 ring-primary-200">
                           Your rate
                         </span>
                       )}
                     </div>
                     {'common_names' in item && (item as { common_names?: string | null }).common_names && (
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      <p className="text-xs text-ink-muted mt-0.5 truncate">
                         {(item as { common_names?: string | null }).common_names}
                       </p>
                     )}
                     {'description' in item && (item as { description?: string | null }).description && (
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      <p className="text-xs text-ink-subtle mt-0.5 truncate">
                         {(item as { description?: string | null }).description}
                       </p>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2 w-full md:w-48">
-                    {fieldPrefix ? <span className="text-gray-500 text-sm">{fieldPrefix}</span> : null}
-                    <input
+                    {fieldPrefix ? <span className="text-ink-muted text-sm">{fieldPrefix}</span> : null}
+                    <Input
                       type="number"
                       min={0}
                       step={1}
                       value={editVal}
-                      onChange={(e) => handleChange(item.id, e.target.value)}
-                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-right focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      onChange={(e) => handleChange(item.id, e.target.value)} className="w-full text-right"
                     />
                   </div>
 
                   <div className="mt-3 md:mt-0 md:w-32 flex items-center justify-end gap-2">
                     {customised && onReset && state !== 'saving' && (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleReset(item.id)}
                         disabled={resetting === item.id}
                         title="Discard your rate and go back to the standard one"
-                        className="flex items-center justify-center rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+                        aria-label="Reset to the standard rate"
                       >
                         {resetting === item.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <RotateCcw className="h-4 w-4" />
                         )}
-                      </button>
+                      </Button>
                     )}
                     {state === 'saving' ? (
                       <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
                     ) : state === 'saved' ? (
-                      <CheckCircle className="w-5 h-5 text-green-500" />
+                      <CheckCircle className="w-5 h-5 text-emerald-500" />
                     ) : state === 'error' ? (
                       <span className="text-xs text-red-500">{edits[item.id]?.errorMsg}</span>
                     ) : (
-                      <button
+                      <Button size="sm" className="w-full md:w-auto"
                         onClick={() => handleSave(item.id)}
                         disabled={!changed}
-                        className="w-full md:w-auto flex items-center justify-center gap-1 px-3 py-1.5 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                       >
                         <Save className="w-3.5 h-3.5" />
                         Save
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -199,7 +200,13 @@ function PricingSection<T extends { id: string; name: string }>({
   );
 }
 
-const AdminPricing = () => {
+/**
+ * Rate editor. scope='mine' is Cost Master: a user's edits copy the default
+ * into their own workspace. scope='global' (admin page) edits the shared
+ * defaults every workspace starts from, in place.
+ */
+const AdminPricing = ({ scope = 'mine' }: { scope?: CatalogScope }) => {
+  const shared = scope === 'global';
   const [materials, setMaterials] = useState<Material[]>([]);
   const [finishes, setFinishes] = useState<SurfaceFinish[]>([]);
   const [inspections, setInspections] = useState<InspectionLevel[]>([]);
@@ -209,7 +216,7 @@ const AdminPricing = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getMaterials(false), getSurfaceFinishes(false), getInspectionLevels(false), getMachineRates()])
+    Promise.all([getMaterials(false, scope), getSurfaceFinishes(false, scope), getInspectionLevels(false, scope), getMachineRates(scope)])
       .then(([m, f, i, mr]) => {
         setMaterials(m);
         setFinishes(f);
@@ -218,7 +225,7 @@ const AdminPricing = () => {
       })
       .catch(() => setError('Failed to load pricing configuration'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [scope]);
 
 
   // After a reset the shared default reappears under its own id, so the list
@@ -230,32 +237,38 @@ const AdminPricing = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 sm:py-20">
-        <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
-      </div>
+      <div className={shared ? '' : 'p-4 sm:p-6 lg:p-8'}><SkeletonList rows={6} /></div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 flex items-center gap-3">
-        <AlertCircle className="w-6 h-6 text-red-600" />
-        <p className="text-red-700">{error}</p>
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div role="alert" className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl p-4 sm:p-6 flex items-center gap-3">
+          <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+          <p className="text-red-700 dark:text-red-300">{error}</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <Settings className="w-6 h-6 text-primary-600" />
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Pricing Configuration</h1>
+    <div className={shared ? 'space-y-6' : 'p-4 sm:p-6 lg:p-8 space-y-6'}>
+      {shared ? (
+        <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          These are the shared defaults every workspace starts from. A change applies to all users who have not set their own rate for that item in Cost Master; existing quotes keep their saved prices.
+        </p>
+      ) : (
+        <div>
+          <div className="flex items-center gap-3">
+            <Settings className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+            <h1 className="text-xl sm:text-2xl font-bold text-ink">Pricing Configuration</h1>
+          </div>
+          <p className="text-ink-muted mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. Changes apply only to your own future quotes. All values in INR (₹).</p>
         </div>
-        <p className="text-gray-500 mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. All values in INR (₹).</p>
-      </div>
+      )}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-2 flex flex-wrap gap-2">
+      <div className="bg-surface rounded-xl border border-edge p-2 flex flex-wrap gap-2">
         {[
           { key: 'material', label: 'Material Rate' },
           { key: 'machining', label: 'Machining Rate' },
@@ -269,7 +282,7 @@ const AdminPricing = () => {
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
               activeTab === tab.key
                 ? 'bg-primary-600 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
+                : 'text-ink-secondary hover:bg-surface-raised'
             }`}
           >
             {tab.label}
@@ -286,12 +299,12 @@ const AdminPricing = () => {
             fieldLabel="Cost/kg"
             fieldUnit="₹/kg"
             onSave={(id, value) =>
-              updateMaterial(id, { cost_per_kg: value }).then((updated) => {
+              updateMaterial(id, { cost_per_kg: value }, scope).then((updated) => {
                 setMaterials((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMaterial(id).then(reloadMaterials)}
+            onReset={shared ? undefined : (id) => resetMaterial(id).then(reloadMaterials)}
           />
 
           <PricingSection
@@ -302,12 +315,12 @@ const AdminPricing = () => {
             fieldUnit="g/cm3"
             fieldPrefix=""
             onSave={(id, value) =>
-              updateMaterial(id, { density: value }).then((updated) => {
+              updateMaterial(id, { density: value }, scope).then((updated) => {
                 setMaterials((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMaterial(id).then(reloadMaterials)}
+            onReset={shared ? undefined : (id) => resetMaterial(id).then(reloadMaterials)}
           />
 
           <PricingSection
@@ -317,12 +330,12 @@ const AdminPricing = () => {
             fieldLabel="Scrap Saving"
             fieldUnit="₹/kg"
             onSave={(id, value) =>
-              updateMaterial(id, { scrap_cost_per_kg: value }).then((updated) => {
+              updateMaterial(id, { scrap_cost_per_kg: value }, scope).then((updated) => {
                 setMaterials((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMaterial(id).then(reloadMaterials)}
+            onReset={shared ? undefined : (id) => resetMaterial(id).then(reloadMaterials)}
           />
         </div>
       )}
@@ -336,12 +349,12 @@ const AdminPricing = () => {
             fieldLabel="Fixed Cost"
             fieldUnit="₹"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { fixed_cost: value }).then((updated) => {
+              updateSurfaceFinish(id, { fixed_cost: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -351,12 +364,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/kg"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_kg: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_kg: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -366,12 +379,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/sq.in"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_sq_inch: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_sq_inch: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -381,12 +394,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/sq.ft"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_sq_ft: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_sq_ft: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -396,12 +409,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/piece"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_piece: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_piece: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
         </div>
       )}
@@ -415,12 +428,12 @@ const AdminPricing = () => {
             fieldLabel="Fixed Cost"
             fieldUnit="₹"
             onSave={(id, value) =>
-              updateInspectionLevel(id, { fixed_cost: value }).then((updated) => {
+              updateInspectionLevel(id, { fixed_cost: value }, scope).then((updated) => {
                 setInspections((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetInspectionLevel(id).then(reloadInspections)}
+            onReset={shared ? undefined : (id) => resetInspectionLevel(id).then(reloadInspections)}
           />
 
           <PricingSection
@@ -431,12 +444,12 @@ const AdminPricing = () => {
             fieldUnit="%"
             fieldPrefix=""
             onSave={(id, value) =>
-              updateInspectionLevel(id, { percentage_cost: value }).then((updated) => {
+              updateInspectionLevel(id, { percentage_cost: value }, scope).then((updated) => {
                 setInspections((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetInspectionLevel(id).then(reloadInspections)}
+            onReset={shared ? undefined : (id) => resetInspectionLevel(id).then(reloadInspections)}
           />
         </div>
       )}
@@ -450,12 +463,12 @@ const AdminPricing = () => {
             fieldLabel="Hourly Rate"
             fieldUnit="₹/hr"
             onSave={(id, value) =>
-              updateMachineRate(id, { hourly_rate: value }).then((updated) => {
+              updateMachineRate(id, { hourly_rate: value }, scope).then((updated) => {
                 setMachineRates((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMachineRate(id).then(reloadMachineRates)}
+            onReset={shared ? undefined : (id) => resetMachineRate(id).then(reloadMachineRates)}
           />
 
           <PricingSection
@@ -465,12 +478,12 @@ const AdminPricing = () => {
             fieldLabel="Setup Hour"
             fieldUnit="₹/hr"
             onSave={(id, value) =>
-              updateMachineRate(id, { setup_hour_rate: value }).then((updated) => {
+              updateMachineRate(id, { setup_hour_rate: value }, scope).then((updated) => {
                 setMachineRates((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMachineRate(id).then(reloadMachineRates)}
+            onReset={shared ? undefined : (id) => resetMachineRate(id).then(reloadMachineRates)}
           />
 
           <PricingSection
@@ -481,18 +494,18 @@ const AdminPricing = () => {
             fieldUnit="hours"
             fieldPrefix=""
             onSave={(id, value) =>
-              updateMachineRate(id, { setup_time_hours: value }).then((updated) => {
+              updateMachineRate(id, { setup_time_hours: value }, scope).then((updated) => {
                 setMachineRates((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMachineRate(id).then(reloadMachineRates)}
+            onReset={shared ? undefined : (id) => resetMachineRate(id).then(reloadMachineRates)}
           />
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-700">
+      <div className="bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/30 rounded-lg p-4">
+        <p className="text-sm text-primary-700 dark:text-primary-300">
           <strong>Note:</strong> Changes take effect immediately for new quotes. Existing quotes retain their original pricing.
         </p>
       </div>

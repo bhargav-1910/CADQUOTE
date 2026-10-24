@@ -1,9 +1,10 @@
 import { FormEvent, useState } from 'react';
-import { AlertTriangle, KeyRound, Loader2, Trash2 } from 'lucide-react';
+import { AlertTriangle, KeyRound, Trash2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import PasswordRequirements, { meetsPasswordPolicy } from '@/components/PasswordRequirements';
 import TwoFactorSection from '@/components/TwoFactorSection';
 import VerifyEmailNotice from '@/components/VerifyEmailNotice';
+import { Button, Field, Input, PasswordInput } from '@/components/ui';
 import { changePassword, clearAuthTokens, deleteAccount } from '@/services/api';
 
 /**
@@ -72,148 +73,114 @@ const AccountSecurityPanel = () => {
   };
 
   return (
-    <div className="space-y-6 border-t border-slate-100 px-6 py-6">
+    <div className="space-y-6 border-t border-edge px-6 py-6">
       <VerifyEmailNotice />
       <TwoFactorSection />
-      <hr className="border-slate-200" />
+      <hr className="border-edge" />
       <section>
-        <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+        <h3 className="flex items-center gap-2 text-base font-semibold text-ink">
           <KeyRound className="h-4 w-4" aria-hidden />
           Change password
         </h3>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-ink-muted">
           Changing your password signs out every device, including this one.
         </p>
 
         {pwDone ? (
-          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p className="mt-3 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
             Password updated. Signing you out…
           </p>
         ) : (
           <form onSubmit={onChangePassword} className="mt-4 space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="text-sm text-slate-700">
-                <span className="font-medium">Current password</span>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  required
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none"
-                />
-              </label>
-              <label className="text-sm text-slate-700">
-                <span className="font-medium">New password</span>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  minLength={12}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none"
-                />
-              </label>
+              <Field label="Current password">
+                {(props) => (
+                  <PasswordInput {...props} autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+                )}
+              </Field>
+              <Field label="New password">
+                {(props) => (
+                  <PasswordInput {...props} autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={12} />
+                )}
+              </Field>
             </div>
 
             {newPassword.length > 0 && <PasswordRequirements value={newPassword} />}
 
             {pwError && (
-              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {pwError}
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={pwSaving}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
-            >
-              {pwSaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+            <Button type="submit" loading={pwSaving}>
               Update password
-            </button>
+            </Button>
           </form>
         )}
       </section>
 
-      <section className="rounded-xl border border-red-200 bg-red-50/60 p-4">
-        <h3 className="flex items-center gap-2 text-base font-semibold text-red-900">
+      <section className="rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50/60 dark:bg-red-500/10 p-4">
+        <h3 className="flex items-center gap-2 text-base font-semibold text-red-900 dark:text-red-300">
           <Trash2 className="h-4 w-4" aria-hidden />
           Delete account
         </h3>
-        <p className="mt-1 text-sm leading-relaxed text-red-800">
+        <p className="mt-1 text-sm leading-relaxed text-red-800 dark:text-red-300">
           Permanently deletes {user?.email ? <strong>{user.email}</strong> : 'your account'} along
           with every CAD file, quotation, generated PDF, customer record and points balance. This
           cannot be undone.
         </p>
 
         {!deleteOpen ? (
-          <button
-            type="button"
-            onClick={() => setDeleteOpen(true)}
-            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-          >
+          <Button variant="danger-subtle" onClick={() => setDeleteOpen(true)} className="mt-3">
             Delete my account
-          </button>
+          </Button>
         ) : (
           <div className="mt-4 space-y-3">
-            <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-red-800">
+            <div className="flex items-start gap-2 rounded-lg border border-red-300 dark:border-red-500/30 bg-surface px-3 py-2 text-sm text-red-800 dark:text-red-300">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <span>Confirm with your password and type DELETE to proceed.</span>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="text-sm text-red-900">
-                <span className="font-medium">Password</span>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={deletePassword}
-                  onChange={(e) => setDeletePassword(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-red-300 px-3 py-2 text-sm text-slate-900 focus:border-red-500 focus:outline-none"
-                />
-              </label>
-              <label className="text-sm text-red-900">
-                <span className="font-medium">Type DELETE</span>
-                <input
-                  type="text"
-                  value={deleteConfirm}
-                  onChange={(e) => setDeleteConfirm(e.target.value)}
-                  placeholder="DELETE"
-                  className="mt-1 w-full rounded-lg border border-red-300 px-3 py-2 text-sm text-slate-900 focus:border-red-500 focus:outline-none"
-                />
-              </label>
+              <Field label="Password">
+                {(props) => (
+                  <PasswordInput {...props} autoComplete="current-password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} />
+                )}
+              </Field>
+              <Field label="Type DELETE">
+                {(props) => (
+                  <Input {...props} value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} placeholder="DELETE" autoComplete="off" />
+                )}
+              </Field>
             </div>
 
             {deleteError && (
-              <p role="alert" className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="rounded-lg border border-red-300 dark:border-red-500/30 bg-surface px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {deleteError}
               </p>
             )}
 
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
+              <Button
+                variant="danger"
                 onClick={onDelete}
-                disabled={deleting || deleteConfirm.trim().toUpperCase() !== 'DELETE' || !deletePassword}
-                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                loading={deleting}
+                disabled={deleteConfirm.trim().toUpperCase() !== 'DELETE' || !deletePassword}
               >
-                {deleting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
                 Permanently delete
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setDeleteOpen(false);
                   setDeletePassword('');
                   setDeleteConfirm('');
                   setDeleteError(null);
                 }}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}

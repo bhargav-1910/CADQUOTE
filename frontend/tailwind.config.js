@@ -1,4 +1,11 @@
 /** @type {import('tailwindcss').Config} */
+
+// Semantic tokens are RGB channel triplets defined in index.css for light and
+// `.dark`, so `bg-surface/80`-style opacity modifiers keep working. Any element
+// with the `dark` class (the whole app in dark mode, or an always-dark region
+// like the landing hero) resolves them to their dark values.
+const token = (name) => `rgb(var(--fq-${name}) / <alpha-value>)`;
+
 export default {
   darkMode: 'class',
   content: [
@@ -6,22 +13,38 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
+    // Radius scale: 8 / 12 / 16 plus pills. Nothing else exists on purpose.
+    borderRadius: {
+      none: '0px',
+      DEFAULT: '8px',
+      lg: '8px',
+      xl: '12px',
+      '2xl': '16px',
+      full: '9999px',
+    },
     extend: {
       colors: {
-        // Semantic tokens (CSS variables defined in index.css; theme-aware)
+        canvas: token('canvas'),
         surface: {
-          DEFAULT: 'var(--fq-surface)',
-          muted: 'var(--fq-surface-muted)',
-          raised: 'var(--fq-surface-raised)',
+          DEFAULT: token('surface'),
+          muted: token('surface-muted'),
+          raised: token('surface-raised'),
+        },
+        fill: {
+          DEFAULT: token('fill'),
+          strong: token('edge-strong'),
         },
         ink: {
-          DEFAULT: 'var(--fq-ink)',
-          secondary: 'var(--fq-ink-secondary)',
-          muted: 'var(--fq-ink-muted)',
+          DEFAULT: token('ink'),
+          secondary: token('ink-secondary'),
+          muted: token('ink-muted'),
+          subtle: token('ink-subtle'),
         },
-        edge: 'var(--fq-border)',
-        // Single brand blue: primary === Tailwind sky, so legacy `primary-*`
-        // and `sky-*` classes render the same color everywhere.
+        edge: {
+          DEFAULT: token('edge'),
+          strong: token('edge-strong'),
+        },
+        // The one interactive blue (Tailwind sky values).
         primary: {
           50: '#f0f9ff',
           100: '#e0f2fe',
@@ -35,7 +58,7 @@ export default {
           900: '#0c4a6e',
           950: '#082f49',
         },
-        // Machined-orange CTA accent from the landing page (#F2A35E).
+        // Machined orange: reserved for the single highest-value CTA.
         accent: {
           50: '#fef7ee',
           100: '#fdecd8',
@@ -52,7 +75,14 @@ export default {
       },
       fontFamily: {
         sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
-        display: ['"Space Grotesk"', '"IBM Plex Sans"', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+      },
+      // One motion rhythm app-wide: `transition` / `duration-*` default to it.
+      transitionDuration: {
+        DEFAULT: '200ms',
+      },
+      transitionTimingFunction: {
+        DEFAULT: 'cubic-bezier(0.2, 0, 0, 1)',
       },
     },
   },

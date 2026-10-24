@@ -5,6 +5,8 @@ import type { QuoteListItem } from '@/types';
 import { listQuotes, downloadQuotePDF, deleteQuote } from '@/services/api';
 import PartThumbnail from '@/components/PartThumbnail';
 
+import { Button, Input, SkeletonList, StatusPill, buttonClasses } from '@/components/ui';
+import { useToast } from '@/components/Toast';
 type StatusFilter = 'all' | 'generated' | 'sent' | 'accepted' | 'declined' | 'expired' | 'draft';
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
@@ -23,47 +25,30 @@ const formatCurrency = (value: number) =>
 const formatDate = (dateString: string) =>
   new Date(dateString).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
 
-const statusPillClass = (status: string) => {
-  switch (status) {
-    case 'generated':
-      return 'bg-primary-50 text-primary-700 border-primary-200';
-    case 'sent':
-      return 'bg-sky-50 text-sky-700 border-sky-200';
-    case 'accepted':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    case 'declined':
-      return 'bg-red-50 text-red-700 border-red-200';
-    case 'expired':
-      return 'bg-amber-50 text-amber-700 border-amber-200';
-    default:
-      return 'bg-gray-100 text-gray-700 border-gray-200';
-  }
-};
-
 /** Validity cell: countdown chip when close to expiry, plain date otherwise. */
 const ValidityCell = ({ validUntil, status }: { validUntil: string; status: string }) => {
   const expiry = new Date(validUntil).getTime();
   const daysLeft = Math.ceil((expiry - Date.now()) / 86400000);
   if (status === 'accepted' || status === 'declined') {
-    return <span className="text-sm text-gray-600">{formatDate(validUntil)}</span>;
+    return <span className="text-sm text-ink-secondary">{formatDate(validUntil)}</span>;
   }
   const expired = status === 'expired' || daysLeft <= 0;
 
   if (expired) {
     return (
-      <span className="inline-flex items-center rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+      <span className="inline-flex items-center rounded-full bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
         Expired {formatDate(validUntil)}
       </span>
     );
   }
   if (daysLeft <= 5) {
     return (
-      <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+      <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
         {daysLeft} day{daysLeft === 1 ? '' : 's'} left
       </span>
     );
   }
-  return <span className="text-sm text-gray-600">{formatDate(validUntil)}</span>;
+  return <span className="text-sm text-ink-secondary">{formatDate(validUntil)}</span>;
 };
 
 const QuoteList = () => {
@@ -73,10 +58,10 @@ const QuoteList = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const location = useLocation();
   const navigate = useNavigate();
+  const toast = useToast();
   const batchResult = location.state as { batchIds?: string[]; batchTotal?: number } | null;
 
   const loadQuotes = () => {
@@ -132,42 +117,56 @@ const QuoteList = () => {
     }
   };
 
-  const handleDelete = async (event: React.MouseEvent, quote: QuoteListItem) => {
+  // Put a removed quote back in its original (newest-first) position.
+  const restoreQuote = (quote: QuoteListItem) =>
+    setQuotes((prev) =>
+      prev.some((q) => q.id === quote.id)
+        ? prev
+        : [...prev, quote].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    );
+
+  // Undo instead of a confirm dialog: the row disappears at once and the
+  // server delete only runs when the toast's undo window closes.
+  const handleDelete = (event: React.MouseEvent, quote: QuoteListItem) => {
     event.stopPropagation();
-    if (!window.confirm(`Delete ${quote.quote_number}? This can't be undone.`)) return;
-    setDeletingId(quote.id);
-    try {
-      await deleteQuote(quote.id);
-      setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete quote');
-    } finally {
-      setDeletingId(null);
-    }
+    setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
+    toast({
+      message: `Deleted ${quote.quote_number}`,
+      action: { label: 'Undo', onClick: () => restoreQuote(quote) },
+      onExpire: () => {
+        deleteQuote(quote.id).catch((err) => {
+          restoreQuote(quote);
+          toast({
+            tone: 'error',
+            message: `Couldn't delete ${quote.quote_number}: ${err instanceof Error ? err.message : 'try again'}`,
+          });
+        });
+      },
+    });
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
+        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
           <Home className="w-3.5 h-3.5" />
           Home
         </Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-gray-900 font-medium">My Quotes</span>
+        <span className="text-ink font-medium">My Quotes</span>
       </nav>
 
       {/* Batch success banner */}
       {batchResult?.batchIds && batchResult.batchIds.length > 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
-          <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+        <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl p-4 flex items-center gap-3">
+          <CheckCircle className="w-6 h-6 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
           <div>
-            <p className="font-semibold text-green-900">
+            <p className="font-semibold text-emerald-900 dark:text-emerald-300">
               {batchResult.batchIds.length} quotes created successfully!
             </p>
             {batchResult.batchTotal !== undefined && (
-              <p className="text-sm text-green-700">
+              <p className="text-sm text-emerald-700 dark:text-emerald-300">
                 Combined total: {formatCurrency(Number(batchResult.batchTotal))}
               </p>
             )}
@@ -177,14 +176,13 @@ const QuoteList = () => {
 
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quotes</h1>
-          <p className="text-gray-600 text-sm">
+          <h1 className="text-2xl font-bold text-ink">Quotes</h1>
+          <p className="text-ink-secondary text-sm">
             {quotes.length} total · {formatCurrency(totalFilteredValue)} in view
           </p>
         </div>
         <Link
-          to="/quote"
-          className="inline-flex w-fit items-center gap-2 px-4 py-2.5 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 shadow-lg shadow-accent-500/20 transition-all"
+          to="/quote" className={buttonClasses('accent', 'md', 'w-fit')}
         >
           <Plus className="w-4 h-4" />
           New Quote
@@ -194,13 +192,12 @@ const QuoteList = () => {
       {/* Search + filters */}
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-subtle" />
+          <Input
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by quote number or customer…"
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            placeholder="Search by quote number or customer…" className="w-full pl-9 pr-3"
           />
         </div>
         <div className="flex gap-1.5 flex-wrap">
@@ -211,13 +208,13 @@ const QuoteList = () => {
               onClick={() => setStatusFilter(value)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 statusFilter === value
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  ? 'bg-ink text-surface border-ink'
+                  : 'bg-surface text-ink-secondary border-edge hover:border-edge-strong'
               }`}
             >
               {label}
               {statusCounts[value] !== undefined && (
-                <span className={`ml-1.5 ${statusFilter === value ? 'text-gray-300' : 'text-gray-400'}`}>
+                <span className={`ml-1.5 ${statusFilter === value ? 'text-ink-subtle' : 'text-ink-subtle'}`}>
                   {statusCounts[value] ?? 0}
                 </span>
               )}
@@ -228,128 +225,115 @@ const QuoteList = () => {
 
       {/* Table */}
       {loading ? (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {[...Array(6)].map((_, index) => (
-            <div key={index} className="flex items-center gap-4 px-6 py-4 border-b border-gray-100 animate-pulse">
-              <div className="h-4 w-40 bg-gray-200 rounded" />
-              <div className="h-4 w-28 bg-gray-100 rounded" />
-              <div className="h-4 w-24 bg-gray-100 rounded ml-auto" />
-              <div className="h-5 w-16 bg-gray-100 rounded-full" />
-            </div>
-          ))}
-        </div>
+        <SkeletonList rows={6} />
       ) : error ? (
         // A load failure is not the same as "no quotes" — showing the empty
         // state here would look like the account's data disappeared.
-        <div className="bg-red-50 border border-red-200 rounded-xl p-12 text-center">
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl p-12 text-center">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-red-900 mb-2">Couldn't load your quotes</h2>
-          <p className="text-red-700 mb-6">{error}</p>
-          <button
-            type="button"
+          <h2 className="text-lg font-semibold text-red-900 dark:text-red-300 mb-2">Couldn't load your quotes</h2>
+          <p className="text-red-700 dark:text-red-300 mb-6">{error}</p>
+          <Button variant="danger" size="lg"
             onClick={loadQuotes}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
           >
             Retry
-          </button>
+          </Button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+        <div className="bg-surface rounded-xl border border-edge p-12 text-center">
+          <FileText className="w-16 h-16 text-ink-subtle mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-ink mb-2">
             {quotes.length === 0 ? 'No quotes yet' : 'No quotes match your filters'}
           </h2>
-          <p className="text-gray-600 mb-6">
+          <p className="text-ink-secondary mb-6">
             {quotes.length === 0
               ? 'Create your first quote by uploading a CAD file'
               : 'Try a different search term or status filter'}
           </p>
           {quotes.length === 0 ? (
             <Link
-              to="/quote"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors"
+              to="/quote" className={buttonClasses('primary', 'lg')}
             >
               <Plus className="w-5 h-5" />
               Create Quote
             </Link>
           ) : filtersActive && (
-            <button
-              type="button"
+            <Button variant="secondary" size="lg"
               onClick={resetFilters}
-              className="inline-flex items-center gap-2 px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
             >
               Reset filters
-            </button>
+            </Button>
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+        <div className="bg-surface rounded-xl border border-edge overflow-hidden overflow-x-auto">
           <table className="w-full min-w-[760px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-surface-muted border-b border-edge">
               <tr>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Quote #</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Customer</th>
-                <th className="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Total</th>
-                <th className="text-center px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Validity</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Created</th>
-                <th className="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Quote #</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Total</th>
+                <th className="text-center px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Status</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Validity</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Created</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-edge">
               {filtered.map((quote) => (
                 <tr
                   key={quote.id}
-                  className="hover:bg-gray-50 cursor-pointer group"
+                  className="hover:bg-surface-muted cursor-pointer group"
                   onClick={() => navigate(`/quotes/${quote.id}`)}
                 >
                   <td className="px-6 py-3.5">
                     <span className="flex items-center gap-3">
                       <PartThumbnail fileId={quote.cad_file_id} />
-                      <span className="font-medium font-mono text-sm text-primary-700">{quote.quote_number}</span>
+                      <span className="font-medium font-mono text-sm text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
                     </span>
                   </td>
-                  <td className="px-6 py-3.5 text-sm text-gray-700">{quote.customer_name || '—'}</td>
-                  <td className="px-6 py-3.5 text-right font-semibold font-mono text-sm text-gray-900">
+                  <td className="px-6 py-3.5 text-sm text-ink-secondary">{quote.customer_name || '—'}</td>
+                  <td className="px-6 py-3.5 text-right font-semibold font-mono text-sm text-ink">
                     {formatCurrency(quote.total_price)}
                   </td>
                   <td className="px-6 py-3.5 text-center">
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize border ${statusPillClass(quote.status)}`}>
-                      {quote.status}
-                    </span>
+                    <StatusPill status={quote.status} />
                   </td>
                   <td className="px-6 py-3.5">
                     <ValidityCell validUntil={quote.valid_until} status={quote.status} />
                   </td>
-                  <td className="px-6 py-3.5 text-sm text-gray-500">{formatDate(quote.created_at)}</td>
+                  <td className="px-6 py-3.5 text-sm text-ink-muted">{formatDate(quote.created_at)}</td>
                   <td className="px-6 py-3.5">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-1">
                       <Link
                         to={`/quotes/${quote.id}`}
                         onClick={(event) => event.stopPropagation()}
                         title="View"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-900"
+                        aria-label={`View ${quote.quote_number}`}
+                        className={buttonClasses('ghost', 'icon')}
                       >
-                        <Eye className="w-3.5 h-3.5" />
+                        <Eye className="w-4 h-4" />
                       </Link>
                       <Link
                         to={`/quote/${quote.id}/edit`}
                         onClick={(event) => event.stopPropagation()}
                         title="Edit in configure"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-900"
+                        aria-label={`Edit in configure ${quote.quote_number}`}
+                        className={buttonClasses('ghost', 'icon')}
                       >
-                        <Pencil className="w-3.5 h-3.5" />
+                        <Pencil className="w-4 h-4" />
                       </Link>
                       <button
                         type="button"
                         onClick={(event) => handleDownload(event, quote)}
                         title="Download PDF"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-900"
+                        aria-label={`Download PDF ${quote.quote_number}`}
+                        className={buttonClasses('ghost', 'icon')}
                       >
                         {downloadingId === quote.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <Download className="w-3.5 h-3.5" />
+                          <Download className="w-4 h-4" />
                         )}
                       </button>
                       {quote.status !== 'accepted' && quote.status !== 'declined' && (
@@ -357,13 +341,10 @@ const QuoteList = () => {
                           type="button"
                           onClick={(event) => handleDelete(event, quote)}
                           title="Delete quote"
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600"
+                          aria-label={`Delete quote ${quote.quote_number}`}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary transition hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                         >
-                          {deletingId === quote.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3.5 h-3.5" />
-                          )}
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>

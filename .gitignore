@@ -68,6 +68,9 @@ htmlcov/
 # Claude Code local settings
 .claude/
 
+# Browser-automation screenshots and logs from local verification runs
+.playwright-mcp/
+
 # Testing artifacts — kept local, deliberately out of the source tree.
 # The suites still exist on disk; run them with:  cd backend && python -m pytest
 Test files/

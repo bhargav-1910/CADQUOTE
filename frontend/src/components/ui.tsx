@@ -10,7 +10,9 @@ import {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
   forwardRef,
+  useEffect,
   useId,
+  useRef,
   useState,
 } from 'react';
 import { Loader2, CheckCircle2, XCircle, Clock, Send, FileText, AlertTriangle, Eye, EyeOff } from 'lucide-react';
@@ -20,30 +22,36 @@ import type { QuoteStatus } from '@/types';
 // Button
 // ---------------------------------------------------------------------------
 
-type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'success';
-type ButtonSize = 'sm' | 'md' | 'lg';
+type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'danger-subtle' | 'success';
+type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    'bg-primary-600 text-white shadow-sm hover:bg-primary-700 focus-visible:outline-primary-600 disabled:bg-primary-300',
+  primary: 'bg-primary-600 text-white shadow-sm hover:bg-primary-700 focus-visible:outline-primary-600',
   // Landing-page machined orange with dark ink — reserved for the single
   // highest-value CTA on a screen.
-  accent:
-    'bg-accent-400 text-slate-950 shadow-sm hover:bg-accent-300 focus-visible:outline-accent-500 disabled:bg-accent-200 disabled:text-slate-500',
+  accent: 'bg-accent-400 text-slate-950 shadow-sm hover:bg-accent-300 focus-visible:outline-accent-500',
   secondary:
-    'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:outline-gray-400 disabled:text-gray-400',
-  ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-gray-400',
-  danger:
-    'bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:outline-red-600 disabled:bg-red-300',
-  success:
-    'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:outline-emerald-600 disabled:bg-emerald-300',
+    'border border-edge-strong bg-surface text-ink-secondary hover:bg-surface-muted hover:text-ink focus-visible:outline-primary-500',
+  ghost: 'text-ink-secondary hover:bg-surface-raised hover:text-ink focus-visible:outline-primary-500',
+  danger: 'bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:outline-red-600',
+  // Destructive but not the main action on screen (e.g. "Turn off").
+  'danger-subtle':
+    'border border-red-300 dark:border-red-500/40 bg-surface text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 focus-visible:outline-red-600',
+  success: 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:outline-emerald-600',
 };
 
+// Radius follows control size: 8px compact, 12px standard. `icon` is a
+// 40px square for icon-only actions (always pass aria-label).
 const BUTTON_SIZES: Record<ButtonSize, string> = {
   sm: 'px-3 py-1.5 text-xs rounded-lg gap-1.5',
-  md: 'px-4 py-2 text-sm rounded-lg gap-2',
+  md: 'px-4 py-2.5 text-sm rounded-xl gap-2',
   lg: 'px-6 py-3 text-base rounded-xl gap-2',
+  icon: 'h-10 w-10 rounded-lg',
 };
+
+/** Button styling for elements that can't be a <button> (e.g. router <Link>). */
+export const buttonClasses = (variant: ButtonVariant = 'primary', size: ButtonSize = 'md', className = '') =>
+  `inline-flex items-center justify-center whitespace-nowrap font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 ${BUTTON_VARIANTS[variant]} ${BUTTON_SIZES[size]} ${className}`;
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -53,11 +61,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', loading = false, icon, className = '', children, disabled, ...rest }, ref) => (
+  ({ variant = 'primary', size = 'md', loading = false, icon, className = '', children, disabled, type = 'button', ...rest }, ref) => (
     <button
       ref={ref}
+      type={type}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed ${BUTTON_VARIANTS[variant]} ${BUTTON_SIZES[size]} ${className}`}
+      aria-busy={loading || undefined}
+      className={buttonClasses(variant, size, className)}
       {...rest}
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
@@ -77,7 +87,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 export const Card = ({ padded = true, className = '', children, ...rest }: CardProps) => (
   <div
-    className={`rounded-2xl border border-gray-200 bg-white shadow-sm ${padded ? 'p-6' : ''} ${className}`}
+    className={`rounded-2xl border border-edge bg-surface shadow-sm ${padded ? 'p-6' : ''} ${className}`}
     {...rest}
   >
     {children}
@@ -88,15 +98,14 @@ export const Card = ({ padded = true, className = '', children, ...rest }: CardP
 // Badge
 // ---------------------------------------------------------------------------
 
-type BadgeTone = 'gray' | 'blue' | 'green' | 'amber' | 'red' | 'sky';
+type BadgeTone = 'gray' | 'primary' | 'green' | 'amber' | 'red';
 
 const BADGE_TONES: Record<BadgeTone, string> = {
-  gray: 'bg-gray-100 text-gray-700 border-gray-200',
-  blue: 'bg-primary-50 text-primary-700 border-primary-200',
-  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  amber: 'bg-amber-50 text-amber-700 border-amber-200',
-  red: 'bg-red-50 text-red-700 border-red-200',
-  sky: 'bg-sky-50 text-sky-700 border-sky-200',
+  gray: 'bg-surface-raised text-ink-secondary border-edge',
+  primary: 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border-primary-200 dark:border-primary-500/30',
+  green: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30',
+  amber: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
+  red: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30',
 };
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
@@ -118,8 +127,8 @@ export const Badge = ({ tone = 'gray', className = '', children, ...rest }: Badg
 
 const STATUS_CONFIG: Record<QuoteStatus, { label: string; tone: BadgeTone; icon: typeof Clock }> = {
   draft: { label: 'Draft', tone: 'gray', icon: FileText },
-  generated: { label: 'Generated', tone: 'blue', icon: FileText },
-  sent: { label: 'Sent', tone: 'sky', icon: Send },
+  generated: { label: 'Generated', tone: 'primary', icon: FileText },
+  sent: { label: 'Sent', tone: 'primary', icon: Send },
   expired: { label: 'Expired', tone: 'amber', icon: Clock },
   accepted: { label: 'Accepted', tone: 'green', icon: CheckCircle2 },
   declined: { label: 'Declined', tone: 'red', icon: XCircle },
@@ -141,15 +150,41 @@ export const StatusPill = ({ status, className = '' }: { status: QuoteStatus; cl
 // ---------------------------------------------------------------------------
 
 export const Skeleton = ({ className = '' }: { className?: string }) => (
-  <div className={`animate-pulse rounded-lg bg-gray-200 ${className}`} aria-hidden />
+  <div className={`animate-pulse rounded-lg bg-fill ${className}`} aria-hidden />
+);
+
+/** Loading placeholder for a list or table: rows of text bars in a card. */
+export const SkeletonList = ({ rows = 5, className = '' }: { rows?: number; className?: string }) => (
+  <div role="status" aria-label="Loading" className={`divide-y divide-edge overflow-hidden rounded-2xl border border-edge bg-surface ${className}`}>
+    {Array.from({ length: rows }, (_, index) => (
+      <div key={index} className="flex items-center gap-4 px-5 py-4">
+        <Skeleton className="h-9 w-9 shrink-0" />
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="hidden h-4 w-28 sm:block" />
+        <Skeleton className="ml-auto h-4 w-20" />
+      </div>
+    ))}
+  </div>
+);
+
+/** Loading placeholder for a detail screen: breadcrumb, title, content cards. */
+export const SkeletonPage = () => (
+  <div role="status" aria-label="Loading" className="space-y-6 p-4 sm:p-6 lg:p-8">
+    <Skeleton className="h-4 w-40" />
+    <Skeleton className="h-8 w-72 max-w-full" />
+    <div className="grid gap-6 lg:grid-cols-3">
+      <Skeleton className="h-72 rounded-2xl lg:col-span-2" />
+      <Skeleton className="h-72 rounded-2xl" />
+    </div>
+  </div>
 );
 
 // ---------------------------------------------------------------------------
 // SectionLabel — mono eyebrow used above section headings
 // ---------------------------------------------------------------------------
 
-export const SectionLabel = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
-  <p className={`font-mono text-xs font-semibold uppercase tracking-[0.2em] text-sky-700 ${className}`}>
+export const SectionLabel = ({ children, className = '', ...rest }: HTMLAttributes<HTMLParagraphElement>) => (
+  <p className={`font-mono text-xs font-semibold uppercase tracking-[0.2em] text-primary-700 dark:text-primary-300 ${className}`} {...rest}>
     {children}
   </p>
 );
@@ -160,9 +195,9 @@ export const SectionLabel = ({ children, className = '' }: { children: ReactNode
 // ---------------------------------------------------------------------------
 
 const FIELD_BASE =
-  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition ' +
-  'placeholder:text-slate-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 ' +
-  'disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
+  'w-full rounded-xl border border-edge-strong bg-surface px-3 py-2.5 text-sm text-ink outline-none transition ' +
+  'placeholder:text-ink-subtle focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 ' +
+  'disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-ink-subtle';
 
 const FIELD_ERROR = 'border-red-400 focus:border-red-500 focus:ring-red-500/30';
 
@@ -217,7 +252,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, InputProps>(
           type="button"
           onClick={() => setVisible((v) => !v)}
           aria-label={visible ? 'Hide password' : 'Show password'}
-          className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-400 transition hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+          className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-ink-subtle transition hover:text-ink-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
         >
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
@@ -226,6 +261,62 @@ export const PasswordInput = forwardRef<HTMLInputElement, InputProps>(
   },
 );
 PasswordInput.displayName = 'PasswordInput';
+
+// ---------------------------------------------------------------------------
+// Dialog — native <dialog> + showModal(): the browser supplies Escape to
+// close, an inert background (focus can't leave), and top-layer stacking.
+// We add backdrop-click close and focus return to the opener.
+// ---------------------------------------------------------------------------
+
+export interface DialogProps {
+  open: boolean;
+  onClose: () => void;
+  /** Accessible name; use `labelledBy` instead when a visible heading exists. */
+  label?: string;
+  labelledBy?: string;
+  className?: string;
+  children: ReactNode;
+}
+
+export const Dialog = ({ open, onClose, label, labelledBy, className = '', children }: DialogProps) => {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!open || !dialog) return;
+    const opener = document.activeElement as HTMLElement | null;
+    if (!dialog.open) dialog.showModal();
+    return () => {
+      if (dialog.open) dialog.close();
+      // Also runs when the parent unmounts us mid-open, where the browser's
+      // own focus restoration would not.
+      opener?.focus?.();
+    };
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-label={label}
+      aria-labelledby={labelledBy}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        // Backdrop clicks target the <dialog> itself, outside its box.
+        if (event.target !== event.currentTarget) return;
+        const r = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) {
+          onClose();
+        }
+      }}
+      className={`fq-dialog max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] overflow-y-auto rounded-2xl border border-edge bg-surface p-0 text-ink shadow-2xl backdrop:bg-slate-950/50 backdrop:backdrop-blur-sm ${className}`}
+    >
+      {open && children}
+    </dialog>
+  );
+};
 
 /**
  * Field — label + control + helper/error wiring in one place, so every form
@@ -245,7 +336,7 @@ export const Field = ({ label, children, helper, error, required = false, classN
   const describedBy = error ? `${id}-error` : helper ? `${id}-helper` : undefined;
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="block text-sm font-medium text-ink-secondary">
         {label}
         {required && <span aria-hidden className="ml-0.5 text-red-500">*</span>}
       </label>
@@ -253,11 +344,11 @@ export const Field = ({ label, children, helper, error, required = false, classN
         {children({ id, 'aria-describedby': describedBy, 'aria-invalid': error ? true : undefined })}
       </div>
       {error ? (
-        <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-red-600">
+        <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
           {error}
         </p>
       ) : helper ? (
-        <p id={`${id}-helper`} className="mt-1 text-xs text-slate-500">
+        <p id={`${id}-helper`} className="mt-1 text-xs text-ink-muted">
           {helper}
         </p>
       ) : null}

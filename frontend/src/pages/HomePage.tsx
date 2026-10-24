@@ -12,7 +12,7 @@ import { useAuth } from '@/components/AuthProvider';
 import PartThumbnail from '@/components/PartThumbnail';
 import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
 import { createSamplePartFile } from '@/services/samplePart';
-import { StatusPill } from '@/components/ui';
+import { Button, SkeletonList, StatusPill, buttonClasses } from '@/components/ui';
 
 interface WeekBucket {
   label: string;
@@ -91,7 +91,7 @@ const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
         aria-label={`Quoted value per week for the last ${buckets.length} weeks`}
         onMouseLeave={() => setHovered(null)}
       >
-        <line x1="0" y1={baseline} x2={width} y2={baseline} className="stroke-slate-200" strokeWidth="1" />
+        <line x1="0" y1={baseline} x2={width} y2={baseline} className="stroke-edge" strokeWidth="1" />
         {buckets.map((bucket, index) => {
           const barHeight = bucket.value > 0 ? Math.max((bucket.value / maxValue) * (baseline - plotTop), 3) : 2;
           const x = index * slot + (slot - barWidth) / 2;
@@ -110,10 +110,10 @@ const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
                 d={barPath(x, barHeight)}
                 className={
                   bucket.value === 0
-                    ? 'fill-slate-200'
+                    ? 'fill-fill'
                     : hovered === index
-                    ? 'fill-sky-700'
-                    : 'fill-sky-600'
+                    ? 'fill-primary-700'
+                    : 'fill-primary-600'
                 }
                 style={{ pointerEvents: 'none' }}
               />
@@ -122,7 +122,7 @@ const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
                   x={x + barWidth / 2}
                   y={baseline - barHeight - 5}
                   textAnchor="middle"
-                  className="fill-slate-500 font-mono"
+                  className="fill-ink-muted font-mono"
                   fontSize="9"
                 >
                   {compactINR(bucket.value)}
@@ -131,10 +131,10 @@ const QuoteTrendChart = ({ buckets }: { buckets: WeekBucket[] }) => {
             </g>
           );
         })}
-        <text x="2" y={height - 4} className="fill-slate-400" fontSize="9">
+        <text x="2" y={height - 4} className="fill-ink-subtle" fontSize="9">
           {buckets[0]?.label}
         </text>
-        <text x={width - 2} y={height - 4} textAnchor="end" className="fill-slate-400" fontSize="9">
+        <text x={width - 2} y={height - 4} textAnchor="end" className="fill-ink-subtle" fontSize="9">
           {buckets[buckets.length - 1]?.label}
         </text>
       </svg>
@@ -253,53 +253,53 @@ const HomePage = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-      <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm overflow-hidden relative animate-fade-up">
-        <div className="absolute -right-16 -top-16 w-52 h-52 rounded-full bg-sky-300/30 blur-3xl animate-float-soft" />
+      <section className="surface-strong rounded-2xl border border-edge shadow-sm overflow-hidden relative animate-fade-up">
+        <div className="absolute -right-16 -top-16 w-52 h-52 rounded-full bg-primary-300/30 blur-3xl animate-float-soft" />
         <div className="absolute -left-20 bottom-0 w-56 h-56 rounded-full bg-orange-300/20 blur-3xl animate-float-soft" />
 
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-6 p-6 sm:p-8 lg:p-10">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-medium">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-ink text-surface text-xs font-medium">
               <Sparkles className="w-3.5 h-3.5" />
               Precision Quoting Workspace
             </div>
 
             <div>
-              <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl leading-tight text-slate-900">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl leading-tight text-ink">
                 Build CNC quotes
-                <span className="block text-slate-600">without the spreadsheet grind.</span>
+                <span className="block text-ink-secondary">without the spreadsheet grind.</span>
               </h1>
-              <p className="text-slate-600 mt-4 max-w-2xl text-sm sm:text-base">
+              <p className="text-ink-secondary mt-4 max-w-2xl text-sm sm:text-base">
                 Drop one or many CAD files, get geometry analysis, per-part pricing, and lead-time estimates in one flow.
               </p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] text-slate-500">Quotes</p>
-                <p className="font-display text-2xl text-slate-900">{totalParts}</p>
+              <div className="rounded-2xl border border-edge bg-surface p-3">
+                <p className="text-[11px] text-ink-muted">Quotes</p>
+                <p className="text-2xl text-ink">{totalParts}</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] text-slate-500">Quoted Value</p>
-                <p className="font-display text-2xl text-slate-900">{formatCurrency(totalValue)}</p>
+              <div className="rounded-2xl border border-edge bg-surface p-3">
+                <p className="text-[11px] text-ink-muted">Quoted Value</p>
+                <p className="text-2xl text-ink">{formatCurrency(totalValue)}</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] text-slate-500">Sent to Customers</p>
-                <p className="font-display text-2xl text-slate-900">{sentCount}</p>
+              <div className="rounded-2xl border border-edge bg-surface p-3">
+                <p className="text-[11px] text-ink-muted">Sent to Customers</p>
+                <p className="text-2xl text-ink">{sentCount}</p>
               </div>
-              <div className={`rounded-2xl border p-3 ${winRate !== null ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
-                <p className={`text-[11px] ${winRate !== null ? 'text-emerald-700' : 'text-slate-500'}`}>Win rate</p>
-                <p className="font-display text-2xl text-slate-900">{winRate !== null ? `${winRate}%` : '—'}</p>
+              <div className={`rounded-2xl border p-3 ${winRate !== null ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10' : 'border-edge bg-surface'}`}>
+                <p className={`text-[11px] ${winRate !== null ? 'text-emerald-700 dark:text-emerald-300' : 'text-ink-muted'}`}>Win rate</p>
+                <p className="text-2xl text-ink">{winRate !== null ? `${winRate}%` : '—'}</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-secondary">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-raised">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 Secure uploads
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100">
-                <Upload className="w-3.5 h-3.5 text-sky-600" />
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-raised">
+                <Upload className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" />
                 STEP, STP, STL up to 100MB each
               </span>
             </div>
@@ -307,30 +307,30 @@ const HomePage = () => {
 
           <div
             {...getRootProps()}
-            className={`rounded-3xl border-2 border-dashed p-6 sm:p-8 min-h-[330px] flex flex-col justify-center text-center transition-colors cursor-default ${
+            className={`rounded-2xl border-2 border-dashed p-6 sm:p-8 min-h-[330px] flex flex-col justify-center text-center transition-colors cursor-default ${
               isDragActive
-                ? 'border-sky-400 bg-sky-50'
+                ? 'border-primary-400 bg-primary-50 dark:bg-primary-500/10'
                 : uploading
-                ? 'border-slate-200 bg-slate-50'
-                : 'border-slate-300 bg-white hover:border-slate-400'
+                ? 'border-edge bg-surface-muted'
+                : 'border-edge-strong bg-surface hover:border-edge-strong'
             }`}
           >
             <input {...getInputProps()} />
 
             {uploading ? (
               <div className="space-y-3">
-                <Loader2 className="w-10 h-10 text-sky-600 animate-spin mx-auto" />
-                <p className="font-medium text-slate-700">Analyzing geometry...</p>
-                <p className="text-sm text-slate-500">This usually takes a few seconds per file.</p>
+                <Loader2 className="w-10 h-10 text-primary-600 dark:text-primary-400 animate-spin mx-auto" />
+                <p className="font-medium text-ink-secondary">Analyzing geometry...</p>
+                <p className="text-sm text-ink-muted">This usually takes a few seconds per file.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="relative w-fit mx-auto">
-                  <Cloud className="w-14 h-14 text-slate-400" />
-                  <Upload className="w-5 h-5 text-sky-600 absolute -bottom-1 -right-1" />
+                  <Cloud className="w-14 h-14 text-ink-subtle" />
+                  <Upload className="w-5 h-5 text-primary-600 dark:text-primary-400 absolute -bottom-1 -right-1" />
                 </div>
 
-                <p className="text-slate-700 font-medium">
+                <p className="text-ink-secondary font-medium">
                   {isDragActive ? 'Release files to start upload' : 'Drag and drop CAD files here'}
                 </p>
 
@@ -338,23 +338,21 @@ const HomePage = () => {
                   <button
                     type="button"
                     onClick={open}
-                    className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
+                    className="px-4 py-2 rounded-xl bg-ink text-surface text-sm font-semibold hover:bg-ink/85 transition-colors"
                   >
                     Upload Files
                   </button>
-                  <button
-                    type="button"
+                  <Button variant="secondary"
                     onClick={() => onDrop([createSamplePartFile()])}
-                    className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
                   >
                     Try a sample part
-                  </button>
+                  </Button>
                 </div>
 
-                <p className="text-xs text-slate-500">Single and multi-file uploads both open the same quote builder flow.</p>
+                <p className="text-xs text-ink-muted">Single and multi-file uploads both open the same quote builder flow.</p>
 
                 {isFreePlan && (
-                  <p className="text-xs text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+                  <p className="text-xs text-primary-800 dark:text-primary-300 bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/30 rounded-lg px-3 py-2">
                     Free plan: only the sample part can be quoted.{' '}
                     <Link to="/billing" className="font-semibold underline">
                       Upgrade
@@ -371,12 +369,12 @@ const HomePage = () => {
       {/* Profile completion nudge — until the company address is filled the
           PDFs ship with a placeholder address */}
       {user && !user.company_address?.trim() && (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 animate-fade-up">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-5 py-4 animate-fade-up">
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-amber-900">Complete your company profile</p>
-              <p className="text-xs text-amber-800 mt-0.5">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">Complete your company profile</p>
+              <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
                 Your quote PDFs currently show a placeholder address. Add your address, logo, and GSTIN so
                 customers see your letterhead.
               </p>
@@ -394,11 +392,11 @@ const HomePage = () => {
 
       {/* Onboarding checklist — until the user has been through the full loop once */}
       {!quotesLoading && !onboardingDismissed && respondedCount === 0 && (
-        <section className="surface-strong rounded-2xl border border-slate-200 p-5 animate-fade-up">
+        <section className="surface-strong rounded-2xl border border-edge p-5 animate-fade-up">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="font-display text-lg text-slate-900">Get to your first won quote</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <h2 className="text-lg text-ink">Get to your first won quote</h2>
+              <p className="text-xs text-ink-muted mt-0.5">
                 Three steps to see the whole flow — takes about two minutes.
               </p>
             </div>
@@ -406,7 +404,7 @@ const HomePage = () => {
               type="button"
               onClick={dismissOnboarding}
               aria-label="Dismiss checklist"
-              className="text-slate-400 hover:text-slate-600 transition-colors"
+              className="text-ink-subtle hover:text-ink-secondary transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -437,24 +435,24 @@ const HomePage = () => {
               <div
                 key={step.label}
                 className={`rounded-xl border p-3.5 ${
-                  step.done ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-white'
+                  step.done ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10' : 'border-edge bg-surface'
                 }`}
               >
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <p className="flex items-center gap-2 text-sm font-semibold text-ink">
                   {step.done ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   ) : (
-                    <Circle className="w-4 h-4 text-slate-300 shrink-0" />
+                    <Circle className="w-4 h-4 text-ink-subtle shrink-0" />
                   )}
                   {index + 1}. {step.label}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">{step.detail}</p>
+                <p className="mt-1 text-xs text-ink-muted">{step.detail}</p>
                 {step.action && (
                   <button
                     type="button"
                     onClick={step.action}
                     disabled={uploading}
-                    className="mt-2.5 text-xs font-semibold text-sky-700 hover:text-sky-900 underline disabled:opacity-50"
+                    className="mt-2.5 text-xs font-semibold text-primary-700 dark:text-primary-300 hover:text-primary-900 dark:hover:text-primary-300 underline disabled:opacity-50"
                   >
                     {step.actionLabel}
                   </button>
@@ -466,61 +464,57 @@ const HomePage = () => {
       )}
 
       {uploadError && (
-        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4 animate-fade-up">
+        <div className="flex items-start gap-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-2xl p-4 animate-fade-up">
           <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-red-800">Upload failed</p>
-            <p className="text-xs text-red-600 mt-0.5">{uploadError}</p>
+            <p className="text-sm font-semibold text-red-800 dark:text-red-300">Upload failed</p>
+            <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{uploadError}</p>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr] gap-6">
-        <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+        <section className="surface-strong rounded-2xl border border-edge shadow-sm p-5 sm:p-6 animate-fade-up">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-ink text-surface flex items-center justify-center">
                 <FolderOpen className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-display text-xl text-slate-900">Recent Quote Activity</h2>
-                <p className="text-xs text-slate-500">Track your latest generated quotes.</p>
+                <h2 className="text-xl text-ink">Recent Quote Activity</h2>
+                <p className="text-xs text-ink-muted">Track your latest generated quotes.</p>
               </div>
             </div>
 
-            <Link to="/quotes" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
+            <Link to="/quotes" className="inline-flex items-center gap-1 text-sm text-ink-secondary hover:text-ink">
               All quotes
               <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
 
           {quotesLoading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
-            </div>
+            <SkeletonList rows={4} />
           ) : quotesError ? (
             // A load failure is not the same as "no quotes" — showing the
             // empty state here would look like the account's data disappeared.
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
-              <p className="text-red-800 font-medium">Couldn't load recent quotes</p>
-              <p className="text-sm text-red-600 mt-1">{quotesError}</p>
-              <button
-                type="button"
+            <div className="rounded-2xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 p-8 text-center">
+              <p className="text-red-800 dark:text-red-300 font-medium">Couldn't load recent quotes</p>
+              <p className="text-sm text-red-600 dark:text-red-400 mt-1">{quotesError}</p>
+              <Button variant="danger" className="mt-4"
                 onClick={loadRecentQuotes}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors"
               >
                 Retry
-              </button>
+              </Button>
             </div>
           ) : quotes.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-              <p className="text-slate-600 font-medium">No quotes yet.</p>
-              <p className="text-sm text-slate-500 mt-1">Upload your first file to start building estimates.</p>
+            <div className="rounded-2xl border border-dashed border-edge-strong bg-surface-muted p-8 text-center">
+              <p className="text-ink-secondary font-medium">No quotes yet.</p>
+              <p className="text-sm text-ink-muted mt-1">Upload your first file to start building estimates.</p>
               <button
                 type="button"
                 onClick={() => onDrop([createSamplePartFile()])}
                 disabled={uploading}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-ink text-surface text-sm font-semibold hover:bg-ink/85 transition-colors disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4" />
                 Quote a sample part
@@ -531,20 +525,19 @@ const HomePage = () => {
               {quotes.slice(0, 5).map((quote, index) => (
                 <li key={quote.id}>
                   <Link
-                    to={`/quotes/${quote.id}`}
-                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3 hover:border-slate-300 hover:shadow-sm transition-all"
+                    to={`/quotes/${quote.id}`} className={buttonClasses('secondary', 'lg')}
                     style={{ animationDelay: `${index * 60}ms` }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <PartThumbnail fileId={quote.cad_file_id} className="w-8 h-8" />
                       <div className="min-w-0">
-                        <p className="font-medium text-slate-900 truncate">{quote.quote_number}</p>
-                        <p className="text-xs text-slate-500">{new Date(quote.created_at).toLocaleDateString('en-IN')}</p>
+                        <p className="font-medium text-ink truncate">{quote.quote_number}</p>
+                        <p className="text-xs text-ink-muted">{new Date(quote.created_at).toLocaleDateString('en-IN')}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2.5 ml-3 shrink-0">
                       <StatusPill status={quote.status} />
-                      <span className="text-sm font-semibold font-mono text-slate-700">{formatCurrency(quote.total_price)}</span>
+                      <span className="text-sm font-semibold font-mono text-ink-secondary">{formatCurrency(quote.total_price)}</span>
                     </div>
                   </Link>
                 </li>
@@ -554,15 +547,15 @@ const HomePage = () => {
         </section>
 
         <div className="space-y-6">
-          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+          <section className="surface-strong rounded-2xl border border-edge shadow-sm p-5 sm:p-6 animate-fade-up">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                <div className="w-9 h-9 rounded-lg bg-ink text-surface flex items-center justify-center">
                   <TrendingUp className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="font-display text-xl text-slate-900">Quoted Value</h2>
-                  <p className="text-xs text-slate-500">Last 8 weeks · {sentCount} sent{winRate !== null ? ` · ${winRate}% win rate` : ''}</p>
+                  <h2 className="text-xl text-ink">Quoted Value</h2>
+                  <p className="text-xs text-ink-muted">Last 8 weeks · {sentCount} sent{winRate !== null ? ` · ${winRate}% win rate` : ''}</p>
                 </div>
               </div>
             </div>
@@ -571,19 +564,19 @@ const HomePage = () => {
             </div>
           </section>
 
-          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+          <section className="surface-strong rounded-2xl border border-edge shadow-sm p-5 sm:p-6 animate-fade-up">
             <div className="flex items-center gap-2.5 mb-4">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white ${recentResponses[0]?.status === 'accepted' ? 'bg-emerald-600' : 'bg-slate-900'}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white ${recentResponses[0]?.status === 'accepted' ? 'bg-emerald-600' : 'bg-ink'}`}>
                 <Inbox className="w-4 h-4" />
               </div>
               <div>
-                <h2 className="font-display text-xl text-slate-900">Customer Responses</h2>
-                <p className="text-xs text-slate-500">Quotes your customers accepted or declined via the share link.</p>
+                <h2 className="text-xl text-ink">Customer Responses</h2>
+                <p className="text-xs text-ink-muted">Quotes your customers accepted or declined via the share link.</p>
               </div>
             </div>
 
             {recentResponses.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+              <p className="rounded-xl border border-dashed border-edge-strong bg-surface-muted px-4 py-5 text-center text-sm text-ink-muted">
                 No responses yet — share a quote link to hear back here.
               </p>
             ) : (
@@ -594,22 +587,22 @@ const HomePage = () => {
                     <li key={quote.id}>
                       <Link
                         to={`/quotes/${quote.id}`}
-                        className={`block rounded-xl border px-3 py-2.5 hover:shadow-sm transition-all ${
+                        className={`block rounded-xl border px-3 py-2.5 hover:shadow-sm transition ${
                           accepted
-                            ? 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300'
-                            : 'border-red-200 bg-red-50/50 hover:border-red-300'
+                            ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10 hover:border-emerald-300 dark:hover:border-emerald-500/30'
+                            : 'border-red-200 dark:border-red-500/30 bg-red-50/50 dark:bg-red-500/10 hover:border-red-300 dark:hover:border-red-500/30'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="min-w-0">
-                            <p className="font-medium text-slate-900 truncate text-sm">{quote.quote_number}</p>
-                            <p className="text-xs text-slate-500 truncate">
+                            <p className="font-medium text-ink truncate text-sm">{quote.quote_number}</p>
+                            <p className="text-xs text-ink-muted truncate">
                               {quote.customer_name || 'No customer'} · {formatCurrency(quote.total_price)}
                             </p>
                           </div>
                           <span
-                            className={`ml-3 shrink-0 rounded-full border bg-white px-2 py-0.5 text-[11px] font-semibold ${
-                              accepted ? 'border-emerald-300 text-emerald-700' : 'border-red-300 text-red-700'
+                            className={`ml-3 shrink-0 rounded-full border bg-surface px-2 py-0.5 text-[11px] font-semibold ${
+                              accepted ? 'border-emerald-300 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'border-red-300 dark:border-red-500/30 text-red-700 dark:text-red-300'
                             }`}
                           >
                             {accepted ? 'Accepted' : 'Declined'}
@@ -617,7 +610,7 @@ const HomePage = () => {
                           </span>
                         </div>
                         {quote.customer_response_note && (
-                          <p className="mt-1.5 text-xs text-slate-600 italic truncate">“{quote.customer_response_note}”</p>
+                          <p className="mt-1.5 text-xs text-ink-secondary italic truncate">“{quote.customer_response_note}”</p>
                         )}
                       </Link>
                     </li>
@@ -627,19 +620,19 @@ const HomePage = () => {
             )}
           </section>
 
-          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+          <section className="surface-strong rounded-2xl border border-edge shadow-sm p-5 sm:p-6 animate-fade-up">
             <div className="flex items-center gap-2.5 mb-4">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${expiringSoon > 0 ? 'bg-amber-500 text-white' : 'bg-slate-900 text-white'}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${expiringSoon > 0 ? 'bg-amber-500 text-white' : 'bg-ink text-surface'}`}>
                 <Clock className="w-4 h-4" />
               </div>
               <div>
-                <h2 className="font-display text-xl text-slate-900">Expiring Soon</h2>
-                <p className="text-xs text-slate-500">Open quotes lapsing within 7 days — worth a follow-up.</p>
+                <h2 className="text-xl text-ink">Expiring Soon</h2>
+                <p className="text-xs text-ink-muted">Open quotes lapsing within 7 days — worth a follow-up.</p>
               </div>
             </div>
 
             {expiringQuotes.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+              <p className="rounded-xl border border-dashed border-edge-strong bg-surface-muted px-4 py-5 text-center text-sm text-ink-muted">
                 Nothing expiring this week.
               </p>
             ) : (
@@ -650,15 +643,15 @@ const HomePage = () => {
                     <li key={quote.id}>
                       <Link
                         to={`/quotes/${quote.id}`}
-                        className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 hover:border-amber-300 hover:shadow-sm transition-all"
+                        className="flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5 hover:border-amber-300 dark:hover:border-amber-500/30 hover:shadow-sm transition"
                       >
                         <div className="min-w-0">
-                          <p className="font-medium text-slate-900 truncate text-sm">{quote.quote_number}</p>
-                          <p className="text-xs text-slate-500 truncate">
+                          <p className="font-medium text-ink truncate text-sm">{quote.quote_number}</p>
+                          <p className="text-xs text-ink-muted truncate">
                             {quote.customer_name || 'No customer'} · {formatCurrency(quote.total_price)}
                           </p>
                         </div>
-                        <span className="ml-3 shrink-0 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                        <span className="ml-3 shrink-0 rounded-full border border-amber-300 dark:border-amber-500/30 bg-surface px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                           {daysLeft} day{daysLeft === 1 ? '' : 's'} left
                         </span>
                       </Link>
@@ -669,20 +662,20 @@ const HomePage = () => {
             )}
           </section>
 
-          <section className="surface-strong rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 animate-fade-up">
+          <section className="surface-strong rounded-2xl border border-edge shadow-sm p-5 sm:p-6 animate-fade-up">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h2 className="font-display text-xl text-slate-900">Pricing Control Center</h2>
-                <p className="text-xs text-slate-500 mt-1">Tune material rates, finish fees, and machine pricing in one place.</p>
+                <h2 className="text-xl text-ink">Pricing Control Center</h2>
+                <p className="text-xs text-ink-muted mt-1">Tune material rates, finish fees, and machine pricing in one place.</p>
               </div>
-              <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-ink text-surface flex items-center justify-center shrink-0">
                 <Settings className="w-4 h-4" />
               </div>
             </div>
 
             <Link
               to="/admin/pricing"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-ink text-surface text-sm font-semibold hover:bg-ink/85 transition-colors"
             >
               Go to Cost Master
               <ChevronRight className="w-4 h-4" />

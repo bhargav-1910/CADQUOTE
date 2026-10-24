@@ -1,7 +1,8 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import { AuthProvider } from './components/AuthProvider';
+import { AuthProvider, useAuth } from './components/AuthProvider';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicOnlyRoute from './components/PublicOnlyRoute';
 import LandingPage from './pages/LandingPage';
@@ -22,10 +23,27 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import NotFoundPage from './pages/NotFoundPage';
 import CookieConsent from './components/CookieConsent';
+import { ToastProvider } from './components/Toast';
+import { SkeletonPage } from './components/ui';
+
+// Admin-only and heavy (charts): kept out of everyone else's bundle.
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+
+// The admin page is unlinked and lives at a per-deployment path. Anyone who is
+// not an admin (signed out included) gets the ordinary 404, so the URL does not
+// reveal that it exists. The API enforces the role independently.
+const ADMIN_PATH = import.meta.env.VITE_ADMIN_PATH || '/control-room';
+
+const AdminGate = ({ children }: { children: JSX.Element }) => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user?.role === 'admin' ? children : <NotFoundPage />;
+};
 
 function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />
@@ -123,9 +141,21 @@ function App() {
             )}
           />
           <Route
+            path={ADMIN_PATH}
+            element={(
+              <AdminGate>
+                <Layout>
+                  <Suspense fallback={<SkeletonPage />}>
+                    <AdminPage />
+                  </Suspense>
+                </Layout>
+              </AdminGate>
+            )}
+          />
+          <Route
             path="/admin/pricing"
             element={(
-              <ProtectedRoute requireAdmin>
+              <ProtectedRoute>
                 <Layout>
                   <AdminPricing />
                 </Layout>
@@ -146,6 +176,7 @@ function App() {
         </Routes>
         <CookieConsent />
       </Router>
+      </ToastProvider>
     </AuthProvider>
   );
 }

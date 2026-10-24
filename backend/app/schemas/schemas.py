@@ -1093,3 +1093,117 @@ class CustomerResponse(CustomerBase, BaseSchema):
     accepted_count: int = 0
     declined_count: int = 0
     last_quote_at: Optional[datetime] = None
+
+
+# ============================================================================
+# Admin Schemas
+# ============================================================================
+
+class AdminDailyPoint(BaseModel):
+    date: str  # YYYY-MM-DD
+    signups: int = 0
+    quotes: int = 0
+
+
+class AdminOverviewResponse(BaseModel):
+    """Platform-wide counts for the admin dashboard."""
+    days: int
+    users_total: int
+    users_new: int
+    users_active: int
+    users_pro: int
+    users_suspended: int
+    quotes_total: int
+    quotes_new: int
+    quotes_accepted: int
+    cad_failed: int
+    daily: List[AdminDailyPoint]
+
+
+class AdminUserItem(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+    company_name: str
+    plan: str
+    plan_expires_at: Optional[datetime] = None
+    plan_active: bool
+    is_admin: bool
+    is_active: bool
+    email_verified: bool
+    totp_enabled: bool
+    quote_count: int = 0
+    created_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+    last_activity_at: Optional[datetime] = None
+
+
+class AdminUserListResponse(BaseModel):
+    items: List[AdminUserItem]
+    total: int
+
+
+class AdminPlanUpdate(BaseModel):
+    plan: Literal["free", "pro"]
+    # None = no expiry. Ignored when downgrading to free.
+    expires_at: Optional[datetime] = None
+
+
+class AdminStatusUpdate(BaseModel):
+    active: bool
+
+
+class AdminCadFailureItem(BaseModel):
+    id: UUID
+    original_filename: str
+    file_format: str
+    file_size: int
+    processing_status: str
+    processing_error: Optional[str] = None
+    created_at: Optional[datetime] = None
+    user_id: UUID
+    user_email: str
+
+
+class AdminCadFailureListResponse(BaseModel):
+    items: List[AdminCadFailureItem]
+    total: int
+
+
+class AdminSecurityEventItem(BaseModel):
+    id: UUID
+    created_at: datetime
+    event: str
+    outcome: str
+    user_id: Optional[UUID] = None
+    email: Optional[str] = None
+    ip: Optional[str] = None
+    path: Optional[str] = None
+    details: Optional[dict] = None
+
+
+class AdminSecurityEventListResponse(BaseModel):
+    items: List[AdminSecurityEventItem]
+    total: int
+
+
+class AdminConsentItem(BaseModel):
+    created_at: Optional[datetime] = None
+    policy_version: str
+    necessary: bool
+    preferences: bool
+    analytics: bool
+    marketing: bool
+    source: str
+
+
+class AdminPrivacyResponse(BaseModel):
+    """What we hold about one user, for a data-subject request."""
+    user: AdminUserItem
+    counts: dict[str, int]
+    consents: List[AdminConsentItem]
+
+
+class AdminDeleteUserRequest(BaseModel):
+    # Typed confirmation, so a mis-click on the wrong row cannot erase anyone.
+    confirm_email: str = Field(..., max_length=200)

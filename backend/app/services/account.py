@@ -17,6 +17,7 @@ from app.models.models import (
     CADFile,
     ConsentRecord,
     Customer,
+    EmailVerificationToken,
     GeometryAnalysis,
     PasswordResetToken,
     PointsLedgerEntry,
@@ -25,6 +26,7 @@ from app.models.models import (
     StripeCheckoutCredit,
     User,
 )
+from app.services.catalog import CATALOG_MODELS
 from app.services.storage import storage
 
 logger = logging.getLogger(__name__)
@@ -63,11 +65,15 @@ async def purge_user_data(db: AsyncSession, user: User) -> None:
         )
     await db.execute(sql_delete(Quote).where(Quote.user_id == user_id))
     await db.execute(sql_delete(CADFile).where(CADFile.user_id == user_id))
+    # Private Cost Master rows; only this user's (now deleted) quotes used them.
+    for model in CATALOG_MODELS:
+        await db.execute(sql_delete(model).where(model.user_id == user_id))
     await db.execute(sql_delete(Customer).where(Customer.user_id == user_id))
     await db.execute(sql_delete(PointsLedgerEntry).where(PointsLedgerEntry.user_id == user_id))
     await db.execute(sql_delete(PointsWallet).where(PointsWallet.user_id == user_id))
     await db.execute(sql_delete(StripeCheckoutCredit).where(StripeCheckoutCredit.user_id == user_id))
     await db.execute(sql_delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
+    await db.execute(sql_delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user_id))
     await db.execute(sql_delete(ConsentRecord).where(ConsentRecord.user_id == user_id))
     await db.execute(sql_delete(User).where(User.id == user_id))
     await db.commit()

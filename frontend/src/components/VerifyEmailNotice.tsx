@@ -17,7 +17,7 @@ const VerifyEmailNotice = () => {
 
   if (!user || user.email_verified) {
     return (
-      <p className="flex items-center gap-2 text-sm text-emerald-700">
+      <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
         <MailCheck className="h-4 w-4" />
         Email address confirmed.
       </p>
@@ -38,18 +38,18 @@ const VerifyEmailNotice = () => {
   };
 
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-      <p className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+    <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4">
+      <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-300">
         <MailWarning className="h-4 w-4" />
         Confirm your email address
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-amber-800">
+      <p className="mt-1 text-sm leading-relaxed text-amber-800 dark:text-amber-300">
         We sent a confirmation link to <strong>{user.email}</strong>. Confirming keeps account
         recovery working and is required before an administrator role takes effect.
       </p>
-      {message && <p className="mt-2 text-sm text-emerald-700">{message}</p>}
+      {message && <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">{message}</p>}
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-700">
+        <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-300">
           {error}
         </p>
       )}
@@ -57,7 +57,7 @@ const VerifyEmailNotice = () => {
         type="button"
         onClick={resend}
         disabled={sending}
-        className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+        className="mt-3 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-surface px-3 py-1.5 text-sm font-medium text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20 disabled:opacity-50"
       >
         {sending ? 'Sending…' : 'Resend confirmation email'}
       </button>

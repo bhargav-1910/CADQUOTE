@@ -75,6 +75,23 @@ async def effective_catalog(
     return list(result.scalars().all())
 
 
+async def system_catalog(
+    db: AsyncSession,
+    model: Type[CatalogModel],
+    *,
+    active_only: bool = True,
+    order_by: Optional[Sequence] = None,
+) -> list[CatalogModel]:
+    """Only the shared system defaults (what a new workspace starts from)."""
+    query = select(model).where(model.user_id.is_(None))
+    if active_only:
+        query = query.where(model.is_active.is_(True))
+    if order_by:
+        query = query.order_by(*order_by)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
 async def get_for_user(
     db: AsyncSession,
     model: Type[CatalogModel],

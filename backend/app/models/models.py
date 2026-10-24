@@ -705,3 +705,24 @@ class Quote(Base):
     surface_finish = relationship("SurfaceFinish", back_populates="quotes")
     inspection_level = relationship("InspectionLevel", back_populates="quotes")
     matched_vendor = relationship("Vendor", back_populates="quotes")
+
+
+class SecurityEvent(Base):
+    """Persisted copy of every structured security event (admin audit log).
+
+    The stdout ``security`` logger stays the primary sink; this table makes the
+    same events browsable from the admin page. ``user_id`` is deliberately not
+    a foreign key, so the trail survives the account it describes being
+    erased. Emails are stored masked, exactly as logged.
+    """
+    __tablename__ = "security_events"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    event = Column(String(80), nullable=False, index=True)
+    outcome = Column(String(16), nullable=False, index=True)
+    user_id = Column(UUID(), nullable=True, index=True)
+    email = Column(String(200), nullable=True)
+    ip = Column(String(64), nullable=True)
+    path = Column(String(300), nullable=True)
+    details = Column(JSON, nullable=True)

@@ -20,7 +20,7 @@ const LegalFooter = ({ compact = false }: { compact?: boolean }) => {
         <Link
           key={item.slug}
           to={`/legal/${item.slug}`}
-          className="text-slate-400 transition hover:text-white"
+          className="text-ink-muted transition hover:text-ink"
         >
           {item.title}
         </Link>
@@ -28,7 +28,7 @@ const LegalFooter = ({ compact = false }: { compact?: boolean }) => {
       <button
         type="button"
         onClick={openPreferences}
-        className="text-left text-slate-400 underline-offset-2 transition hover:text-white hover:underline"
+        className="text-left text-ink-muted underline-offset-2 transition hover:text-ink hover:underline"
       >
         Cookie preferences
       </button>
@@ -42,11 +42,11 @@ const LegalFooter = ({ compact = false }: { compact?: boolean }) => {
   }
 
   return (
-    <footer className="border-t border-white/[0.06]">
+    <footer className="border-t border-edge">
       <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-4 py-6 text-xs sm:px-8">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">{links}</div>
-        <p className="font-mono tracking-[0.14em] text-slate-500">
-          © {new Date().getFullYear()} {info.company_name.toUpperCase()} — ALL RIGHTS RESERVED
+        <p className="text-ink-muted">
+          © {new Date().getFullYear()} {info.company_name} — All rights reserved
         </p>
       </div>
     </footer>

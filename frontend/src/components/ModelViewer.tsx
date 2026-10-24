@@ -148,7 +148,7 @@ const BoundingBoxOverlay = ({ shapes, geometry }: { shapes: ParsedShape[]; geome
           zIndexRange={[12, 0]}
           style={{ pointerEvents: 'none' }}
         >
-          <div className="whitespace-nowrap rounded-md bg-sky-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white shadow-lg">
+          <div className="whitespace-nowrap rounded-lg bg-primary-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white shadow-lg">
             {label.text}
           </div>
         </Html>
@@ -281,7 +281,7 @@ const MeasureOverlay = ({
       )}
       {midpoint && distanceMm !== null && (
         <Html position={midpoint} center zIndexRange={[15, 0]} style={{ pointerEvents: 'none' }}>
-          <div className="whitespace-nowrap rounded-md bg-rose-600 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-lg">
+          <div className="whitespace-nowrap rounded-lg bg-rose-600 px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow-lg">
             {distanceMm.toFixed(2)} mm
           </div>
         </Html>
@@ -308,17 +308,17 @@ const ToolbarButton = ({
       type="button"
       aria-label={title}
       onClick={onClick}
-      className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+      className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
         active
           ? 'bg-primary-600 text-white'
-          : 'bg-white/90 text-gray-600 hover:bg-white hover:text-gray-900'
+          : 'bg-surface/90 text-ink-secondary hover:bg-surface hover:text-ink'
       } shadow-sm backdrop-blur-sm`}
     >
       {children}
     </button>
     <span
       role="tooltip"
-      className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-100 group-hover/tip:opacity-100"
+      className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-100 group-hover/tip:opacity-100"
     >
       {title}
     </span>
@@ -510,7 +510,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
   return (
     <div
-      className={`relative w-full bg-slate-400 rounded-xl overflow-hidden border border-slate-400/60 shadow-inner ${
+      className={`relative w-full bg-slate-400 rounded-xl overflow-hidden border border-edge-strong/60 shadow-inner ${
         measureEnabled ? 'cursor-crosshair' : ''
       } ${className ?? 'h-[400px] sm:h-[560px]'}`}
     >
@@ -596,7 +596,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
             key={view}
             type="button"
             onClick={() => requestView(view)}
-            className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide bg-white/90 text-gray-600 hover:bg-white hover:text-gray-900 backdrop-blur-sm border-r border-gray-200 last:border-r-0"
+            className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide bg-surface/90 text-ink-secondary hover:bg-surface hover:text-ink backdrop-blur-sm border-r border-edge last:border-r-0"
           >
             {view}
           </button>
@@ -605,15 +605,15 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
       {/* Format + source badges */}
       <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1.5">
-        <span className="bg-primary-100 text-primary-700 text-xs font-medium px-2.5 py-1 rounded-full">
+        <span className="bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 text-xs font-medium px-2.5 py-1 rounded-full">
           {fileFormat.toUpperCase()}
         </span>
         {source && (
           <span
             className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
               source === 'exact-cad'
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-gray-200 text-gray-600'
+                ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                : 'bg-fill text-ink-secondary'
             }`}
           >
             {source === 'exact-cad' ? 'Exact CAD geometry' : 'Mesh preview'}
@@ -623,12 +623,12 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
       {/* Part info panel */}
       {showPartInfo && shapes && (
-        <div className="absolute top-20 right-3 z-10 w-60 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3.5 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Part info</p>
-          <dl className="space-y-1.5 text-xs text-gray-700">
+        <div className="absolute top-20 right-3 z-10 w-60 bg-surface/95 backdrop-blur-sm rounded-lg shadow px-3.5 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted mb-2">Part info</p>
+          <dl className="space-y-1.5 text-xs text-ink-secondary">
             {(geometry || meshSize) && (
               <div className="flex justify-between gap-2">
-                <dt className="text-gray-500">Dimensions</dt>
+                <dt className="text-ink-muted">Dimensions</dt>
                 <dd className="font-mono text-right">
                   {geometry
                     ? `${(geometry.bounding_box.x * 10).toFixed(1)} × ${(geometry.bounding_box.y * 10).toFixed(1)} × ${(geometry.bounding_box.z * 10).toFixed(1)} mm`
@@ -637,7 +637,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
               </div>
             )}
             <div className="flex justify-between gap-2">
-              <dt className="text-gray-500">Volume</dt>
+              <dt className="text-ink-muted">Volume</dt>
               <dd className="font-mono">
                 {geometry
                   ? `${Number(geometry.volume).toFixed(2)} cm³`
@@ -647,7 +647,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-gray-500">Surface area</dt>
+              <dt className="text-ink-muted">Surface area</dt>
               <dd className="font-mono">
                 {geometry
                   ? `${Number(geometry.surface_area).toFixed(1)} cm²`
@@ -658,25 +658,25 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
             </div>
             {geometry?.hole_count != null && (
               <div className="flex justify-between gap-2">
-                <dt className="text-gray-500">Holes detected</dt>
+                <dt className="text-ink-muted">Holes detected</dt>
                 <dd className="font-mono">{geometry.hole_count}</dd>
               </div>
             )}
             {Boolean(geometry?.estimated_thread_count) && (
               <div className="flex justify-between gap-2">
-                <dt className="text-gray-500">Threaded (est.)</dt>
+                <dt className="text-ink-muted">Threaded (est.)</dt>
                 <dd className="font-mono">{geometry!.estimated_thread_count}</dd>
               </div>
             )}
             {geometry?.min_wall_thickness != null && (
               <div className="flex justify-between gap-2">
-                <dt className="text-gray-500">Min wall</dt>
+                <dt className="text-ink-muted">Min wall</dt>
                 <dd className="font-mono">{Number(geometry.min_wall_thickness).toFixed(2)} mm</dd>
               </div>
             )}
             {(meshStats?.triangleCount ?? geometry?.triangle_count) != null && (
               <div className="flex justify-between gap-2">
-                <dt className="text-gray-500">Triangles</dt>
+                <dt className="text-ink-muted">Triangles</dt>
                 <dd className="font-mono">
                   {(meshStats?.triangleCount ?? geometry?.triangle_count)?.toLocaleString()}
                 </dd>
@@ -684,7 +684,7 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
             )}
           </dl>
           {!geometry && (
-            <p className="mt-2 text-[10px] leading-snug text-gray-400">
+            <p className="mt-2 text-[10px] leading-snug text-ink-subtle">
               Measured from the 3D mesh; backend analysis refines holes and walls.
             </p>
           )}
@@ -702,8 +702,8 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
       {/* Explode slider */}
       {explodeEnabled && (
-        <div className={`absolute ${sectionEnabled ? 'bottom-14' : 'bottom-3'} left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3 py-2 flex items-center gap-2.5`}>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Explode</span>
+        <div className={`absolute ${sectionEnabled ? 'bottom-14' : 'bottom-3'} left-1/2 -translate-x-1/2 z-10 bg-surface/95 backdrop-blur-sm rounded-lg shadow px-3 py-2 flex items-center gap-2.5`}>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Explode</span>
           <input
             type="range"
             min={0}
@@ -718,16 +718,16 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
       {/* Section controls */}
       {sectionEnabled && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3 py-2 flex items-center gap-2.5">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 bg-surface/95 backdrop-blur-sm rounded-lg shadow px-3 py-2 flex items-center gap-2.5">
           {(['x', 'y', 'z'] as const).map((axis) => (
             <button
               key={axis}
               type="button"
               onClick={() => setSectionAxis(axis)}
-              className={`w-6 h-6 rounded text-xs font-bold uppercase ${
+              className={`w-6 h-6 rounded-lg text-xs font-bold uppercase ${
                 sectionAxis === axis
                   ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-surface-raised text-ink-secondary hover:bg-fill'
               }`}
             >
               {axis}
@@ -747,37 +747,37 @@ const ModelViewer = ({ fileId, fileFormat, geometry, className }: ModelViewerPro
 
       {/* Heatmap legend */}
       {heatmapEnabled && (
-        <div className="absolute bottom-24 right-3 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Wall thickness</p>
-          <div className="flex items-center gap-2.5 text-[10px] text-gray-600">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt;1.5</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-orange-400" /> &lt;2.5</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-300" /> &lt;4</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-slate-400" /> ok</span>
-            <span className="text-gray-400">mm</span>
+        <div className="absolute bottom-24 right-3 z-10 bg-surface/95 backdrop-blur-sm rounded-lg shadow px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted mb-1.5">Wall thickness</p>
+          <div className="flex items-center gap-2.5 text-[10px] text-ink-secondary">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-lg bg-red-500" /> &lt;1.5</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-lg bg-orange-400" /> &lt;2.5</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-lg bg-yellow-300" /> &lt;4</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-lg bg-slate-400" /> ok</span>
+            <span className="text-ink-subtle">mm</span>
           </div>
         </div>
       )}
 
       {/* Dimensions readout */}
       {dims && !sectionEnabled && (
-        <div className="absolute bottom-3 left-3 z-10 bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1.5 text-[11px] text-gray-700 shadow-sm font-medium">
+        <div className="absolute bottom-3 left-3 z-10 bg-surface/90 backdrop-blur-sm rounded-lg px-2.5 py-1.5 text-[11px] text-ink-secondary shadow-sm font-medium">
           {dims.x} × {dims.y} × {dims.z} mm
         </div>
       )}
 
       {/* Loading / error states */}
       {loading && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-gray-100/70 backdrop-blur-[1px]">
-          <Loader2 className="w-7 h-7 text-primary-600 animate-spin" />
-          <p className="text-xs text-gray-500">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-surface-raised/70 backdrop-blur-[1px]">
+          <Loader2 className="w-7 h-7 text-primary-600 dark:text-primary-400 animate-spin" />
+          <p className="text-xs text-ink-muted">
             {fileFormat.toLowerCase() === 'step' ? 'Reading exact CAD geometry…' : 'Loading model…'}
           </p>
         </div>
       )}
       {!loading && loadError && (
         <div className="absolute inset-0 z-20 flex items-center justify-center">
-          <p className="text-sm text-gray-500 bg-white/90 rounded-lg px-4 py-2 shadow-sm">
+          <p className="text-sm text-ink-muted bg-surface/90 rounded-lg px-4 py-2 shadow-sm">
             3D preview unavailable for this file
           </p>
         </div>
