@@ -11,12 +11,23 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from collections import deque
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import Request
 
 logger = logging.getLogger("security")
+
+# Events waiting to be written to the security_events table. Callers are
+# synchronous and hold no DB session, so persistence is batched by
+# flush_security_events() (a lifespan task, and on demand by the admin API).
+# ponytail: bounded in-process buffer; a crash loses at most the last few
+# seconds of rows (stdout keeps them). Use a queue/outbox if that matters.
+_pending: deque[tuple[datetime, dict[str, Any]]] = deque(maxlen=10_000)
+
+# Columns of security_events; everything else in the payload goes to details.
+_COLUMN_KEYS = {"ts", "event", "outcome", "user_id", "email", "ip", "path"}
 
 # Field names that must never be written to a log line even if a caller
 # passes them by mistake.
@@ -87,3 +98,61 @@ def log_security_event(
 
     level = logging.WARNING if outcome in {"failure", "denied"} else logging.INFO
     logger.log(level, "security_event %s", json.dumps(payload, default=str))
+    _pending.append((datetime.utcnow(), payload))
+
+
+async def flush_security_events() -> int:
+    """Write buffered events to the security_events table; returns rows written.
+
+    A failed write drops the batch with a warning rather than retrying forever:
+    the stdout log line already exists, so the audit table is a convenience
+    copy, not the record of truth.
+    """
+    if not _pending:
+        return 0
+    # Imported here: models import this module indirectly at startup.
+    import uuid
+
+    from app.core.database import async_session_maker
+    from app.models.models import SecurityEvent
+
+    batch = [_pending.popleft() for _ in range(min(len(_pending), 500))]
+    rows = []
+    for created_at, payload in batch:
+        user_id = payload.get("user_id")
+        try:
+            user_uuid = uuid.UUID(str(user_id)) if user_id else None
+        except ValueError:
+            user_uuid = None
+        details = {k: v for k, v in payload.items() if k not in _COLUMN_KEYS}
+        rows.append(SecurityEvent(
+            created_at=created_at,
+            event=str(payload.get("event"))[:80],
+            outcome=str(payload.get("outcome"))[:16],
+            user_id=user_uuid,
+            email=payload.get("email"),
+            ip=str(payload["ip"])[:64] if payload.get("ip") else None,
+            path=str(payload["path"])[:300] if payload.get("path") else None,
+            details=json.loads(json.dumps(details, default=str)) or None,
+        ))
+    try:
+        async with async_session_maker() as session:
+            session.add_all(rows)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 - audit copy must never break requests
+        logging.getLogger(__name__).warning("Dropped %d security events: %s", len(rows), exc)
+        return 0
+    return len(rows)
+
+
+async def prune_security_events(retention_days: int) -> None:
+    """Delete persisted events older than the retention window."""
+    from sqlalchemy import delete
+
+    from app.core.database import async_session_maker
+    from app.models.models import SecurityEvent
+
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    async with async_session_maker() as session:
+        await session.execute(delete(SecurityEvent).where(SecurityEvent.created_at < cutoff))
+        await session.commit()

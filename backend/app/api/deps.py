@@ -152,3 +152,34 @@ async def require_admin(
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required")
     return current_user
+
+
+_optional_bearer = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+async def require_admin_hidden(
+    request: Request,
+    token: str | None = Depends(_optional_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Like require_admin, but every refusal (no token, bad token, not an
+    admin) is a 404 rather than 401/403, so the unlinked admin API cannot be
+    confirmed to exist by probing it. Non-admin attempts are still logged."""
+    not_found = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    if not token:
+        raise not_found
+    try:
+        current_user = await get_current_user(request, token, db)
+    except HTTPException:
+        raise not_found from None
+    if not is_admin(current_user):
+        log_security_event(
+            "authz.denied",
+            request=request,
+            user_id=current_user.id,
+            email=current_user.email,
+            outcome="denied",
+            required_role="admin",
+        )
+        raise not_found
+    return current_user

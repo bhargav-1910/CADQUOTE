@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { getPublicQuote, respondToPublicQuote, getPublicQuotePdfUrl } from '@/services/api';
 import type { PublicQuote } from '@/types';
-import { Button, Card, SectionLabel, Skeleton, StatusPill } from '@/components/ui';
+import { Button, Card, SectionLabel, Skeleton, StatusPill, Textarea } from '@/components/ui';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
@@ -81,7 +81,7 @@ const PublicQuotePage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] bg-slate-100 px-4 py-10">
+      <div className="min-h-[100dvh] bg-surface-raised px-4 py-10">
         <div className="mx-auto w-full max-w-3xl space-y-4">
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-64 w-full" />
@@ -93,11 +93,11 @@ const PublicQuotePage = () => {
 
   if (loadError || !quote) {
     return (
-      <div className="min-h-[100dvh] bg-slate-100 flex items-center justify-center px-4">
+      <div className="min-h-[100dvh] bg-surface-raised flex items-center justify-center px-4">
         <Card className="max-w-md text-center">
           <XCircle className="mx-auto h-10 w-10 text-red-400" />
-          <h1 className="mt-3 font-display text-xl font-semibold text-slate-900">Quote not found</h1>
-          <p className="mt-2 text-sm text-slate-600">
+          <h1 className="mt-3 text-xl font-semibold text-ink">Quote not found</h1>
+          <p className="mt-2 text-sm text-ink-secondary">
             {loadError ?? 'This quote link is invalid or no longer available.'}
             {' '}Ask your supplier to send a new link.
           </p>
@@ -111,9 +111,9 @@ const PublicQuotePage = () => {
   const brand = quote.seller.brand_color || '#0f172a';
 
   return (
-    <div className="min-h-[100dvh] bg-slate-100 text-slate-900">
+    <div className="min-h-[100dvh] bg-surface-raised text-ink">
       {/* Seller masthead */}
-      <header className="w-full border-b border-slate-200 bg-white">
+      <header className="w-full border-b border-edge bg-surface">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div
@@ -123,8 +123,8 @@ const PublicQuotePage = () => {
               <Factory className="h-5 w-5" />
             </div>
             <div>
-              <p className="font-display font-semibold leading-none">{quote.seller.company_name}</p>
-              <p className="mt-1 text-[11px] leading-none text-slate-500">Quotation {quote.quote_number}</p>
+              <p className="font-semibold leading-none">{quote.seller.company_name}</p>
+              <p className="mt-1 text-[11px] leading-none text-ink-muted">Quotation {quote.quote_number}</p>
             </div>
           </div>
           <StatusPill status={quote.status} />
@@ -134,11 +134,11 @@ const PublicQuotePage = () => {
       <main className="mx-auto w-full max-w-4xl space-y-5 px-4 py-8 sm:px-6">
         {/* Response banners */}
         {quote.status === 'accepted' && (
-          <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+          <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 p-5">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <div>
-              <p className="font-semibold text-emerald-900">Quote accepted</p>
-              <p className="mt-0.5 text-sm text-emerald-800">
+              <p className="font-semibold text-emerald-900 dark:text-emerald-300">Quote accepted</p>
+              <p className="mt-0.5 text-sm text-emerald-800 dark:text-emerald-300">
                 {quote.seller.company_name} has been notified and will follow up on the order
                 {quote.responded_at ? ` · ${formatDate(quote.responded_at)}` : ''}.
               </p>
@@ -146,11 +146,11 @@ const PublicQuotePage = () => {
           </div>
         )}
         {quote.status === 'declined' && (
-          <div className="flex items-start gap-3 rounded-2xl border border-slate-300 bg-white p-5">
-            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+          <div className="flex items-start gap-3 rounded-2xl border border-edge-strong bg-surface p-5">
+            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-ink-muted" />
             <div>
-              <p className="font-semibold text-slate-900">Quote declined</p>
-              <p className="mt-0.5 text-sm text-slate-600">
+              <p className="font-semibold text-ink">Quote declined</p>
+              <p className="mt-0.5 text-sm text-ink-secondary">
                 Your response was recorded{quote.responded_at ? ` on ${formatDate(quote.responded_at)}` : ''}.
                 If circumstances change, contact {quote.seller.company_name} for a revised offer.
               </p>
@@ -158,11 +158,11 @@ const PublicQuotePage = () => {
           </div>
         )}
         {quote.status === 'expired' && (
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-5">
+            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
             <div>
-              <p className="font-semibold text-amber-900">This quote has expired</p>
-              <p className="mt-0.5 text-sm text-amber-800">
+              <p className="font-semibold text-amber-900 dark:text-amber-300">This quote has expired</p>
+              <p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">
                 Pricing was valid until {formatDate(quote.valid_until)}. Contact{' '}
                 {quote.seller.company_name} to request an updated quotation.
               </p>
@@ -173,21 +173,21 @@ const PublicQuotePage = () => {
         {/* Offer */}
         <Card padded={false} className="overflow-hidden">
           <div
-            className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-6 py-5 text-white"
+            className="flex flex-wrap items-start justify-between gap-4 border-b border-edge px-6 py-5 text-white"
             style={{ background: `linear-gradient(105deg, #0f172a 0%, #0f172a 55%, ${brand} 160%)` }}
           >
             <div>
-              <SectionLabel className="!text-sky-300">Quotation</SectionLabel>
+              <SectionLabel className="!text-primary-300">Quotation</SectionLabel>
               <p className="mt-1 font-mono text-lg font-semibold">{quote.quote_number}</p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-ink-subtle">
                 Prepared for {quote.customer_name || quote.customer_company || 'you'} ·{' '}
                 {formatDate(quote.created_at)}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-400">Total (excl. taxes as noted)</p>
-              <p className="font-display text-3xl font-semibold">{formatCurrency(quote.total_price)}</p>
-              <p className="mt-0.5 text-xs text-slate-400">
+              <p className="text-xs text-ink-subtle">Total (excl. taxes as noted)</p>
+              <p className="text-3xl font-semibold">{formatCurrency(quote.total_price)}</p>
+              <p className="mt-0.5 text-xs text-ink-subtle">
                 Lead time ≈ {Math.round(quote.estimated_lead_time_days)} working days
               </p>
             </div>
@@ -197,7 +197,7 @@ const PublicQuotePage = () => {
           <div className="px-6 py-5">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                   <th className="pb-2">Part</th>
                   <th className="pb-2 text-right">Qty</th>
                   <th className="pb-2 text-right">Unit price</th>
@@ -206,29 +206,29 @@ const PublicQuotePage = () => {
               </thead>
               <tbody>
                 {quote.line_items.map((item, index) => (
-                  <tr key={`${item.part_name}-${index}`} className="border-t border-slate-100">
+                  <tr key={`${item.part_name}-${index}`} className="border-t border-edge">
                     <td className="py-2.5 pr-4">
-                      <span className="flex items-center gap-2 font-medium text-slate-800">
-                        <Box className="h-4 w-4 shrink-0 text-slate-400" />
+                      <span className="flex items-center gap-2 font-medium text-ink">
+                        <Box className="h-4 w-4 shrink-0 text-ink-subtle" />
                         {item.part_name}
                       </span>
                     </td>
-                    <td className="py-2.5 text-right font-mono text-slate-600">{item.quantity}</td>
-                    <td className="py-2.5 text-right font-mono text-slate-600">
+                    <td className="py-2.5 text-right font-mono text-ink-secondary">{item.quantity}</td>
+                    <td className="py-2.5 text-right font-mono text-ink-secondary">
                       {formatCurrency(item.unit_price)}
                     </td>
-                    <td className="py-2.5 text-right font-mono font-semibold text-slate-900">
+                    <td className="py-2.5 text-right font-mono font-semibold text-ink">
                       {formatCurrency(item.line_total)}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-slate-200">
-                  <td colSpan={3} className="py-3 text-right text-sm font-semibold text-slate-700">
+                <tr className="border-t-2 border-edge">
+                  <td colSpan={3} className="py-3 text-right text-sm font-semibold text-ink-secondary">
                     Grand total
                   </td>
-                  <td className="py-3 text-right font-mono text-base font-bold text-slate-900">
+                  <td className="py-3 text-right font-mono text-base font-bold text-ink">
                     {formatCurrency(quote.total_price)}
                   </td>
                 </tr>
@@ -238,22 +238,22 @@ const PublicQuotePage = () => {
             {/* Specification chips */}
             <div className="mt-4 flex flex-wrap gap-1.5">
               {quote.material_name && (
-                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                <span className="rounded-lg border border-edge bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-ink-secondary">
                   {quote.material_name}
                 </span>
               )}
               {quote.surface_finish_name && (
-                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                <span className="rounded-lg border border-edge bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-ink-secondary">
                   {quote.surface_finish_name}
                 </span>
               )}
               {quote.inspection_level_name && (
-                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                <span className="rounded-lg border border-edge bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-ink-secondary">
                   {quote.inspection_level_name}
                 </span>
               )}
               {quote.tolerance_notes && (
-                <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+                <span className="rounded-lg border border-primary-200 dark:border-primary-500/30 bg-primary-50 dark:bg-primary-500/10 px-2 py-0.5 text-[11px] font-medium text-primary-700 dark:text-primary-300">
                   {quote.tolerance_notes}
                 </span>
               )}
@@ -261,16 +261,16 @@ const PublicQuotePage = () => {
           </div>
 
           {/* Commercial terms */}
-          <div className="grid gap-px border-t border-slate-100 bg-slate-100 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px border-t border-edge bg-surface-raised sm:grid-cols-2 lg:grid-cols-4">
             {[
               ['Valid until', `${formatDate(quote.valid_until)}${isOpen && validDays > 0 ? ` · ${validDays} day${validDays === 1 ? '' : 's'} left` : ''}`],
               ['Payment terms', quote.payment_terms || '—'],
               ['Delivery', quote.delivery || '—'],
               ['GST', quote.gst || '—'],
             ].map(([label, value]) => (
-              <div key={label} className="bg-white px-6 py-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-                <p className="mt-0.5 text-sm text-slate-800">{value}</p>
+              <div key={label} className="bg-surface px-6 py-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">{label}</p>
+                <p className="mt-0.5 text-sm text-ink">{value}</p>
               </div>
             ))}
           </div>
@@ -279,23 +279,22 @@ const PublicQuotePage = () => {
         {/* Respond */}
         {isOpen && (
           <Card>
-            <h2 className="font-display text-lg font-semibold text-slate-900">Respond to this quote</h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <h2 className="text-lg font-semibold text-ink">Respond to this quote</h2>
+            <p className="mt-1 text-sm text-ink-secondary">
               Accepting notifies {quote.seller.company_name} that you want to proceed with the order.
             </p>
-            <textarea
+            <Textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
               rows={2}
               maxLength={2000}
-              placeholder="Add a note for the supplier (optional)"
-              className="mt-4 w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+              placeholder="Add a note for the supplier (optional)" className="mt-4 w-full"
             />
-            {respondError && <p className="mt-2 text-sm text-red-600">{respondError}</p>}
+            {respondError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{respondError}</p>}
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {confirming ? (
                 <>
-                  <p className="text-sm font-medium text-slate-700">
+                  <p className="text-sm font-medium text-ink-secondary">
                     {confirming === 'accept' ? 'Accept this quote?' : 'Decline this quote?'}
                   </p>
                   <Button
@@ -331,7 +330,7 @@ const PublicQuotePage = () => {
         {/* Documents + contact */}
         <div className="grid gap-5 sm:grid-cols-2">
           <Card>
-            <h3 className="text-sm font-semibold text-slate-900">Documents</h3>
+            <h3 className="text-sm font-semibold text-ink">Documents</h3>
             <a href={getPublicQuotePdfUrl(token!)} target="_blank" rel="noreferrer" className="mt-3 block">
               <Button variant="secondary" icon={<Download className="h-4 w-4" />}>
                 Download quote PDF
@@ -339,15 +338,15 @@ const PublicQuotePage = () => {
             </a>
           </Card>
           <Card>
-            <h3 className="text-sm font-semibold text-slate-900">Questions?</h3>
-            <div className="mt-3 space-y-2 text-sm text-slate-600">
+            <h3 className="text-sm font-semibold text-ink">Questions?</h3>
+            <div className="mt-3 space-y-2 text-sm text-ink-secondary">
               {quote.seller.contact_name && (
-                <p className="font-medium text-slate-800">{quote.seller.contact_name}</p>
+                <p className="font-medium text-ink">{quote.seller.contact_name}</p>
               )}
               {quote.seller.email && (
                 <a
                   href={`mailto:${quote.seller.email}?subject=Re: Quotation ${quote.quote_number}`}
-                  className="flex items-center gap-2 text-primary-700 hover:underline"
+                  className="flex items-center gap-2 text-primary-700 dark:text-primary-300 hover:underline"
                 >
                   <Mail className="h-4 w-4" />
                   {quote.seller.email}
@@ -355,7 +354,7 @@ const PublicQuotePage = () => {
               )}
               {quote.seller.phone && (
                 <p className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-slate-400" />
+                  <Phone className="h-4 w-4 text-ink-subtle" />
                   {quote.seller.phone}
                 </p>
               )}
@@ -363,7 +362,7 @@ const PublicQuotePage = () => {
           </Card>
         </div>
 
-        <p className="flex items-center justify-center gap-1.5 pb-4 pt-2 text-xs text-slate-400">
+        <p className="flex items-center justify-center gap-1.5 pb-4 pt-2 text-xs text-ink-subtle">
           <Calendar className="h-3.5 w-3.5" />
           Issued {formatDate(quote.created_at)} · Powered by ForgeQuote
         </p>

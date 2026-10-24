@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2, Maximize2 } from 'lucide-react';
-import { Skeleton } from '@/components/ui';
+import { Button, Input, Select, Skeleton, Textarea } from '@/components/ui';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
@@ -208,24 +208,23 @@ const StickyPriceBar = ({
 }) => {
   const animatedTotal = useAnimatedNumber(total);
   return (
-    <div className="hidden lg:flex fixed bottom-0 right-0 left-60 z-30 items-center justify-between gap-6 border-t border-gray-200 surface-strong px-8 py-3.5 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.25)]">
+    <div className="hidden lg:flex fixed bottom-0 right-0 left-60 z-30 items-center justify-between gap-6 border-t border-edge surface-strong px-8 py-3.5 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.25)]">
       <div className="flex items-baseline gap-4 min-w-0">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Total</p>
-          <p className="font-display text-2xl font-bold text-gray-900 tabular-nums leading-tight">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">Total</p>
+          <p className="text-2xl font-bold text-ink tabular-nums leading-tight">
             {formatINR(animatedTotal)}
           </p>
         </div>
-        <p className="text-xs text-gray-500 truncate">{subLabel}</p>
+        <p className="text-xs text-ink-muted truncate">{subLabel}</p>
       </div>
-      <button
+      <Button variant="accent" size="lg" className="shrink-0"
         onClick={onClick}
         disabled={disabled}
-        className="shrink-0 flex items-center gap-2 px-8 py-3 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 transition-all shadow-lg shadow-accent-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
       >
         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
         {ctaLabel}
-      </button>
+      </Button>
     </div>
   );
 };
@@ -967,8 +966,8 @@ const QuoteBuilder = () => {
   ];
 
   const customerForm = (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Customer Information (Optional)</h2>
+    <div className="bg-surface rounded-xl border border-edge p-6">
+      <h2 className="text-lg font-semibold text-ink mb-4">Customer Information (Optional)</h2>
       <div className="space-y-4">
         <CustomerPicker
           selected={pickedCustomer}
@@ -989,21 +988,19 @@ const QuoteBuilder = () => {
         />
         {formFields.map(({ label, type, placeholder, value, onChange }) => (
           <div key={label}>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            <input
+            <label className="block text-sm font-medium text-ink-secondary mb-1">{label}</label>
+            <Input
               type={type} value={value} placeholder={placeholder}
-              onChange={(e) => onChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              onChange={(e) => onChange(e.target.value)} className="w-full"
             />
           </div>
         ))}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-          <textarea
+          <label className="block text-sm font-medium text-ink-secondary mb-1">Notes</label>
+          <Textarea
             value={isMultiMode ? notes : config.notes}
             onChange={(e) => isMultiMode ? setNotes(e.target.value) : setConfig((p) => ({ ...p, notes: e.target.value }))}
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            rows={3} className="w-full"
             placeholder="Any special requirements or notes..."
           />
         </div>
@@ -1012,104 +1009,104 @@ const QuoteBuilder = () => {
   );
 
   const rfqAndCommercialForm = (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+    <div className="bg-surface rounded-xl border border-edge p-6 space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">RFQ and Part Details</h2>
+        <h2 className="text-lg font-semibold text-ink mb-4">RFQ and Part Details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">RFQ Number</label>
-            <input type="text" value={rfqCommercialForm.rfqNumber} onChange={(e) => updateRFQField('rfqNumber', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="RFQ-2026-001" />
+            <label className="block text-sm font-medium text-ink-secondary mb-1">RFQ Number</label>
+            <Input type="text" value={rfqCommercialForm.rfqNumber} onChange={(e) => updateRFQField('rfqNumber', e.target.value)} className="w-full" placeholder="RFQ-2026-001" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">RFQ Date</label>
-            <input type="date" value={rfqCommercialForm.rfqDate} onChange={(e) => updateRFQField('rfqDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-ink-secondary mb-1">RFQ Date</label>
+            <Input type="date" value={rfqCommercialForm.rfqDate} onChange={(e) => updateRFQField('rfqDate', e.target.value)} className="w-full" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Quote Due Date</label>
-            <input type="date" value={rfqCommercialForm.quoteDueDate} onChange={(e) => updateRFQField('quoteDueDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-ink-secondary mb-1">Quote Due Date</label>
+            <Input type="date" value={rfqCommercialForm.quoteDueDate} onChange={(e) => updateRFQField('quoteDueDate', e.target.value)} className="w-full" />
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tolerance Notes (Part-wise)</label>
-            <textarea value={rfqCommercialForm.toleranceNotes} onChange={(e) => updateRFQField('toleranceNotes', e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Part A: +/- 0.05mm, Part B: +/- 0.10mm" />
+            <label className="block text-sm font-medium text-ink-secondary mb-1">Tolerance Notes (Part-wise)</label>
+            <Textarea value={rfqCommercialForm.toleranceNotes} onChange={(e) => updateRFQField('toleranceNotes', e.target.value)} rows={3} className="w-full" placeholder="Part A: +/- 0.05mm, Part B: +/- 0.10mm" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
-            <input type="text" value={rfqCommercialForm.hsnCode} onChange={(e) => updateRFQField('hsnCode', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="8479" />
+            <label className="block text-sm font-medium text-ink-secondary mb-1">HSN Code</label>
+            <Input type="text" value={rfqCommercialForm.hsnCode} onChange={(e) => updateRFQField('hsnCode', e.target.value)} className="w-full" placeholder="8479" />
           </div>
         </div>
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900">Process Routing</h3>
+          <h3 className="text-base font-semibold text-ink">Process Routing</h3>
           {!showProcessRouting && (
-            <button type="button" onClick={() => setShowProcessRouting(true)} className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Add Process</button>
+            <Button variant="secondary" onClick={() => setShowProcessRouting(true)}>Add Process</Button>
           )}
         </div>
         {showProcessRouting && (
           <div className="space-y-3">
             {processRouting.map((row, index) => (
-              <div key={`${index}-${row.operation}-${row.process}`} className="border border-gray-200 rounded-lg p-3">
+              <div key={`${index}-${row.operation}-${row.process}`} className="border border-edge rounded-lg p-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input type="text" value={row.operation} onChange={(e) => updateRoutingRow(index, { operation: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Operation" />
-                  <input type="text" value={row.process} onChange={(e) => updateRoutingRow(index, { process: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Process" />
-                  <input type="text" value={row.machine_type} onChange={(e) => {
+                  <Input type="text" value={row.operation} onChange={(e) => updateRoutingRow(index, { operation: e.target.value })} className="w-full" placeholder="Operation" />
+                  <Input type="text" value={row.process} onChange={(e) => updateRoutingRow(index, { process: e.target.value })} className="w-full" placeholder="Process" />
+                  <Input type="text" value={row.machine_type} onChange={(e) => {
                     const machineType = e.target.value;
                     updateRoutingRow(index, { machine_type: machineType });
                     if (index === 0) {
                       setPricingOverrides((prev) => ({ ...prev, machine_name: machineType }));
                     }
-                  }} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Machine Type" />
-                  <input type="number" min={0} step="0.1" value={row.setup_time_minutes} onChange={(e) => updateRoutingRow(index, { setup_time_minutes: Number(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Setup Time (minutes)" />
-                  <input type="number" min={0} step="0.1" value={row.cycle_time_minutes} onChange={(e) => updateRoutingRow(index, { cycle_time_minutes: Number(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Cycle Time (minutes)" />
-                  <input type="text" value={row.remarks ?? ''} onChange={(e) => updateRoutingRow(index, { remarks: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Remarks" />
+                  }} className="w-full" placeholder="Machine Type" />
+                  <Input type="number" min={0} step="0.1" value={row.setup_time_minutes} onChange={(e) => updateRoutingRow(index, { setup_time_minutes: Number(e.target.value) || 0 })} className="w-full" placeholder="Setup Time (minutes)" />
+                  <Input type="number" min={0} step="0.1" value={row.cycle_time_minutes} onChange={(e) => updateRoutingRow(index, { cycle_time_minutes: Number(e.target.value) || 0 })} className="w-full" placeholder="Cycle Time (minutes)" />
+                  <Input type="text" value={row.remarks ?? ''} onChange={(e) => updateRoutingRow(index, { remarks: e.target.value })} className="w-full" placeholder="Remarks" />
                 </div>
                 <div className="mt-2 flex justify-end gap-3">
-                  <button type="button" onClick={() => removeRoutingRow(index)} className="text-xs text-red-600 hover:text-red-700">Remove row</button>
+                  <button type="button" onClick={() => removeRoutingRow(index)} className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">Remove row</button>
                 </div>
               </div>
             ))}
-            <button type="button" onClick={addRoutingRow} className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Add Process Row</button>
+            <Button variant="secondary" onClick={addRoutingRow}>Add Process Row</Button>
           </div>
         )}
       </div>
 
       <div>
-        <h3 className="text-base font-semibold text-gray-900 mb-3">Vendor and Commercial Terms</h3>
+        <h3 className="text-base font-semibold text-ink mb-3">Vendor and Commercial Terms</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Price Validity</label>
-            <select value={rfqCommercialForm.priceValidity} onChange={(e) => updateRFQField('priceValidity', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
+            <label className="block text-sm font-medium text-ink-secondary mb-1">Price Validity</label>
+            <Select value={rfqCommercialForm.priceValidity} onChange={(e) => updateRFQField('priceValidity', e.target.value)} className="w-full">
               <option value="">Select validity</option>
               <option value="30 days">30 days</option>
               <option value="45 days">45 days</option>
               <option value="60 days">60 days</option>
-            </select>
+            </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">GST</label>
-            <select value={rfqCommercialForm.gst} onChange={(e) => updateRFQField('gst', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
+            <label className="block text-sm font-medium text-ink-secondary mb-1">GST</label>
+            <Select value={rfqCommercialForm.gst} onChange={(e) => updateRFQField('gst', e.target.value)} className="w-full">
               <option value="">Select GST</option>
               <option value="0%">0%</option>
               <option value="5%">5%</option>
               <option value="12%">12%</option>
               <option value="18%">18%</option>
               <option value="28%">28%</option>
-            </select>
+            </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Delivery</label>
-            <input type="date" value={rfqCommercialForm.delivery} onChange={(e) => updateRFQField('delivery', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-ink-secondary mb-1">Delivery</label>
+            <Input type="date" value={rfqCommercialForm.delivery} onChange={(e) => updateRFQField('delivery', e.target.value)} className="w-full" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-            <select value={rfqCommercialForm.paymentTerms} onChange={(e) => updateRFQField('paymentTerms', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white">
+            <label className="block text-sm font-medium text-ink-secondary mb-1">Payment Terms</label>
+            <Select value={rfqCommercialForm.paymentTerms} onChange={(e) => updateRFQField('paymentTerms', e.target.value)} className="w-full">
               <option value="">Select payment terms</option>
               <option value="Advance 100%">Advance 100%</option>
               <option value="50% Advance, 50% Before Dispatch">50% Advance, 50% Before Dispatch</option>
               <option value="Net 15 days">Net 15 days</option>
               <option value="Net 30 days">Net 30 days</option>
-            </select>
+            </Select>
           </div>
         </div>
       </div>
@@ -1161,41 +1158,40 @@ const QuoteBuilder = () => {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:pb-28">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
+        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
           <Home className="w-3.5 h-3.5" />
           Home
         </Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <Link to="/quotes" className="hover:text-gray-900 transition-colors">My Quotes</Link>
+        <Link to="/quotes" className="hover:text-ink transition-colors">My Quotes</Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-gray-900 font-medium">New Quote</span>
+        <span className="text-ink font-medium">New Quote</span>
       </nav>
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-ink">
             {editQuoteId
               ? 'Edit Quote'
               : isMultiMode
               ? `New Quote — ${multiFiles.length} Files`
               : 'New Quote'}
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className="text-ink-muted text-sm mt-0.5">
             {isMultiMode
               ? 'Choose files, configure shared or individual settings, and generate all quotes together.'
               : 'Upload your CAD file and configure options'}
           </p>
         </div>
           {step === 'configure' && (
-          <button
+          <Button variant="secondary"
             onClick={resetToUpload}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Start Over
-          </button>
+          </Button>
         )}
       </div>
 
@@ -1224,21 +1220,21 @@ const QuoteBuilder = () => {
                         ? 'bg-emerald-500 text-white'
                         : stage.current
                         ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 text-gray-400'
+                        : 'bg-surface-raised text-ink-subtle'
                     }`}
                   >
                     {stage.done ? <CheckCircle className="w-4 h-4" /> : i + 1}
                   </div>
                   <span
                     className={`text-sm font-medium ${
-                      stage.current ? 'text-primary-700' : stage.done ? 'text-emerald-600' : 'text-gray-400'
+                      stage.current ? 'text-primary-700 dark:text-primary-300' : stage.done ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink-subtle'
                     }`}
                   >
                     {stage.label}
                   </span>
                 </div>
                 {i < stages.length - 1 && (
-                  <div className={`h-px w-8 mx-1 ${stage.done ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                  <div className={`h-px w-8 mx-1 ${stage.done ? 'bg-emerald-400' : 'bg-fill'}`} />
                 )}
               </div>
             ))}
@@ -1247,13 +1243,13 @@ const QuoteBuilder = () => {
       })()}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">{error}</div>
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-4 text-red-700 dark:text-red-300">{error}</div>
       )}
 
       {/* Upload step */}
       {step === 'upload' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload CAD File</h2>
+        <div className="bg-surface rounded-xl border border-edge p-6">
+          <h2 className="text-lg font-semibold text-ink mb-4">Upload CAD File</h2>
           <FileUpload onFilesUploaded={handleFilesUploaded} />
         </div>
       )}
@@ -1262,17 +1258,17 @@ const QuoteBuilder = () => {
       {step === 'configure' && !isMultiMode && config.cadFile && (
         <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(380px,0.85fr)] gap-6 items-start">
           <div className="space-y-6">
-            <div className="surface-strong rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="surface-strong rounded-xl border border-edge p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3 mb-3">
-                <h2 className="text-lg font-semibold text-gray-900">3D Preview</h2>
+                <h2 className="text-lg font-semibold text-ink">3D Preview</h2>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2.5 py-1 truncate" title={config.cadFile.original_filename}>
+                  <span className="text-xs text-ink-muted bg-surface-raised border border-edge rounded-full px-2.5 py-1 truncate" title={config.cadFile.original_filename}>
                     {config.cadFile.original_filename}
                   </span>
                   <button
                     type="button"
                     onClick={() => setSinglePreviewOpen(true)}
-                    className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors"
+                    className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/30 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-500/20 transition-colors"
                     title="Open large preview with fullscreen"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
@@ -1292,9 +1288,9 @@ const QuoteBuilder = () => {
                     { label: 'Surface Area', value: `${config.geometry.surface_area.toFixed(2)} cm²` },
                     { label: 'Complexity', value: config.geometry.complexity_score.toFixed(2) },
                   ].map(({ label, value }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-gray-500">{label}</p>
-                      <p className="font-semibold text-gray-900">{value}</p>
+                    <div key={label} className="bg-surface-muted rounded-lg p-3">
+                      <p className="text-ink-muted">{label}</p>
+                      <p className="font-semibold text-ink">{value}</p>
                     </div>
                   ))}
                 </div>
@@ -1302,8 +1298,8 @@ const QuoteBuilder = () => {
             </div>
 
             {config.geometry && (
-              <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">DFX Analysis</h2>
+              <div className="surface-strong rounded-xl border border-edge p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-ink mb-4">DFX Analysis</h2>
                 <DFXAnalysis
                   geometry={config.geometry}
                   costImpacts={
@@ -1314,8 +1310,8 @@ const QuoteBuilder = () => {
               </div>
             )}
 
-            <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Configuration Controls</h2>
+            <div className="surface-strong rounded-xl border border-edge p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-ink mb-4">Configuration Controls</h2>
               <ConfigurationPanel
                 materialId={config.materialId}
                 surfaceFinishId={config.surfaceFinishId}
@@ -1345,15 +1341,14 @@ const QuoteBuilder = () => {
             />
             {customerForm}
             {rfqAndCommercialForm}
-            <button
+            <Button variant="accent" size="lg" className="lg:hidden w-full"
               onClick={handleCreateSingleQuote}
               disabled={!pricing || creating}
-              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 transition-all shadow-lg shadow-accent-500/25 hover:shadow-accent-500/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {creating
                 ? <><Loader2 className="w-5 h-5 animate-spin" />Generating Quote...</>
                 : <><FileText className="w-5 h-5" />Generate Quote</>}
-            </button>
+            </Button>
           </div>
 
           <StickyPriceBar
@@ -1385,18 +1380,18 @@ const QuoteBuilder = () => {
       {step === 'configure' && isMultiMode && (
         <div className="grid xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.9fr)] gap-6 items-start">
           <div className="space-y-6">
-            <div className="surface-strong rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-              <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-                <Package className="w-5 h-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-gray-900">Files ({selectedMultiFiles.length}/{multiFiles.length} selected)</h2>
+            <div className="surface-strong rounded-xl border border-edge overflow-hidden shadow-sm">
+              <div className="px-4 sm:px-6 py-4 border-b border-edge flex items-center gap-2">
+                <Package className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                <h2 className="text-lg font-semibold text-ink">Files ({selectedMultiFiles.length}/{multiFiles.length} selected)</h2>
               </div>
 
-              <div className="divide-y divide-gray-100 max-h-[60vh] overflow-y-auto">
+              <div className="divide-y divide-edge max-h-[60vh] overflow-y-auto">
                 {multiFiles.map((entry, i) => (
                   <div
                     key={entry.cadFile.id}
                     className={`px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 ${
-                      configureIndividually && activeMultiFileId === entry.cadFile.id ? 'bg-primary-50/60' : ''
+                      configureIndividually && activeMultiFileId === entry.cadFile.id ? 'bg-primary-50/60 dark:bg-primary-500/10' : ''
                     }`}
                   >
                     <label className="flex items-center gap-2">
@@ -1407,16 +1402,16 @@ const QuoteBuilder = () => {
                           const selected = e.target.checked;
                           updateMultiFile(entry.cadFile.id, { selected, pricing: null, pricingLoading: false });
                         }}
-                        className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                        className="w-4 h-4 text-primary-600 dark:text-primary-400 rounded-lg border-edge-strong focus:ring-primary-500"
                       />
                     </label>
 
-                    <span className="w-6 h-6 flex-shrink-0 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center">
+                    <span className="w-6 h-6 flex-shrink-0 rounded-full bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0 w-full">
-                      <p className="font-medium text-gray-900 truncate">{entry.cadFile.original_filename}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="font-medium text-ink truncate">{entry.cadFile.original_filename}</p>
+                      <p className="text-xs text-ink-muted mt-0.5">
                         {entry.cadFile.file_format.toUpperCase()} &bull;{' '}
                         {entry.geometry.volume.toFixed(2)} cm³ &bull;{' '}
                         complexity {entry.geometry.complexity_score.toFixed(2)}
@@ -1426,10 +1421,10 @@ const QuoteBuilder = () => {
                       {configureIndividually && entry.selected && (
                         <button
                           onClick={() => setActiveMultiFileId(entry.cadFile.id)}
-                          className={`px-2.5 py-1.5 text-xs font-medium rounded border whitespace-nowrap ${
+                          className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border whitespace-nowrap ${
                             activeMultiFileId === entry.cadFile.id
-                              ? 'text-primary-700 bg-primary-100 border-primary-300'
-                              : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                              ? 'text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-500/20 border-primary-300 dark:border-primary-500/30'
+                              : 'text-ink-secondary bg-surface border-edge-strong hover:bg-surface-muted'
                           }`}
                         >
                           Configure
@@ -1438,7 +1433,7 @@ const QuoteBuilder = () => {
 
                       <button
                         onClick={() => setPreviewFile(entry)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200 flex items-center gap-1 whitespace-nowrap"
+                        className="px-2.5 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg border border-primary-200 dark:border-primary-500/30 flex items-center gap-1 whitespace-nowrap"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>3D Preview</span>
@@ -1446,20 +1441,20 @@ const QuoteBuilder = () => {
 
                       <div className="text-right flex-shrink-0 min-w-[110px]">
                         {!entry.selected ? (
-                          <span className="text-xs text-gray-400">Excluded</span>
+                          <span className="text-xs text-ink-subtle">Excluded</span>
                         ) : entry.pricingLoading ? (
                           <Loader2 className="w-4 h-4 text-primary-500 animate-spin ml-auto" />
                         ) : entry.pricing ? (
                           <>
-                            <p className="font-semibold text-gray-900">
+                            <p className="font-semibold text-ink">
                               {formatINR(entry.pricing.price_breakdown.total_price)}
                             </p>
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-ink-subtle">
                               {formatINR(entry.pricing.price_breakdown.unit_price)}/unit
                             </p>
                           </>
                         ) : (
-                          <span className="text-xs text-gray-400">— configure →</span>
+                          <span className="text-xs text-ink-subtle">— configure →</span>
                         )}
                       </div>
                     </div>
@@ -1467,59 +1462,59 @@ const QuoteBuilder = () => {
                 ))}
               </div>
 
-              <div className="px-4 sm:px-6 py-4 bg-primary-50 border-t border-primary-100 flex justify-between items-center gap-3">
+              <div className="px-4 sm:px-6 py-4 bg-primary-50 dark:bg-primary-500/10 border-t border-primary-100 dark:border-primary-500/30 flex justify-between items-center gap-3">
                 <div>
-                  <p className="font-semibold text-primary-900">Grand Total ({pricedFileCount}/{selectedMultiFiles.length} selected priced)</p>
+                  <p className="font-semibold text-primary-900 dark:text-primary-300">Grand Total ({pricedFileCount}/{selectedMultiFiles.length} selected priced)</p>
                   {pendingFileCount > 0 && (
-                    <p className="text-xs text-primary-700 mt-0.5">
+                    <p className="text-xs text-primary-700 dark:text-primary-300 mt-0.5">
                       Waiting for pricing for {pendingFileCount} file{pendingFileCount === 1 ? '' : 's'}.
                     </p>
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-bold text-primary-700">{formatINR(multiTotal)}</p>
+                  <p className="text-xl font-bold text-primary-700 dark:text-primary-300">{formatINR(multiTotal)}</p>
                   {anyMultiLoading && (
-                    <p className="text-xs text-primary-600">Updating...</p>
+                    <p className="text-xs text-primary-600 dark:text-primary-400">Updating...</p>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Bulk Price Breakdown</h2>
+            <div className="surface-strong rounded-xl border border-edge p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-ink mb-4">Bulk Price Breakdown</h2>
               {pricedSelectedMultiFiles.length === 0 ? (
-                <p className="text-sm text-gray-500">Price at least one selected file to view breakdown.</p>
+                <p className="text-sm text-ink-muted">Price at least one selected file to view breakdown.</p>
               ) : (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-xs text-gray-500">Material</p>
-                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.material)}</p>
+                    <div className="rounded-lg border border-edge p-3">
+                      <p className="text-xs text-ink-muted">Material</p>
+                      <p className="font-semibold text-ink">{formatINR(bulkBreakdown.material)}</p>
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-xs text-gray-500">Machining</p>
-                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.machining)}</p>
+                    <div className="rounded-lg border border-edge p-3">
+                      <p className="text-xs text-ink-muted">Machining</p>
+                      <p className="font-semibold text-ink">{formatINR(bulkBreakdown.machining)}</p>
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-xs text-gray-500">Surface Finish</p>
-                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.finish)}</p>
+                    <div className="rounded-lg border border-edge p-3">
+                      <p className="text-xs text-ink-muted">Surface Finish</p>
+                      <p className="font-semibold text-ink">{formatINR(bulkBreakdown.finish)}</p>
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-xs text-gray-500">Inspection</p>
-                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.inspection)}</p>
+                    <div className="rounded-lg border border-edge p-3">
+                      <p className="text-xs text-ink-muted">Inspection</p>
+                      <p className="font-semibold text-ink">{formatINR(bulkBreakdown.inspection)}</p>
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-xs text-gray-500">Subtotal</p>
-                      <p className="font-semibold text-gray-900">{formatINR(bulkBreakdown.subtotal)}</p>
+                    <div className="rounded-lg border border-edge p-3">
+                      <p className="text-xs text-ink-muted">Subtotal</p>
+                      <p className="font-semibold text-ink">{formatINR(bulkBreakdown.subtotal)}</p>
                     </div>
-                    <div className="rounded-lg border border-primary-200 bg-primary-50 p-3">
-                      <p className="text-xs text-primary-700">Total</p>
-                      <p className="font-semibold text-primary-900">{formatINR(bulkBreakdown.total)}</p>
+                    <div className="rounded-lg border border-primary-200 dark:border-primary-500/30 bg-primary-50 dark:bg-primary-500/10 p-3">
+                      <p className="text-xs text-primary-700 dark:text-primary-300">Total</p>
+                      <p className="font-semibold text-primary-900 dark:text-primary-300">{formatINR(bulkBreakdown.total)}</p>
                     </div>
                   </div>
 
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="grid grid-cols-[1.6fr_0.5fr_repeat(5,minmax(0,1fr))] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                  <div className="border border-edge rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-[1.6fr_0.5fr_repeat(5,minmax(0,1fr))] gap-2 bg-surface-muted px-3 py-2 text-xs font-semibold text-ink-secondary">
                       <span>File</span>
                       <span className="text-right">Qty</span>
                       <span className="text-right">Material</span>
@@ -1528,25 +1523,25 @@ const QuoteBuilder = () => {
                       <span className="text-right">Inspection</span>
                       <span className="text-right">Line Total</span>
                     </div>
-                    <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                    <div className="max-h-64 overflow-y-auto divide-y divide-edge">
                       {pricedSelectedMultiFiles.map((file) => {
                         const qty = Number(file.pricing!.quantity) || 1;
                         const b = file.pricing!.price_breakdown;
                         return (
-                          <div key={file.cadFile.id} className="grid grid-cols-[1.6fr_0.5fr_repeat(5,minmax(0,1fr))] gap-2 px-3 py-2 text-xs text-gray-700">
+                          <div key={file.cadFile.id} className="grid grid-cols-[1.6fr_0.5fr_repeat(5,minmax(0,1fr))] gap-2 px-3 py-2 text-xs text-ink-secondary">
                             <span className="truncate" title={file.cadFile.original_filename}>{file.cadFile.original_filename}</span>
                             <span className="text-right">{qty}</span>
                             <span className="text-right">{formatINR(Number(b.material_cost) * qty)}</span>
                             <span className="text-right">{formatINR(Number(b.machining_cost) * qty)}</span>
                             <span className="text-right">{formatINR(Number(b.finish_cost) * qty)}</span>
                             <span className="text-right">{formatINR(Number(b.inspection_cost) * qty)}</span>
-                            <span className="text-right font-semibold text-gray-900">{formatINR(Number(b.total_price))}</span>
+                            <span className="text-right font-semibold text-ink">{formatINR(Number(b.total_price))}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-2">
+                  <p className="text-[11px] text-ink-subtle mt-2">
                     Component columns are direct costs × quantity; line totals additionally include
                     overheads, margin and marketplace factors.
                   </p>
@@ -1559,14 +1554,14 @@ const QuoteBuilder = () => {
           </div>
 
           <div className="space-y-6 lg:sticky lg:top-6 self-start">
-            <div className="surface-strong rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div className="surface-strong rounded-xl border border-edge p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                    <Settings2 className="w-4 h-4 text-gray-500" />
+                  <h2 className="text-lg font-semibold text-ink mb-1 flex items-center gap-2">
+                    <Settings2 className="w-4 h-4 text-ink-muted" />
                     {configureIndividually ? 'Individual File Configuration' : 'Shared Configuration'}
                   </h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-ink-muted">
                     {configureIndividually
                       ? 'Configure each selected file separately.'
                       : `Applies to all selected files (${selectedMultiFiles.length}).`}
@@ -1574,9 +1569,9 @@ const QuoteBuilder = () => {
                 </div>
               </div>
 
-              <div className="mb-4 rounded-lg border border-gray-200 p-3 space-y-3">
+              <div className="mb-4 rounded-lg border border-edge p-3 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-800">Include files in this quote run</p>
+                  <p className="text-sm font-medium text-ink">Include files in this quote run</p>
                   <button
                     type="button"
                     onClick={() => {
@@ -1590,24 +1585,24 @@ const QuoteBuilder = () => {
                         }))
                       );
                     }}
-                    className="text-xs font-medium text-primary-700 hover:text-primary-800"
+                    className="text-xs font-medium text-primary-700 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-300"
                   >
                     {allSelected ? 'Deselect all' : 'Select all'}
                   </button>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-800">Configure individually</p>
+                  <p className="text-sm font-medium text-ink">Configure individually</p>
                   <button
                     type="button"
                     onClick={() => setConfigureIndividually((prev) => !prev)}
                     className={`inline-flex items-center rounded-full h-7 w-12 p-1 transition-colors ${
-                      configureIndividually ? 'bg-primary-600' : 'bg-gray-300'
+                      configureIndividually ? 'bg-primary-600' : 'bg-fill-strong'
                     }`}
                     aria-pressed={configureIndividually}
                   >
                     <span
-                      className={`h-5 w-5 rounded-full bg-white transition-transform ${
+                      className={`h-5 w-5 rounded-full bg-surface transition-transform ${
                         configureIndividually ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
@@ -1616,9 +1611,9 @@ const QuoteBuilder = () => {
               </div>
 
               {configureIndividually && activeMultiFile && (
-                <div className="mb-4 rounded-lg bg-primary-50 border border-primary-100 p-3">
-                  <p className="text-xs text-primary-700">Editing</p>
-                  <p className="text-sm font-semibold text-primary-900 truncate">{activeMultiFile.cadFile.original_filename}</p>
+                <div className="mb-4 rounded-lg bg-primary-50 dark:bg-primary-500/10 border border-primary-100 dark:border-primary-500/30 p-3">
+                  <p className="text-xs text-primary-700 dark:text-primary-300">Editing</p>
+                  <p className="text-sm font-semibold text-primary-900 dark:text-primary-300 truncate">{activeMultiFile.cadFile.original_filename}</p>
                 </div>
               )}
 
@@ -1671,7 +1666,7 @@ const QuoteBuilder = () => {
 
             {activeMultiFile && (
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-gray-900">Detailed Pricing per File</p>
+                <p className="text-sm font-semibold text-ink">Detailed Pricing per File</p>
                 {selectedMultiFiles.length > 1 && (
                   <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
                     {selectedMultiFiles.map((file, index) => {
@@ -1685,7 +1680,7 @@ const QuoteBuilder = () => {
                           className={`shrink-0 max-w-[180px] px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors truncate ${
                             active
                               ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-900'
+                              : 'bg-surface text-ink-secondary border-edge hover:border-edge-strong hover:text-ink'
                           }`}
                         >
                           {index + 1}. {file.cadFile.original_filename}
@@ -1704,10 +1699,9 @@ const QuoteBuilder = () => {
               </div>
             )}
 
-            <button
+            <Button variant="accent" size="lg" className="lg:hidden w-full"
               onClick={handleCreateBatchQuotes}
               disabled={!allMultiPriced || anyMultiLoading || creating}
-              className="lg:hidden w-full flex items-center justify-center gap-2 px-6 py-4 bg-accent-400 text-slate-950 font-semibold rounded-xl hover:bg-accent-300 transition-all shadow-lg shadow-accent-500/25 hover:shadow-accent-500/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {creating ? (
                 <><Loader2 className="w-5 h-5 animate-spin" />Generating Combined Quote...</>
@@ -1716,7 +1710,7 @@ const QuoteBuilder = () => {
               ) : (
                 <><FileText className="w-5 h-5" />Generate One Quote ({selectedMultiFiles.length} Files)</>
               )}
-            </button>
+            </Button>
           </div>
 
           <StickyPriceBar

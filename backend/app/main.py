@@ -20,7 +20,7 @@ from app.core.middleware import (
     HTTPSRedirectMiddleware,
     SecurityHeadersMiddleware,
 )
-from app.api import files, config, quotes, auth, billing, public, customers, legal
+from app.api import files, config, quotes, auth, billing, public, customers, legal, admin
 from app.seed import seed_if_empty
 
 # Configure logging
@@ -73,10 +73,29 @@ async def lifespan(app: FastAPI):
     from app.services.customers import backfill_customer_links
     backfill_task = asyncio.create_task(backfill_customer_links())
 
+    # Persist buffered security events for the admin audit log; prune hourly.
+    from app.core.security_log import flush_security_events, prune_security_events
+
+    async def _security_event_writer():
+        ticks = 0
+        while True:
+            try:
+                await flush_security_events()
+                if ticks % 720 == 0:  # every hour at a 5s tick
+                    await prune_security_events(settings.SECURITY_EVENT_RETENTION_DAYS)
+            except Exception as exc:  # noqa: BLE001 - keep the writer alive
+                logger.warning(f"Security event writer error: {exc}")
+            ticks += 1
+            await asyncio.sleep(5)
+
+    audit_task = asyncio.create_task(_security_event_writer())
+
     yield
 
     recovery_task.cancel()
     backfill_task.cancel()
+    audit_task.cancel()
+    await flush_security_events()
     
     # Shutdown
     logger.info("Shutting down...")
@@ -157,6 +176,7 @@ app.include_router(quotes.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(legal.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 # Serve company logos only. Never mount the whole upload dir: it also holds
 # quote PDFs and customer CAD files, which must stay behind authenticated

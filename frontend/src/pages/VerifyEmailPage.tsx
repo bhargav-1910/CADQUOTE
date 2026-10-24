@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { verifyEmail } from '@/services/api';
 
+import { buttonClasses } from '@/components/ui';
 type State = 'working' | 'done' | 'failed';
 
 /**
@@ -45,23 +46,22 @@ const VerifyEmailPage = () => {
   }, [token]);
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-[#0A0A0C] p-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-[#0E0E11] p-8 text-center">
+    <div className="flex min-h-[100dvh] items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-2xl border border-edge bg-surface p-8 text-center">
         {state === 'working' && (
           <>
-            <Loader2 className="mx-auto h-10 w-10 animate-spin text-sky-500" />
-            <h1 className="mt-4 font-display text-2xl text-white">Confirming your email…</h1>
+            <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary-500" />
+            <h1 className="mt-4 text-2xl text-ink">Confirming your email…</h1>
           </>
         )}
 
         {state === 'done' && (
           <>
             <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" />
-            <h1 className="mt-4 font-display text-2xl text-white">Email confirmed</h1>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">{message}</p>
+            <h1 className="mt-4 text-2xl text-ink">Email confirmed</h1>
+            <p className="mt-2 text-sm leading-relaxed text-ink-subtle">{message}</p>
             <Link
-              to="/workspace"
-              className="mt-6 inline-block rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"
+              to="/workspace" className={buttonClasses('primary', 'md', 'mt-6')}
             >
               Go to workspace
             </Link>
@@ -71,14 +71,14 @@ const VerifyEmailPage = () => {
         {state === 'failed' && (
           <>
             <XCircle className="mx-auto h-10 w-10 text-red-500" />
-            <h1 className="mt-4 font-display text-2xl text-white">Confirmation failed</h1>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">{message}</p>
-            <p className="mt-4 text-sm text-slate-400">
+            <h1 className="mt-4 text-2xl text-ink">Confirmation failed</h1>
+            <p className="mt-2 text-sm leading-relaxed text-ink-subtle">{message}</p>
+            <p className="mt-4 text-sm text-ink-subtle">
               Sign in and request a fresh link from Settings.
             </p>
             <Link
               to="/login"
-              className="mt-6 inline-block rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+              className={buttonClasses('secondary', 'md', 'mt-6')}
             >
               Go to sign in
             </Link>

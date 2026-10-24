@@ -15,7 +15,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-600">
+      <div className="min-h-screen flex items-center justify-center text-ink-secondary">
         Loading workspace...
       </div>
     );

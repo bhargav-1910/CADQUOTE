@@ -97,29 +97,29 @@ const FileUpload = ({ onFilesUploaded }: FileUploadProps) => {
     <div className="space-y-4">
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition ${
           isDragActive
-            ? 'border-primary-500 bg-primary-50'
-            : 'border-gray-300 hover:border-primary-400 hover:bg-gray-50'
+            ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+            : 'border-edge-strong hover:border-primary-400 hover:bg-surface-muted'
         }`}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center gap-3">
-          <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center">
-            <Upload className="w-8 h-8 text-primary-600" />
+          <div className="w-16 h-16 bg-primary-100 dark:bg-primary-500/20 rounded-full flex items-center justify-center">
+            <Upload className="w-8 h-8 text-primary-600 dark:text-primary-400" />
           </div>
           <div>
-            <p className="text-gray-700 font-medium">
+            <p className="text-ink-secondary font-medium">
               {isDragActive ? 'Drop your files here' : 'Drag & drop CAD files here'}
             </p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-ink-muted mt-1">
               or click to browse • STEP, STP, STL • Multiple files supported • Max 100MB each
             </p>
           </div>
         </div>
       </div>
 
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-ink-muted">
         One file opens single-part configuration immediately. Multiple files open shared configuration after all uploaded parts finish processing.
       </p>
 
@@ -130,34 +130,34 @@ const FileUpload = ({ onFilesUploaded }: FileUploadProps) => {
               key={entry.id}
               className={`rounded-lg border p-4 flex items-center gap-3 ${
                 entry.status === 'done'
-                  ? 'bg-green-50 border-green-200'
+                  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
                   : entry.status === 'error'
-                  ? 'bg-red-50 border-red-200'
-                  : 'bg-blue-50 border-blue-200'
+                  ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30'
+                  : 'bg-primary-50 dark:bg-primary-500/10 border-primary-200 dark:border-primary-500/30'
               }`}
             >
               <div className="flex-shrink-0">
                 {entry.status === 'uploading' || entry.status === 'processing' ? (
                   <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
                 ) : entry.status === 'done' ? (
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 ) : (
-                  <AlertCircle className="w-5 h-5 text-red-600" />
+                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                 )}
               </div>
 
               <div className="flex-1 min-w-0">
                 <p className={`font-medium truncate ${
-                  entry.status === 'done' ? 'text-green-800'
-                  : entry.status === 'error' ? 'text-red-800'
-                  : 'text-blue-800'
+                  entry.status === 'done' ? 'text-emerald-800 dark:text-emerald-300'
+                  : entry.status === 'error' ? 'text-red-800 dark:text-red-300'
+                  : 'text-primary-800 dark:text-primary-300'
                 }`}>
                   {entry.file.name}
                 </p>
                 <p className={`text-xs mt-0.5 ${
-                  entry.status === 'done' ? 'text-green-600'
-                  : entry.status === 'error' ? 'text-red-600'
-                  : 'text-blue-600'
+                  entry.status === 'done' ? 'text-emerald-600 dark:text-emerald-400'
+                  : entry.status === 'error' ? 'text-red-600 dark:text-red-400'
+                  : 'text-primary-600 dark:text-primary-400'
                 }`}>
                   {entry.status === 'uploading' ? 'Uploading...'
                   : entry.status === 'processing' ? 'Analyzing geometry...'
@@ -170,7 +170,7 @@ const FileUpload = ({ onFilesUploaded }: FileUploadProps) => {
                 {(entry.status === 'done' || entry.status === 'error') && (
                   <button
                     onClick={() => removeEntry(entry.id)}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
+                    className="p-1.5 text-ink-subtle hover:text-ink-secondary rounded-lg"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -180,9 +180,9 @@ const FileUpload = ({ onFilesUploaded }: FileUploadProps) => {
           ))}
 
           {hasInFlightEntries && (
-            <div className="mt-3 p-4 bg-primary-50 border border-primary-200 rounded-xl">
-              <p className="font-semibold text-primary-900">Preparing your files</p>
-              <p className="text-sm text-primary-700 mt-0.5">
+            <div className="mt-3 p-4 bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/30 rounded-xl">
+              <p className="font-semibold text-primary-900 dark:text-primary-300">Preparing your files</p>
+              <p className="text-sm text-primary-700 dark:text-primary-300 mt-0.5">
                 The app will move to configuration automatically when processing finishes.
               </p>
             </div>

@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef, useState, useCallback } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -31,21 +31,24 @@ import { useAuth } from '@/components/AuthProvider';
 import ProfileEditModal from '@/components/ProfileEditModal';
 import LegalFooter from './LegalFooter';
 import CommandPalette from '@/components/CommandPalette';
+import { Button, Dialog, buttonClasses } from '@/components/ui';
+import { useTheme, type Theme } from '@/theme';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 // `adminOnly` entries are hidden from ordinary users. The API enforces the
-// same rule, so hiding a link is presentation, not protection. Nothing is
-// admin-only today — Cost Master edits are private to each workspace — but
-// the flag stays wired for the next privileged screen.
+// same rule, so hiding a link is presentation, not protection. The admin page
+// is deliberately never linked: it lives at an unlisted URL (see App.tsx).
 const NAV: Array<{
   path: string;
   icon: LucideIcon;
   label: string;
   exact: boolean;
   adminOnly?: boolean;
+  /** false = desktop sidebar only; reached from the account menu on phones. */
+  inBottomBar?: boolean;
 }> = [
   { path: '/workspace', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { path: '/quote', icon: Layers, label: 'New Quote', exact: true },
@@ -53,7 +56,7 @@ const NAV: Array<{
   { path: '/customers', icon: Users, label: 'Customers', exact: false },
   // Every shop tunes its own rates here; edits are private to the workspace.
   { path: '/admin/pricing', icon: SlidersHorizontal, label: 'Cost Master', exact: false },
-  { path: '/billing', icon: CreditCard, label: 'Billing', exact: false },
+  { path: '/billing', icon: CreditCard, label: 'Billing', exact: false, inBottomBar: false },
 ];
 
 // Desktop sidebar renders NAV grouped; New Quote is promoted to a CTA button.
@@ -64,13 +67,10 @@ const NAV_GROUPS: Array<{ label: string; paths: string[] }> = [
 
 const RESPONSES_SEEN_KEY = 'fq-responses-seen';
 
-const THEME_KEY = 'fq-theme';
-
-const getInitialTheme = (): 'light' | 'dark' => {
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === 'dark' || stored === 'light') return stored;
-  return 'light';
-};
+const APPEARANCE: Array<{ value: Theme; label: string; icon: LucideIcon }> = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+];
 
 const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
@@ -79,9 +79,11 @@ const Layout = ({ children }: LayoutProps) => {
   // regardless, this just avoids a dead link.
   const visibleNav = NAV.filter((item) => !item.adminOnly || user?.role === 'admin');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+  const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [responsesBadge, setResponsesBadge] = useState(0);
   const [notifQuotes, setNotifQuotes] = useState<QuoteListItem[]>([]);
@@ -184,15 +186,6 @@ const Layout = ({ children }: LayoutProps) => {
   }, [location.state]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  }, []);
-
-  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -216,6 +209,25 @@ const Layout = ({ children }: LayoutProps) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) setMobileMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [mobileMenuOpen]);
+
+  // Close the menu when navigating.
+  useEffect(() => setMobileMenuOpen(false), [location.pathname]);
+
   const isActive = (path: string, exact: boolean) =>
     exact ? location.pathname === path : location.pathname.startsWith(path);
 
@@ -224,39 +236,39 @@ const Layout = ({ children }: LayoutProps) => {
       <button
         type="button"
         onClick={() => setProfileMenuOpen((open) => !open)}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-800/80 hover:text-white transition-colors"
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-ink-secondary hover:bg-surface-raised hover:text-ink transition-colors"
         aria-expanded={profileMenuOpen}
         aria-haspopup="menu"
       >
-        <span className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
+        <span className="w-8 h-8 rounded-lg bg-surface-raised border border-edge-strong flex items-center justify-center shrink-0">
           {user?.company_logo_url ? (
-            <img src={user.company_logo_url} alt="" className="w-full h-full rounded-lg object-contain bg-white" />
+            <img src={user.company_logo_url} alt="" className="w-full h-full rounded-lg object-contain bg-surface" />
           ) : (
             <User className="w-4 h-4" />
           )}
         </span>
         <span className="min-w-0 text-left hidden lg:block">
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-ink">
             <span className="truncate">{user?.full_name || 'User'}</span>
             {!isFreePlan && (
-              <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/15 px-1 py-px text-[9px] font-bold tracking-wide text-sky-300">
+              <span className="shrink-0 rounded-lg border border-primary-500/40 bg-primary-500/15 px-1 py-px text-[9px] font-bold tracking-wide text-primary-700 dark:text-primary-300">
                 PRO
               </span>
             )}
           </span>
-          <span className="block text-[10px] text-zinc-500 truncate">{user?.company_name || 'Workspace'}</span>
+          <span className="block text-[10px] text-ink-muted truncate">{user?.company_name || 'Workspace'}</span>
         </span>
       </button>
 
       {profileMenuOpen && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-2 z-50" role="menu">
-          <div className="px-3 py-2 border-b border-zinc-800">
-            <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
+        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-edge-strong bg-surface shadow-2xl p-2 z-50" role="menu">
+          <div className="px-3 py-2 border-b border-edge">
+            <p className="text-sm font-semibold text-ink truncate">{user?.full_name || 'User'}</p>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-ink-secondary">
               <Mail className="w-3.5 h-3.5" />
               <span className="truncate">{user?.email || 'No email'}</span>
             </div>
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-ink-secondary">
               <Building2 className="w-3.5 h-3.5" />
               <span className="truncate">{user?.company_name || 'No company'}</span>
             </div>
@@ -267,7 +279,7 @@ const Layout = ({ children }: LayoutProps) => {
               setProfileMenuOpen(false);
               setProfileSettingsOpen(true);
             }}
-            className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2"
+            className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink flex items-center gap-2"
             role="menuitem"
           >
             <Settings className="w-4 h-4" />
@@ -279,7 +291,7 @@ const Layout = ({ children }: LayoutProps) => {
               setProfileMenuOpen(false);
               logout();
             }}
-            className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+            className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 flex items-center gap-2"
             role="menuitem"
           >
             <LogOut className="w-4 h-4" />
@@ -293,10 +305,10 @@ const Layout = ({ children }: LayoutProps) => {
   return (
     <div className="min-h-screen relative">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col bg-[#0b0c0f] border-r border-zinc-800/80">
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col bg-surface text-ink border-r border-edge">
         <Link to="/workspace" className="flex items-center gap-3 px-4 py-5 group">
           <div
-            className="w-10 h-10 rounded-xl text-white flex items-center justify-center shadow-lg shadow-sky-900/40 group-hover:scale-105 transition-transform"
+            className="w-10 h-10 rounded-xl text-white flex items-center justify-center shadow-lg shadow-primary-900/40 group-hover:scale-105 transition-transform"
             style={
               user?.brand_color
                 ? { backgroundColor: user.brand_color }
@@ -306,62 +318,60 @@ const Layout = ({ children }: LayoutProps) => {
             <Box className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-display font-semibold text-white leading-none">
+            <p className="font-semibold text-ink leading-none">
               {user?.company_name || 'ForgeQuote'}
             </p>
-            <p className="text-[11px] text-zinc-500 leading-none mt-1">CNC Cost Studio</p>
+            <p className="text-[11px] text-ink-muted leading-none mt-1">CNC Cost Studio</p>
           </div>
         </Link>
 
         <div className="mx-3 mb-3 flex items-stretch gap-1.5">
-          <button
-            type="button"
+          <Button variant="secondary" size="sm" className="flex-1"
             onClick={() => setPaletteOpen(true)}
-            className="flex-1 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-colors"
           >
             <Search className="w-3.5 h-3.5" />
             <span className="flex-1 text-left">Search…</span>
-            <kbd className="text-[10px] font-semibold border border-zinc-700 rounded px-1.5 py-0.5">Ctrl K</kbd>
-          </button>
+            <kbd className="text-[10px] font-semibold border border-edge-strong rounded-lg px-1.5 py-0.5">Ctrl K</kbd>
+          </Button>
 
           <div className="relative" ref={notifRef}>
             <button
               type="button"
               onClick={openNotifications}
               aria-label="Notifications"
-              className="relative h-full w-9 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/80 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-colors"
+              className="relative h-full w-9 flex items-center justify-center rounded-lg border border-edge bg-surface-muted text-ink-muted hover:border-edge-strong hover:text-ink-secondary transition-colors"
             >
               <Bell className="w-3.5 h-3.5" />
               {responsesBadge > 0 && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-sky-400 border-2 border-[#0b0c0f]" />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary-400 border-2 border-surface" />
               )}
             </button>
 
             {notifOpen && (
-              <div className="absolute left-full top-0 ml-2 w-80 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-2 z-50">
-                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+              <div className="absolute left-full top-0 ml-2 w-80 rounded-xl border border-edge-strong bg-surface shadow-2xl p-2 z-50">
+                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-muted">
                   Customer responses
                 </p>
                 {notifResponses.length === 0 ? (
-                  <p className="px-3 pb-2 text-xs text-zinc-500">No responses yet.</p>
+                  <p className="px-3 pb-2 text-xs text-ink-muted">No responses yet.</p>
                 ) : (
                   notifResponses.map((q) => (
                     <Link
                       key={q.id}
                       to={`/quotes/${q.id}`}
                       onClick={() => setNotifOpen(false)}
-                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-zinc-800 transition-colors"
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-surface-raised transition-colors"
                     >
                       {q.status === 'accepted' ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       ) : (
-                        <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+                        <XCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
                       )}
                       <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-zinc-200 truncate">
+                        <span className="block text-xs font-semibold text-ink truncate">
                           {q.quote_number} {q.status === 'accepted' ? 'accepted' : 'declined'}
                         </span>
-                        <span className="block text-[11px] text-zinc-500 truncate">
+                        <span className="block text-[11px] text-ink-muted truncate">
                           {q.customer_name || 'No customer'} ·{' '}
                           {new Date(q.responded_at!).toLocaleDateString('en-IN')}
                         </span>
@@ -370,23 +380,23 @@ const Layout = ({ children }: LayoutProps) => {
                   ))
                 )}
 
-                <p className="px-3 py-1.5 mt-1 border-t border-zinc-800 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                <p className="px-3 py-1.5 mt-1 border-t border-edge text-[10px] font-semibold uppercase tracking-widest text-ink-muted">
                   Expiring within 7 days
                 </p>
                 {notifExpiring.length === 0 ? (
-                  <p className="px-3 pb-2 text-xs text-zinc-500">Nothing expiring this week.</p>
+                  <p className="px-3 pb-2 text-xs text-ink-muted">Nothing expiring this week.</p>
                 ) : (
                   notifExpiring.map((q) => (
                     <Link
                       key={q.id}
                       to={`/quotes/${q.id}`}
                       onClick={() => setNotifOpen(false)}
-                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-zinc-800 transition-colors"
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-surface-raised transition-colors"
                     >
-                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                      <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                       <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-zinc-200 truncate">{q.quote_number}</span>
-                        <span className="block text-[11px] text-zinc-500 truncate">
+                        <span className="block text-xs font-semibold text-ink truncate">{q.quote_number}</span>
+                        <span className="block text-[11px] text-ink-muted truncate">
                           valid until {new Date(q.valid_until).toLocaleDateString('en-IN')}
                         </span>
                       </span>
@@ -399,8 +409,7 @@ const Layout = ({ children }: LayoutProps) => {
         </div>
 
         <Link
-          to="/quote"
-          className="mx-3 mb-4 flex items-center justify-center gap-2 rounded-xl bg-accent-400 px-3 py-2.5 text-sm font-semibold text-slate-950 shadow-sm hover:bg-accent-300 transition-colors"
+          to="/quote" className={buttonClasses('accent', 'md', 'mx-3 mb-4')}
         >
           <Plus className="w-4 h-4" />
           New Quote
@@ -409,7 +418,7 @@ const Layout = ({ children }: LayoutProps) => {
         <nav className="flex-1 px-3 space-y-4 overflow-y-auto">
           {NAV_GROUPS.map((group) => (
             <div key={group.label}>
-              <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+              <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-ink-secondary">
                 {group.label}
               </p>
               <div className="space-y-1">
@@ -420,19 +429,19 @@ const Layout = ({ children }: LayoutProps) => {
                       <Link
                         key={path}
                         to={path}
-                        className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                        className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
                           active
-                            ? 'bg-sky-600/15 text-sky-300 border border-sky-500/25'
-                            : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 border border-transparent'
+                            ? 'bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-500/25'
+                            : 'text-ink-secondary hover:bg-surface-raised hover:text-ink border border-transparent'
                         }`}
                       >
                         {active && (
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-full bg-sky-400" />
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-full bg-primary-400" />
                         )}
                         <Icon className="w-4 h-4" />
                         {label}
                         {path === '/quotes' && responsesBadge > 0 && (
-                          <span className="ml-auto rounded-full bg-sky-500/20 border border-sky-500/30 px-1.5 py-0.5 text-[10px] font-bold leading-none text-sky-300">
+                          <span className="ml-auto rounded-full bg-primary-500/20 border border-primary-500/30 px-1.5 py-0.5 text-[10px] font-bold leading-none text-primary-700 dark:text-primary-300">
                             {responsesBadge}
                           </span>
                         )}
@@ -445,48 +454,56 @@ const Layout = ({ children }: LayoutProps) => {
           ))}
         </nav>
 
-        <div className="px-3 pb-4 space-y-1 border-t border-zinc-800/80 pt-3">
+        <div className="px-3 pb-4 space-y-1 border-t border-edge pt-3">
           {isFreePlan && (
             <Link
-              to="/billing"
-              className="block mb-2 rounded-xl border border-sky-500/30 bg-sky-600/10 px-3 py-2.5 hover:bg-sky-600/20 transition-colors"
+              to="/billing" className="block mb-2 rounded-xl border border-primary-500/30 bg-primary-600/10 px-3 py-2.5 hover:bg-primary-600/20 transition-colors"
             >
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-300">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-primary-700 dark:text-primary-300">
                 <Sparkles className="w-3.5 h-3.5" />
                 Free plan
               </p>
-              <p className="mt-0.5 text-[11px] leading-snug text-slate-400">
+              <p className="mt-0.5 text-[11px] leading-snug text-ink-secondary">
                 Sample part only. Upgrade to quote your own CAD files.
               </p>
             </Link>
           )}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 transition-colors"
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          </button>
+          <div role="radiogroup" aria-label="Appearance" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-raised p-1">
+            {APPEARANCE.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={theme === value}
+                onClick={() => setTheme(value)}
+                className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-400 ${
+                  theme === value ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
           {profileMenu}
         </div>
       </aside>
 
       {/* Mobile top bar */}
-      <header className="lg:hidden sticky top-0 z-40 border-b border-slate-200/70 surface-panel">
+      <header className="lg:hidden sticky top-0 z-40 border-b border-edge/70 surface-panel">
         <div className="px-4 py-3 flex items-center justify-between gap-3">
           <Link to="/workspace" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white flex items-center justify-center">
               <Box className="w-5 h-5" />
             </div>
-            <p className="font-display font-semibold text-slate-900 leading-none">ForgeQuote</p>
+            <p className="font-semibold text-ink leading-none">ForgeQuote</p>
           </Link>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
               aria-label="Search"
-              className="w-11 h-11 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
+              className="w-11 h-11 rounded-lg border border-edge bg-surface/80 text-ink-secondary flex items-center justify-center"
             >
               <Search className="w-4 h-4" />
             </button>
@@ -494,26 +511,74 @@ const Layout = ({ children }: LayoutProps) => {
               type="button"
               onClick={toggleTheme}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              className="w-11 h-11 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
+              className="w-11 h-11 rounded-lg border border-edge bg-surface/80 text-ink-secondary flex items-center justify-center"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <button
-              type="button"
-              onClick={() => setProfileSettingsOpen(true)}
-              aria-label="Profile settings"
-              className="w-11 h-11 rounded-lg border border-slate-200 bg-white/80 text-slate-600 flex items-center justify-center"
-            >
-              <User className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={logout}
-              aria-label="Logout"
-              className="w-11 h-11 rounded-lg border border-red-200 bg-white/80 text-red-500 flex items-center justify-center"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="relative" ref={mobileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((open) => !open)}
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={mobileMenuOpen}
+                className="w-11 h-11 rounded-lg border border-edge bg-surface/80 text-ink-secondary flex items-center justify-center overflow-hidden"
+              >
+                {user?.company_logo_url ? (
+                  <img src={user.company_logo_url} alt="" className="h-full w-full bg-white object-contain" />
+                ) : (
+                  <User className="w-4 h-4" />
+                )}
+              </button>
+              {mobileMenuOpen && (
+                <div role="menu" className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-edge bg-surface p-2 shadow-2xl z-50">
+                  <div className="border-b border-edge px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                      <span className="truncate">{user?.full_name || 'User'}</span>
+                      {!isFreePlan && (
+                        <span className="shrink-0 rounded-lg border border-primary-500/40 bg-primary-500/15 px-1.5 py-px text-[10px] font-bold text-primary-700 dark:text-primary-300">PRO</span>
+                      )}
+                    </p>
+                    <p className="truncate text-xs text-ink-muted">{user?.email}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setProfileSettingsOpen(true);
+                    }}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Profile settings
+                  </button>
+                  <Link
+                    to="/billing"
+                    role="menuitem"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Billing
+                  </Link>
+                  {/* Destructive action set apart from the rest. */}
+                  <div className="my-1 border-t border-edge" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      logout();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -534,56 +599,42 @@ const Layout = ({ children }: LayoutProps) => {
       />
 
       {/* Subscription-required prompt (triggered by any gated 402) */}
-      {upgradeOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4"
-          onClick={() => setUpgradeOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Subscription required"
-          >
-            <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center">
+      <Dialog open={upgradeOpen} onClose={() => setUpgradeOpen(false)} labelledBy="upgrade-title" className="max-w-md">
+          <div className="p-6">
+            <div className="w-12 h-12 rounded-xl bg-primary-100 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400 flex items-center justify-center">
               <Lock className="w-6 h-6" />
             </div>
-            <h2 className="mt-4 text-lg font-bold text-slate-900">Subscription required</h2>
-            <p className="mt-1.5 text-sm text-slate-600">
+            <h2 id="upgrade-title" className="mt-4 text-lg font-bold text-ink">Subscription required</h2>
+            <p className="mt-1.5 text-sm text-ink-secondary">
               Your free plan includes the sample part so you can try the full quoting flow.
               To upload and quote your own CAD files, upgrade to a plan.
             </p>
             <div className="mt-5 flex gap-2">
               <Link
                 to="/billing"
-                onClick={() => setUpgradeOpen(false)}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition-colors"
+                onClick={() => setUpgradeOpen(false)} className={buttonClasses('primary', 'md', 'flex-1')}
               >
                 <Sparkles className="w-4 h-4" />
                 View plans
               </Link>
-              <button
-                type="button"
+              <Button variant="secondary"
                 onClick={() => setUpgradeOpen(false)}
-                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
               >
                 Not now
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+      </Dialog>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onToggleTheme={toggleTheme} />
 
       {/* Mobile bottom nav — labeled, top-level destinations only */}
       <nav
-        className="lg:hidden fixed bottom-0 inset-x-0 z-40 surface-strong border-t border-slate-200 pb-[env(safe-area-inset-bottom)]"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 surface-strong border-t border-edge pb-[env(safe-area-inset-bottom)]"
         aria-label="Primary"
       >
         <div className="flex items-stretch justify-around px-1 py-1">
-          {visibleNav.map(({ path, icon: Icon, label, exact }) => {
+          {visibleNav.filter((item) => item.inBottomBar !== false).map(({ path, icon: Icon, label, exact }) => {
             const active = isActive(path, exact);
             return (
               <Link
@@ -591,7 +642,7 @@ const Layout = ({ children }: LayoutProps) => {
                 to={path}
                 aria-current={active ? 'page' : undefined}
                 className={`flex min-h-[48px] min-w-[56px] flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1.5 transition-colors ${
-                  active ? 'text-sky-700 bg-sky-600/10' : 'text-slate-500 hover:text-slate-700'
+                  active ? 'text-primary-700 dark:text-primary-300 bg-primary-600/10' : 'text-ink-muted hover:text-ink-secondary'
                 }`}
               >
                 <Icon className="w-[18px] h-[18px]" />

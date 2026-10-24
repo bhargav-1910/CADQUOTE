@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, Palette, ClipboardCheck, Loader2, Minus, Plus, Ruler } from 'lucide-react';
+import { Box, Palette, ClipboardCheck, Minus, Plus, Ruler } from 'lucide-react';
 import type { Material, SurfaceFinish, InspectionLevel, PricingOverrides, ToleranceTier } from '@/types';
 import { getMaterials, getSurfaceFinishes, getInspectionLevels, getMachineRates, type MachineRate } from '@/services/api';
 
+import { Button, Input, Select, Skeleton } from '@/components/ui';
 const formatINR = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -445,15 +446,20 @@ const ConfigurationPanel = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      <div role="status" aria-label="Loading options" className="space-y-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div key={index} className="space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-11 w-full rounded-xl" />
+          </div>
+        ))}
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+      <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-4 text-red-700 dark:text-red-300">
         {error}
       </div>
     );
@@ -462,15 +468,15 @@ const ConfigurationPanel = ({
   return (
     <div className="space-y-5">
       {canEditQuoteSpecificPricing && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-amber-900">Quote-Specific Price Editing</p>
-              <p className="text-xs text-amber-700 mt-0.5">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">Quote-Specific Price Editing</p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
                 Enable to edit pricing values inline. Changes apply only to this quote.
               </p>
               {quoteSpecificPricingEnabled && (
-                <p className="text-[11px] text-amber-800 mt-1">
+                <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-1">
                   Pricing updates automatically as you type.
                 </p>
               )}
@@ -480,12 +486,12 @@ const ConfigurationPanel = ({
               onClick={handleQuoteSpecificToggle}
               disabled={disabled}
               className={`inline-flex items-center rounded-full h-7 w-12 p-1 transition-colors ${
-                quoteSpecificPricingEnabled ? 'bg-primary-600' : 'bg-gray-300'
+                quoteSpecificPricingEnabled ? 'bg-primary-600' : 'bg-fill-strong'
               } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
               aria-pressed={quoteSpecificPricingEnabled}
             >
               <span
-                className={`h-5 w-5 rounded-full bg-white transition-transform ${
+                className={`h-5 w-5 rounded-full bg-surface transition-transform ${
                   quoteSpecificPricingEnabled ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
@@ -494,16 +500,15 @@ const ConfigurationPanel = ({
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+      <div className="rounded-xl border border-edge bg-surface p-4">
+        <label className="flex items-center gap-2 text-sm font-semibold text-ink-secondary mb-3">
           <Box className="w-4 h-4" />
           Raw Material
         </label>
-        <select
+        <Select
           value={materialId ?? ''}
           onChange={(e) => handleMaterialSelect(e.target.value)}
-          disabled={disabled}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm"
+          disabled={disabled} className="w-full"
         >
           {Object.entries(materialsByCategory).map(([category, mats]) => (
             <optgroup key={category} label={category}>
@@ -514,9 +519,9 @@ const ConfigurationPanel = ({
               ))}
             </optgroup>
           ))}
-        </select>
+        </Select>
         {selectedMaterial && (
-          <div className="mt-2 text-xs text-gray-500 space-y-1">
+          <div className="mt-2 text-xs text-ink-muted space-y-1">
             <p>{selectedMaterial.name}: {formatINR(Number(selectedMaterial.cost_per_kg))}/kg</p>
             {selectedMaterial.common_names && <p>Common Name: {selectedMaterial.common_names}</p>}
             <p>Density: {selectedMaterial.density} g/cm3 | Scrap Saving Cost: {formatINR(Number(selectedMaterial.scrap_cost_per_kg))}/kg</p>
@@ -524,25 +529,24 @@ const ConfigurationPanel = ({
         )}
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+      <div className="rounded-xl border border-edge bg-surface p-4">
+        <label className="flex items-center gap-2 text-sm font-semibold text-ink-secondary mb-3">
           <Palette className="w-4 h-4" />
           Surface Finish
         </label>
-        <select
+        <Select
           value={surfaceFinishId ?? ''}
           onChange={(e) => handleFinishSelect(e.target.value)}
-          disabled={disabled}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm"
+          disabled={disabled} className="w-full"
         >
           {finishes.map((finish) => (
             <option key={finish.id} value={finish.id}>
               {finish.name}
             </option>
           ))}
-        </select>
+        </Select>
         {selectedFinish && (
-          <div className="mt-2 text-xs text-gray-500 space-y-1">
+          <div className="mt-2 text-xs text-ink-muted space-y-1">
             <p>
               {selectedFinish.cost_multiplier > 1
                 ? `+${((selectedFinish.cost_multiplier - 1) * 100).toFixed(0)}%`
@@ -557,48 +561,46 @@ const ConfigurationPanel = ({
         )}
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+      <div className="rounded-xl border border-edge bg-surface p-4">
+        <label className="flex items-center gap-2 text-sm font-semibold text-ink-secondary mb-3">
           Machining Process
         </label>
-        <select
+        <Select
           value={selectedMachineId}
           onChange={(e) => handleMachineSelect(e.target.value)}
-          disabled={disabled || machineRates.length === 0}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm"
+          disabled={disabled || machineRates.length === 0} className="w-full"
         >
           {machineRates.map((machine) => (
             <option key={machine.id} value={machine.id}>
               {machine.name}
             </option>
           ))}
-        </select>
+        </Select>
         {selectedMachine && (
-          <p className="mt-2 text-xs text-gray-500">
+          <p className="mt-2 text-xs text-ink-muted">
             Machine Hour Rate: {formatINR(Number(selectedMachine.hourly_rate))}/hr | Setup Hour Rate: {formatINR(Number(selectedMachine.setup_hour_rate))}/hr | Setup Time: {selectedMachine.setup_time_hours} h
           </p>
         )}
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+      <div className="rounded-xl border border-edge bg-surface p-4">
+        <label className="flex items-center gap-2 text-sm font-semibold text-ink-secondary mb-3">
           <ClipboardCheck className="w-4 h-4" />
           Inspection Level
         </label>
-        <select
+        <Select
           value={inspectionLevelId ?? ''}
           onChange={(e) => handleInspectionSelect(e.target.value)}
-          disabled={disabled}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm"
+          disabled={disabled} className="w-full"
         >
           {inspections.map((inspection) => (
             <option key={inspection.id} value={inspection.id}>
               {inspection.name}
             </option>
           ))}
-        </select>
+        </Select>
         {selectedInspection && (
-          <div className="mt-2 text-xs text-gray-500 space-y-1">
+          <div className="mt-2 text-xs text-ink-muted space-y-1">
             <p>{selectedInspection.description}</p>
             <p>
               {Number(selectedInspection.fixed_cost) > 0
@@ -611,8 +613,8 @@ const ConfigurationPanel = ({
       </div>
 
       {onToleranceTierChange && (
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+        <div className="rounded-xl border border-edge bg-surface p-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-ink-secondary mb-3">
             <Ruler className="w-4 h-4" />
             Tolerance Requirement
           </label>
@@ -627,72 +629,66 @@ const ConfigurationPanel = ({
                   onClick={() => onToleranceTierChange(option.value)}
                   className={`rounded-lg border px-2 py-2.5 text-left transition-colors disabled:opacity-50 ${
                     active
-                      ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
-                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10 ring-1 ring-primary-500'
+                      : 'border-edge bg-surface hover:border-edge-strong hover:bg-surface-muted'
                   }`}
                 >
-                  <p className={`text-sm font-semibold ${active ? 'text-primary-800' : 'text-gray-800'}`}>
+                  <p className={`text-sm font-semibold ${active ? 'text-primary-800 dark:text-primary-300' : 'text-ink'}`}>
                     {option.label}
                   </p>
-                  <p className={`text-xs font-medium ${active ? 'text-primary-600' : 'text-gray-500'}`}>
+                  <p className={`text-xs font-medium ${active ? 'text-primary-600 dark:text-primary-400' : 'text-ink-muted'}`}>
                     {option.spec}
                   </p>
                 </button>
               );
             })}
           </div>
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-ink-muted mt-2">
             {TOLERANCE_OPTIONS.find((option) => option.value === toleranceTier)?.hint}
           </p>
         </div>
       )}
 
       {quoteSpecificPricingEnabled && (
-        <div className="rounded-lg border border-primary-200 bg-primary-50/40 p-4 space-y-3">
+        <div className="rounded-lg border border-primary-200 dark:border-primary-500/30 bg-primary-50/40 dark:bg-primary-500/10 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-primary-900">Quote-Specific Overrides</p>
+            <p className="text-sm font-semibold text-primary-900 dark:text-primary-300">Quote-Specific Overrides</p>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => syncOverridesFromSelection()}
-                className="px-2.5 py-1.5 text-xs rounded border border-primary-300 text-primary-700 hover:bg-primary-100 disabled:opacity-50"
-              >
+              <Button variant="secondary" size="sm" disabled={disabled} onClick={() => syncOverridesFromSelection()}>
                 Sync from selection
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 disabled={disabled || !onPricingOverridesChange}
                 onClick={() => {
                   if (!onPricingOverridesChange) return;
                   onPricingOverridesChange({});
                   setOverrideDrafts({});
                 }}
-                className="px-2.5 py-1.5 text-xs rounded border border-gray-300 text-gray-700 hover:bg-white disabled:opacity-50"
               >
                 Reset overrides
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Material Cost / kg
-              <input
+              <Input
                 type="number"
                 min="0.01"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('material_cost_per_kg', Number(selectedMaterial?.cost_per_kg ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('material_cost_per_kg', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('material_cost_per_kg', Number(selectedMaterial?.cost_per_kg ?? 1), { min: 0.01 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('material_cost_per_kg', Number(selectedMaterial?.cost_per_kg ?? 1), { min: 0.01 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Material Difficulty
-              <input
+              <Input
                 type="number"
                 min="0.5"
                 max="3"
@@ -700,40 +696,37 @@ const ConfigurationPanel = ({
                 disabled={disabled}
                 value={getDraftValue('material_machining_difficulty_factor', Number(selectedMaterial?.machining_difficulty_factor ?? 1))}
                 onChange={(e) => applyNumericOverrideInput('material_machining_difficulty_factor', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('material_machining_difficulty_factor', Number(selectedMaterial?.machining_difficulty_factor ?? 1), { min: 0.5, max: 3 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('material_machining_difficulty_factor', Number(selectedMaterial?.machining_difficulty_factor ?? 1), { min: 0.5, max: 3 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Material Density (g/cm3)
-              <input
+              <Input
                 type="number"
                 min="0.01"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('material_density', Number(selectedMaterial?.density ?? 1))}
                 onChange={(e) => applyNumericOverrideInput('material_density', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('material_density', Number(selectedMaterial?.density ?? 1), { min: 0.01 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('material_density', Number(selectedMaterial?.density ?? 1), { min: 0.01 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Scrap Cost / kg
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('scrap_cost_per_kg', 30)}
                 onChange={(e) => applyNumericOverrideInput('scrap_cost_per_kg', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('scrap_cost_per_kg', 30, { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('scrap_cost_per_kg', 30, { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700 flex items-end">
+            <label className="text-xs text-ink-secondary flex items-end">
               <span className="w-full">
                 Include Scrap Saving
                 <button
@@ -746,156 +739,146 @@ const ConfigurationPanel = ({
                       include_scrap_saving: !(pricingOverrides.include_scrap_saving ?? true),
                     });
                   }}
-                  className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs text-left bg-white hover:bg-gray-50"
+                  className="mt-1 w-full px-2 py-1.5 border border-edge-strong rounded-lg text-xs text-left bg-surface hover:bg-surface-muted"
                 >
                   {(pricingOverrides.include_scrap_saving ?? true) ? 'Enabled' : 'Disabled'}
                 </button>
               </span>
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Machine Hour Rate
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('machine_hourly_rate', Number(selectedMachine?.hourly_rate ?? 700))}
                 onChange={(e) => applyNumericOverrideInput('machine_hourly_rate', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('machine_hourly_rate', Number(selectedMachine?.hourly_rate ?? 700), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('machine_hourly_rate', Number(selectedMachine?.hourly_rate ?? 700), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Setup Hour Rate
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('machine_setup_hourly_rate', Number(selectedMachine?.setup_hour_rate ?? selectedMachine?.hourly_rate ?? 700))}
                 onChange={(e) => applyNumericOverrideInput('machine_setup_hourly_rate', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('machine_setup_hourly_rate', Number(selectedMachine?.setup_hour_rate ?? selectedMachine?.hourly_rate ?? 700), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('machine_setup_hourly_rate', Number(selectedMachine?.setup_hour_rate ?? selectedMachine?.hourly_rate ?? 700), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Setup Time (hours)
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('machine_setup_time_hours', Number(selectedMachine?.setup_time_hours ?? 0.5))}
                 onChange={(e) => applyNumericOverrideInput('machine_setup_time_hours', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('machine_setup_time_hours', Number(selectedMachine?.setup_time_hours ?? 0.5), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('machine_setup_time_hours', Number(selectedMachine?.setup_time_hours ?? 0.5), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Finish Fixed Cost
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('surface_finish_fixed_cost', Number(selectedFinish?.fixed_cost ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('surface_finish_fixed_cost', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('surface_finish_fixed_cost', Number(selectedFinish?.fixed_cost ?? 0), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('surface_finish_fixed_cost', Number(selectedFinish?.fixed_cost ?? 0), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Finish Multiplier
-              <input
+              <Input
                 type="number"
                 min="1"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('surface_finish_cost_multiplier', Number(selectedFinish?.cost_multiplier ?? 1))}
                 onChange={(e) => applyNumericOverrideInput('surface_finish_cost_multiplier', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('surface_finish_cost_multiplier', Number(selectedFinish?.cost_multiplier ?? 1), { min: 1 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('surface_finish_cost_multiplier', Number(selectedFinish?.cost_multiplier ?? 1), { min: 1 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Finish Rate / kg
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('surface_finish_rate_per_kg', Number(selectedFinish?.rate_per_kg ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('surface_finish_rate_per_kg', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_kg', Number(selectedFinish?.rate_per_kg ?? 0), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_kg', Number(selectedFinish?.rate_per_kg ?? 0), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Finish Rate / sq.in
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('surface_finish_rate_per_sq_inch', Number(selectedFinish?.rate_per_sq_inch ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('surface_finish_rate_per_sq_inch', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_sq_inch', Number(selectedFinish?.rate_per_sq_inch ?? 0), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_sq_inch', Number(selectedFinish?.rate_per_sq_inch ?? 0), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Finish Rate / sq.ft
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('surface_finish_rate_per_sq_ft', Number(selectedFinish?.rate_per_sq_ft ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('surface_finish_rate_per_sq_ft', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_sq_ft', Number(selectedFinish?.rate_per_sq_ft ?? 0), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_sq_ft', Number(selectedFinish?.rate_per_sq_ft ?? 0), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Finish Rate / piece
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('surface_finish_rate_per_piece', Number(selectedFinish?.rate_per_piece ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('surface_finish_rate_per_piece', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_piece', Number(selectedFinish?.rate_per_piece ?? 0), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('surface_finish_rate_per_piece', Number(selectedFinish?.rate_per_piece ?? 0), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Inspection Fixed Cost
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
                 disabled={disabled}
                 value={getDraftValue('inspection_fixed_cost', Number(selectedInspection?.fixed_cost ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('inspection_fixed_cost', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('inspection_fixed_cost', Number(selectedInspection?.fixed_cost ?? 0), { min: 0 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('inspection_fixed_cost', Number(selectedInspection?.fixed_cost ?? 0), { min: 0 })} className="mt-1 w-full"
               />
             </label>
 
-            <label className="text-xs text-gray-700">
+            <label className="text-xs text-ink-secondary">
               Inspection Percentage
-              <input
+              <Input
                 type="number"
                 min="0"
                 max="100"
@@ -903,27 +886,28 @@ const ConfigurationPanel = ({
                 disabled={disabled}
                 value={getDraftValue('inspection_percentage_cost', Number(selectedInspection?.percentage_cost ?? 0))}
                 onChange={(e) => applyNumericOverrideInput('inspection_percentage_cost', e.target.value)}
-                onBlur={() => commitNumericOverrideInput('inspection_percentage_cost', Number(selectedInspection?.percentage_cost ?? 0), { min: 0, max: 100 })}
-                className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded text-xs"
+                onBlur={() => commitNumericOverrideInput('inspection_percentage_cost', Number(selectedInspection?.percentage_cost ?? 0), { min: 0, max: 100 })} className="mt-1 w-full"
               />
             </label>
           </div>
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+      <div className="rounded-xl border border-edge bg-surface p-4">
+        <label className="flex items-center gap-2 text-sm font-semibold text-ink-secondary mb-3">
           Quantity
         </label>
         <div className="flex items-center gap-3">
-          <button
+          <Button
+            variant="secondary"
+            size="icon"
             onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
             disabled={disabled || quantity <= 1}
-            className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Decrease quantity"
           >
             <Minus className="w-4 h-4" />
-          </button>
-          <input
+          </Button>
+          <Input
             type="number"
             min="1"
             max="10000"
@@ -933,18 +917,21 @@ const ConfigurationPanel = ({
               onQuantityChange(Math.max(1, Math.min(10000, val)));
             }}
             disabled={disabled}
-            className="w-24 h-10 text-center border border-gray-300 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Quantity"
+            className="!w-24 text-center"
           />
-          <button
+          <Button
+            variant="secondary"
+            size="icon"
             onClick={() => onQuantityChange(Math.min(10000, quantity + 1))}
             disabled={disabled || quantity >= 10000}
-            className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Increase quantity"
           >
             <Plus className="w-4 h-4" />
-          </button>
-          <span className="text-sm text-gray-500">units</span>
+          </Button>
+          <span className="text-sm text-ink-muted">units</span>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-xs text-ink-muted mt-2">
           Setup, programming and tooling costs are shared across the batch — see the quantity
           breaks table in the price panel for unit prices at 1 / 10 / 50 / 100 pcs.
         </p>

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  AlertCircle, Building2, ChevronRight, Clock, FileText, Home, Loader2,
+  AlertCircle, Building2, ChevronRight, Clock, FileText, Home,
   Mail, Pencil, Phone, Receipt, Users, X,
 } from 'lucide-react';
 import type { Customer, CustomerUpdateRequest, QuoteListItem } from '@/types';
 import { getCustomer, getCustomerQuotes, updateCustomer } from '@/services/api';
-import { StatusPill } from '@/components/ui';
+import { Button, Input, SkeletonPage, StatusPill, Textarea } from '@/components/ui';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
@@ -76,21 +76,19 @@ const CustomerDetail = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
-      </div>
+      <SkeletonPage />
     );
   }
 
   if (!customer) {
     return (
       <div className="max-w-2xl mx-auto p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-4">
-          <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-6 flex items-start gap-4">
+          <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0" />
           <div>
-            <h2 className="text-lg font-semibold text-red-800">Error Loading Customer</h2>
-            <p className="text-red-600 mt-1">{error || 'Customer not found'}</p>
-            <Link to="/customers" className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 hover:text-red-800">
+            <h2 className="text-lg font-semibold text-red-800 dark:text-red-300">Error Loading Customer</h2>
+            <p className="text-red-600 dark:text-red-400 mt-1">{error || 'Customer not found'}</p>
+            <Link to="/customers" className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-300">
               <ChevronRight className="w-4 h-4 rotate-180" />
               Back to Customers
             </Link>
@@ -117,40 +115,39 @@ const CustomerDetail = () => {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
+        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
           <Home className="w-3.5 h-3.5" />
           Home
         </Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <Link to="/customers" className="hover:text-gray-900 transition-colors">Customers</Link>
+        <Link to="/customers" className="hover:text-ink transition-colors">Customers</Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-gray-900 font-medium">{customer.name}</span>
+        <span className="text-ink font-medium">{customer.name}</span>
       </nav>
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
-            <Users className="w-6 h-6 text-primary-600" />
+          <h1 className="text-2xl font-bold text-ink flex items-center gap-2.5">
+            <Users className="w-6 h-6 text-primary-600 dark:text-primary-400" />
             {customer.name}
           </h1>
-          {customer.company && <p className="text-gray-500 text-sm mt-0.5">{customer.company}</p>}
+          {customer.company && <p className="text-ink-muted text-sm mt-0.5">{customer.company}</p>}
         </div>
         {!editing && (
-          <button
+          <Button variant="secondary"
             onClick={startEdit}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm"
           >
             <Pencil className="w-4 h-4" />
             Edit details
-          </button>
+          </Button>
         )}
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
         </div>
       )}
 
@@ -162,28 +159,28 @@ const CustomerDetail = () => {
           {
             label: 'Won',
             value: customer.quote_count > 0 ? `${customer.accepted_count} (${winPct}%)` : '—',
-            tone: customer.accepted_count > 0 ? 'text-emerald-700' : undefined,
+            tone: customer.accepted_count > 0 ? 'text-emerald-700 dark:text-emerald-300' : undefined,
           },
           {
             label: 'Expiring within 7 days',
             value: String(expiringSoon.length),
-            tone: expiringSoon.length > 0 ? 'text-amber-700' : undefined,
+            tone: expiringSoon.length > 0 ? 'text-amber-700 dark:text-amber-300' : undefined,
           },
         ].map(({ label, value, tone }) => (
-          <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
-            <p className={`mt-1.5 text-xl font-bold ${tone ?? 'text-gray-900'}`}>{value}</p>
+          <div key={label} className="bg-surface rounded-xl border border-edge p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{label}</p>
+            <p className={`mt-1.5 text-xl font-bold ${tone ?? 'text-ink'}`}>{value}</p>
           </div>
         ))}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Contact card */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-surface rounded-xl border border-edge p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Contact</h2>
+            <h2 className="text-lg font-semibold text-ink">Contact</h2>
             {editing && (
-              <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600" aria-label="Cancel edit">
+              <button onClick={() => setEditing(false)} className="text-ink-subtle hover:text-ink-secondary" aria-label="Cancel edit">
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -201,48 +198,44 @@ const CustomerDetail = () => {
                 ] as Array<[keyof CustomerUpdateRequest, string]>
               ).map(([field, label]) => (
                 <div key={field}>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                  <input
+                  <label className="block text-xs font-medium text-ink-secondary mb-1">{label}</label>
+                  <Input
                     type="text"
                     value={(form[field] as string) ?? ''}
-                    onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))} className="w-full"
                   />
                 </div>
               ))}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-                <textarea
+                <label className="block text-xs font-medium text-ink-secondary mb-1">Notes</label>
+                <Textarea
                   value={form.notes ?? ''}
                   onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  rows={3} className="w-full"
                 />
               </div>
-              <button
+              <Button loading={saving} className="w-full"
                 onClick={saveEdit}
                 disabled={saving || !form.name?.trim()}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 text-sm"
               >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save changes
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="space-y-3.5">
               {contactRows.map(({ icon: Icon, label, value }) => (
                 <div key={label} className="flex items-start gap-3">
-                  <Icon className="w-4 h-4 text-gray-400 mt-0.5" />
+                  <Icon className="w-4 h-4 text-ink-subtle mt-0.5" />
                   <div>
-                    <p className="text-xs text-gray-500">{label}</p>
-                    <p className="text-sm font-medium text-gray-900">{value || 'Not specified'}</p>
+                    <p className="text-xs text-ink-muted">{label}</p>
+                    <p className="text-sm font-medium text-ink">{value || 'Not specified'}</p>
                   </div>
                 </div>
               ))}
               {customer.notes && (
-                <div className="border-t border-gray-100 pt-3">
-                  <p className="text-xs text-gray-500 mb-1">Notes</p>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{customer.notes}</p>
+                <div className="border-t border-edge pt-3">
+                  <p className="text-xs text-ink-muted mb-1">Notes</p>
+                  <p className="text-sm text-ink-secondary whitespace-pre-wrap">{customer.notes}</p>
                 </div>
               )}
             </div>
@@ -252,14 +245,14 @@ const CustomerDetail = () => {
         {/* Quote timeline */}
         <div className="lg:col-span-2 space-y-4">
           {expiringSoon.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+            <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
                 <Clock className="w-4 h-4" />
                 {expiringSoon.length} quote{expiringSoon.length === 1 ? '' : 's'} expiring within {EXPIRY_WINDOW_DAYS} days
               </p>
               <div className="mt-2 space-y-1">
                 {expiringSoon.map((q) => (
-                  <Link key={q.id} to={`/quotes/${q.id}`} className="block text-sm text-amber-700 hover:text-amber-900 hover:underline">
+                  <Link key={q.id} to={`/quotes/${q.id}`} className="block text-sm text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-300 hover:underline">
                     {q.quote_number} · {formatCurrency(Number(q.total_price))} · valid until {formatDate(q.valid_until)}
                   </Link>
                 ))}
@@ -267,33 +260,33 @@ const CustomerDetail = () => {
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Quote history</h2>
+          <div className="bg-surface rounded-xl border border-edge">
+            <div className="px-6 py-4 border-b border-edge">
+              <h2 className="text-lg font-semibold text-ink">Quote history</h2>
             </div>
             {quotes.length === 0 ? (
               <div className="p-10 text-center">
-                <FileText className="w-8 h-8 text-gray-300 mx-auto" />
-                <p className="mt-2 text-sm text-gray-500">No quotes yet for this customer.</p>
+                <FileText className="w-8 h-8 text-ink-subtle mx-auto" />
+                <p className="mt-2 text-sm text-ink-muted">No quotes yet for this customer.</p>
               </div>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-edge">
                 {quotes.map((quote) => (
                   <li key={quote.id}>
                     <Link
                       to={`/quotes/${quote.id}`}
-                      className="flex items-center justify-between gap-4 px-6 py-3.5 hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-surface-muted sm:px-6"
                     >
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-900">{quote.quote_number}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="truncate font-medium text-ink">{quote.quote_number}</p>
+                        <p className="text-xs text-ink-muted">
                           {formatDate(quote.created_at)} · valid until {formatDate(quote.valid_until)}
                         </p>
                       </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <span className="font-semibold text-gray-900">{formatCurrency(Number(quote.total_price))}</span>
+                      <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
+                        <span className="whitespace-nowrap font-semibold text-ink">{formatCurrency(Number(quote.total_price))}</span>
                         <StatusPill status={quote.status} />
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                        <ChevronRight className="hidden w-4 h-4 text-ink-subtle sm:block" />
                       </div>
                     </Link>
                   </li>
