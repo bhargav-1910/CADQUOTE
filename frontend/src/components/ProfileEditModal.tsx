@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Building2, Loader2, Phone, Upload, User } from 'lucide-react';
+import { Building2, Phone, Upload, User } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import AccountSecurityPanel from '@/components/AccountSecurityPanel';
+import { Button, Dialog, Field, Input, Textarea } from '@/components/ui';
 
 interface ProfileEditModalProps {
   open: boolean;
@@ -61,7 +62,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
     };
   }, [logo]);
 
-  if (!open || !user) {
+  if (!user) {
     return null;
   }
 
@@ -90,127 +91,95 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-sm">
-      <div className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+    <Dialog open={open} onClose={onClose} labelledBy="profile-settings-title" className="max-w-3xl">
+        <div className="flex items-center justify-between border-b border-edge px-6 py-5">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">Profile Settings</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Update your public details used in quotes and PDF branding.</p>
+            <h2 id="profile-settings-title" className="text-xl font-semibold text-ink">Profile Settings</h2>
+            <p className="text-sm text-ink-muted mt-0.5">Update your public details used in quotes and PDF branding.</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-          >
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-5 px-6 py-6">
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_220px]">
             <div className="space-y-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label className="text-sm text-slate-700">
-                  <span className="inline-flex items-center gap-1.5 font-medium">
-                    <User className="h-3.5 w-3.5" />
-                    Full name
-                  </span>
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                  />
-                </label>
+                <Field label={<span className="inline-flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Full name</span>} required>
+                  {(props) => (
+                    <Input {...props} autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                  )}
+                </Field>
 
-                <label className="text-sm text-slate-700">
-                  <span className="inline-flex items-center gap-1.5 font-medium">
-                    <Building2 className="h-3.5 w-3.5" />
-                    Company name
-                  </span>
-                  <input
-                    type="text"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    required
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                  />
-                </label>
+                <Field label={<span className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />Company name</span>} required>
+                  {(props) => (
+                    <Input {...props} autoComplete="organization" value={companyName} onChange={(e) => setCompanyName(e.target.value)} required />
+                  )}
+                </Field>
               </div>
 
-              <label className="block text-sm text-slate-700">
-                <span className="font-medium">Company address</span>
-                <textarea
-                  rows={4}
-                  value={companyAddress}
-                  onChange={(e) => setCompanyAddress(e.target.value)}
-                  required
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                />
-              </label>
+              <Field label="Company address" required>
+                {(props) => (
+                  <Textarea {...props} rows={4} autoComplete="street-address" value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} required />
+                )}
+              </Field>
 
-              <label className="text-sm text-slate-700 block">
-                <span className="inline-flex items-center gap-1.5 font-medium">
-                  <Phone className="h-3.5 w-3.5" />
-                  Phone number
-                </span>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+91 98765 43210"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                />
-              </label>
+              <Field label={<span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Phone number</span>}>
+                {(props) => (
+                  <Input {...props} type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91 98765 43210" />
+                )}
+              </Field>
 
-              <label className="text-sm text-slate-700 block">
-                <span className="font-medium">GSTIN</span>
-                <span className="block text-xs text-slate-500 mt-0.5">
-                  Shown on quote PDFs; drives CGST/SGST vs IGST breakup when the customer's GSTIN is known.
-                </span>
-                <input
-                  type="text"
-                  value={gstin}
-                  onChange={(e) => setGstin(e.target.value.toUpperCase())}
-                  placeholder="27AAPCA1234F1Z5"
-                  maxLength={15}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-mono focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                />
-              </label>
+              <Field
+                label="GSTIN"
+                helper="Shown on quote PDFs; drives CGST/SGST vs IGST breakup when the customer's GSTIN is known."
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={gstin}
+                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                    placeholder="27AAPCA1234F1Z5"
+                    maxLength={15}
+                    className="font-mono"
+                  />
+                )}
+              </Field>
 
-              <label className="text-sm text-slate-700 block">
-                <span className="font-medium">Brand accent color</span>
-                <span className="block text-xs text-slate-500 mt-0.5">
-                  Used on your quote PDFs and the customer quote page.
-                </span>
-                <span className="mt-2 flex items-center gap-2">
+              <div>
+                <label htmlFor="brand-color" className="block text-sm font-medium text-ink-secondary">Brand accent color</label>
+                <p className="mt-0.5 text-xs text-ink-muted">Used on your quote PDFs and the customer quote page.</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   <input
+                    id="brand-color"
                     type="color"
                     value={brandColor}
                     onChange={(e) => setBrandColor(e.target.value)}
-                    className="h-9 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+                    className="h-10 w-12 cursor-pointer rounded-lg border border-edge-strong bg-surface p-0.5"
                   />
-                  <span className="font-mono text-xs text-slate-600">{brandColor}</span>
+                  <span className="font-mono text-xs text-ink-secondary">{brandColor}</span>
                   {['#0284c7', '#1d4ed8', '#0f766e', '#b91c1c', '#7c3aed', '#0f172a'].map((preset) => (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => setBrandColor(preset)}
-                      className={`h-6 w-6 rounded-full border-2 ${
-                        brandColor === preset ? 'border-slate-900' : 'border-white shadow'
+                      aria-label={`Use ${preset}`}
+                      aria-pressed={brandColor === preset}
+                      className={`h-8 w-8 rounded-full border-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 ${
+                        brandColor === preset ? 'border-ink' : 'border-surface shadow'
                       }`}
                       style={{ backgroundColor: preset }}
                       title={preset}
                     />
                   ))}
-                </span>
-              </label>
+                </div>
+              </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 h-fit">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Company Logo</p>
-              <div className="aspect-square w-full rounded-lg border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+            <div className="rounded-xl border border-edge bg-surface-muted p-4 h-fit">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2">Company Logo</p>
+              <div className="aspect-square w-full rounded-lg border border-edge bg-white flex items-center justify-center overflow-hidden">
                 {(logoPreviewUrl || user.company_logo_url) ? (
                   <img
                     src={logoPreviewUrl || user.company_logo_url || ''}
@@ -218,13 +187,13 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
                     className="h-full w-full object-contain p-3"
                   />
                 ) : (
-                  <div className="text-center text-slate-400 text-xs px-4">
+                  <div className="text-center text-ink-muted text-xs px-4">
                     <Upload className="h-5 w-5 mx-auto mb-1" />
                     No logo uploaded
                   </div>
                 )}
               </div>
-              <label className="mt-3 text-sm text-slate-700 block">
+              <label className="mt-3 text-sm text-ink-secondary block">
                 <span className="inline-flex items-center gap-1.5 font-medium">
                   <Upload className="h-3.5 w-3.5" />
                   Upload logo
@@ -233,41 +202,31 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
                   type="file"
                   accept=".png,.jpg,.jpeg,.webp"
                   onChange={(e) => setLogo(e.target.files?.[0])}
-                  className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:rounded file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-slate-700"
+                  className="mt-1 block w-full text-xs text-ink-secondary file:mr-2 file:rounded-lg file:border file:border-edge-strong file:bg-surface file:px-3 file:py-2 file:text-ink-secondary"
                 />
               </label>
             </div>
           </div>
 
-          {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && <p role="alert" className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
           {saved && (
-            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            <p role="status" className="rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
               Profile saved.
             </p>
           )}
 
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-edge">
+            <Button variant="secondary" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || saved}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            </Button>
+            <Button type="submit" loading={saving} disabled={saved}>
               {saved ? 'Saved' : 'Save Changes'}
-            </button>
+            </Button>
           </div>
         </form>
 
         <AccountSecurityPanel />
-      </div>
-    </div>
+    </Dialog>
   );
 };
 

@@ -22,10 +22,12 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import NotFoundPage from './pages/NotFoundPage';
 import CookieConsent from './components/CookieConsent';
+import { ToastProvider } from './components/Toast';
 
 function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />
@@ -146,6 +148,7 @@ function App() {
         </Routes>
         <CookieConsent />
       </Router>
+      </ToastProvider>
     </AuthProvider>
   );
 }

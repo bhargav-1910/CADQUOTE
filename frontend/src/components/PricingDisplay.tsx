@@ -66,30 +66,30 @@ const ReceiptSection = ({
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-edge rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 bg-surface hover:bg-surface-muted transition-colors"
       >
-        <span className="flex items-center gap-2 font-medium text-gray-800 text-sm">
+        <span className="flex items-center gap-2 font-medium text-ink text-sm">
           {icon}
           {title}
         </span>
         <span className="flex items-center gap-2">
-          {amount !== undefined && <span className="font-semibold text-gray-900 text-sm">{amount}</span>}
+          {amount !== undefined && <span className="font-semibold text-ink text-sm">{amount}</span>}
           <ChevronDown
-            className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-ink-subtle transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </span>
       </button>
-      {open && <div className="px-3.5 py-3 border-t border-gray-100 bg-gray-50/50">{children}</div>}
+      {open && <div className="px-3.5 py-3 border-t border-edge bg-surface-muted/50">{children}</div>}
     </div>
   );
 };
 
 const DetailRow = ({ label, value, emphasize = false }: { label: ReactNode; value: ReactNode; emphasize?: boolean }) => (
-  <div className={`flex justify-between gap-3 text-sm ${emphasize ? 'text-gray-800 font-medium' : 'text-gray-600'}`}>
+  <div className={`flex justify-between gap-3 text-sm ${emphasize ? 'text-ink font-medium' : 'text-ink-secondary'}`}>
     <span>{label}</span>
     <span className="text-right">{value}</span>
   </div>
@@ -109,14 +109,14 @@ const PricingDisplay = ({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-surface rounded-xl border border-edge p-6">
         <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-gray-200 rounded w-1/3"></div>
-          <div className="h-20 bg-gray-200 rounded"></div>
+          <div className="h-6 bg-fill rounded-lg w-1/3"></div>
+          <div className="h-20 bg-fill rounded-lg"></div>
           <div className="space-y-2">
-            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-4 bg-fill rounded-lg w-2/3"></div>
+            <div className="h-4 bg-fill rounded-lg w-1/2"></div>
+            <div className="h-4 bg-fill rounded-lg w-3/4"></div>
           </div>
         </div>
       </div>
@@ -125,9 +125,9 @@ const PricingDisplay = ({
 
   if (!pricing) {
     return (
-      <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 text-center">
-        <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-        <p className="text-gray-500">Upload a file and select options to see pricing</p>
+      <div className="bg-surface-muted rounded-xl border border-edge p-6 text-center">
+        <DollarSign className="w-12 h-12 text-ink-subtle mx-auto mb-3" />
+        <p className="text-ink-muted">Upload a file and select options to see pricing</p>
       </div>
     );
   }
@@ -214,13 +214,13 @@ const PricingDisplay = ({
           step={options?.step ?? '0.01'}
           value={editDraft}
           onChange={(e) => setEditDraft(e.target.value)}
-          className={`${options?.inputWidth ?? 'w-24'} px-1.5 py-0.5 border border-gray-300 rounded text-xs`}
+          className={`${options?.inputWidth ?? 'w-24'} px-1.5 py-0.5 border border-edge-strong rounded-lg text-xs`}
           autoFocus
         />
-        <button type="button" onClick={() => commitEdit(field)} className="text-green-700 hover:text-green-800">
+        <button type="button" onClick={() => commitEdit(field)} className="text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-300">
           <Check className="w-3.5 h-3.5" />
         </button>
-        <button type="button" onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+        <button type="button" onClick={cancelEdit} className="text-ink-muted hover:text-ink-secondary">
           <X className="w-3.5 h-3.5" />
         </button>
       </span>
@@ -231,7 +231,7 @@ const PricingDisplay = ({
           <button
             type="button"
             onClick={() => beginEdit(field, value)}
-            className="text-primary-600 hover:text-primary-700"
+            className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
           >
             <PencilLine className="w-3.5 h-3.5" />
           </button>
@@ -241,7 +241,7 @@ const PricingDisplay = ({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+    <div className="bg-surface rounded-xl border border-edge overflow-hidden shadow-sm">
       {/* Header with total */}
       <div className="bg-gradient-to-br from-primary-600 to-primary-700 text-white p-6">
         <div className="flex justify-between items-start mb-4">
@@ -273,7 +273,7 @@ const PricingDisplay = ({
                   step="0.5"
                   value={editDraft}
                   onChange={(e) => setEditDraft(e.target.value)}
-                  className="w-16 px-1.5 py-0.5 rounded text-xs text-gray-900"
+                  className="w-16 px-1.5 py-0.5 rounded-lg text-xs text-ink"
                   autoFocus
                 />
                 <span>days lead time</span>
@@ -319,36 +319,36 @@ const PricingDisplay = ({
               { label: 'Surface Finish', sub: pricing.surface_finish.name, value: breakdown.finish_cost },
               { label: 'Inspection', sub: pricing.inspection_level.name, value: breakdown.inspection_cost },
             ].map(({ label, sub, value }) => (
-              <div key={label} className="flex justify-between items-baseline py-1.5 border-b border-dashed border-gray-200">
+              <div key={label} className="flex justify-between items-baseline py-1.5 border-b border-dashed border-edge">
                 <div>
-                  <span className="text-sm font-medium text-gray-700">{label}</span>
-                  {sub && <span className="ml-2 text-xs text-gray-400">{sub}</span>}
+                  <span className="text-sm font-medium text-ink-secondary">{label}</span>
+                  {sub && <span className="ml-2 text-xs text-ink-subtle">{sub}</span>}
                 </div>
-                <span className="text-sm font-medium text-gray-900">{formatCurrency(value)}</span>
+                <span className="text-sm font-medium text-ink">{formatCurrency(value)}</span>
               </div>
             ))}
-            <div className="flex justify-between items-baseline py-1.5 border-b border-dashed border-gray-200">
-              <span className="text-sm text-gray-500">Subtotal (per unit)</span>
-              <span className="text-sm text-gray-500">{formatCurrency(breakdown.subtotal)}</span>
+            <div className="flex justify-between items-baseline py-1.5 border-b border-dashed border-edge">
+              <span className="text-sm text-ink-muted">Subtotal (per unit)</span>
+              <span className="text-sm text-ink-muted">{formatCurrency(breakdown.subtotal)}</span>
             </div>
             <div className="flex justify-between items-baseline py-1.5">
-              <span className="text-sm text-amber-700 inline-flex items-center gap-1.5">
+              <span className="text-sm text-amber-700 dark:text-amber-300 inline-flex items-center gap-1.5">
                 Margin &amp; marketplace
                 {editableValue('vendor_margin_pct', effectiveVendorMarginPct, {
                   step: '0.5',
                   inputWidth: 'w-16',
                   format: (v) => `${v.toFixed(1)}%`,
                 })}
-                <span className="text-gray-400">
+                <span className="text-ink-subtle">
                   (effective {((breakdown.margin_factor - 1) * 100).toFixed(0)}%)
                 </span>
               </span>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-ink-muted">
                 {formatCurrency(breakdown.unit_price - breakdown.subtotal)}
               </span>
             </div>
             {canEdit && (
-              <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+              <p className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-2 py-1.5 mt-1">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
                 Default margin runs high — lower the vendor margin above for a more competitive quote.
               </p>
@@ -359,12 +359,12 @@ const PricingDisplay = ({
         {/* Quantity breaks */}
         {quantityBreaks.length > 1 && (
           <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-gray-400" />
+            <h3 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-ink-subtle" />
               Price by Quantity
             </h3>
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <div className="grid grid-cols-4 bg-gray-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            <div className="border border-edge rounded-lg overflow-hidden">
+              <div className="grid grid-cols-4 bg-surface-muted px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 <span>Qty</span>
                 <span className="text-right">Unit</span>
                 <span className="text-right">Total</span>
@@ -373,20 +373,20 @@ const PricingDisplay = ({
               {quantityBreaks.map((qb) => (
                 <div
                   key={qb.quantity}
-                  className={`grid grid-cols-4 px-3 py-1.5 text-sm border-t border-gray-100 ${
-                    qb.is_selected ? 'bg-primary-50 font-semibold text-primary-900' : 'text-gray-700'
+                  className={`grid grid-cols-4 px-3 py-1.5 text-sm border-t border-edge ${
+                    qb.is_selected ? 'bg-primary-50 dark:bg-primary-500/10 font-semibold text-primary-900 dark:text-primary-300' : 'text-ink-secondary'
                   }`}
                 >
                   <span>{qb.quantity}{qb.is_selected ? ' •' : ''}</span>
                   <span className="text-right">{formatCurrency(qb.unit_price)}</span>
                   <span className="text-right">{formatCurrency(qb.total_price)}</span>
-                  <span className={`text-right ${qb.savings_pct_vs_single > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  <span className={`text-right ${qb.savings_pct_vs_single > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink-subtle'}`}>
                     {qb.savings_pct_vs_single > 0 ? `-${qb.savings_pct_vs_single}%` : '—'}
                   </span>
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1.5">
+            <p className="text-[11px] text-ink-subtle mt-1.5">
               Setup, programming and tooling amortize across larger batches.
             </p>
           </div>
@@ -394,12 +394,12 @@ const PricingDisplay = ({
 
         {/* Collapsible cost breakup */}
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Cost Breakup</h3>
+          <h3 className="text-sm font-semibold text-ink mb-2">Cost Breakup</h3>
           <div className="space-y-2">
             <ReceiptSection
               title="Raw Material"
               amount={formatCurrency(breakdown.material_cost)}
-              icon={<Package className="w-4 h-4 text-gray-400" />}
+              icon={<Package className="w-4 h-4 text-ink-subtle" />}
             >
               <div className="space-y-1.5">
                 <DetailRow
@@ -417,13 +417,13 @@ const PricingDisplay = ({
                 />
                 <DetailRow
                   label={
-                    <span className="inline-flex items-center gap-2 text-amber-700">
+                    <span className="inline-flex items-center gap-2 text-amber-700 dark:text-amber-300">
                       Scrap Saving ({includeScrapSaving ? 'included' : 'excluded'})
                       {canEdit && (
                         <button
                           type="button"
                           onClick={() => onPricingOverridesChange?.({ include_scrap_saving: !includeScrapSaving })}
-                          className="text-[11px] px-1.5 py-0.5 border border-amber-300 rounded text-amber-800 hover:bg-amber-100"
+                          className="text-[11px] px-1.5 py-0.5 border border-amber-300 dark:border-amber-500/30 rounded-lg text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20"
                         >
                           Toggle
                         </button>
@@ -431,7 +431,7 @@ const PricingDisplay = ({
                     </span>
                   }
                   value={
-                    <span className="text-amber-700 font-medium">
+                    <span className="text-amber-700 dark:text-amber-300 font-medium">
                       (-) {formatCurrency(Number(rawMaterial.scrap_saving_cost ?? material.scrap_saving_cost ?? 0))}
                     </span>
                   }
@@ -442,7 +442,7 @@ const PricingDisplay = ({
                 />
                 <DetailRow label="Scrap Rate per Kg" value={editableValue('scrap_cost_per_kg', effectiveScrapRate)} />
                 {Boolean(material.stock_size_capped) && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+                  <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-2 py-1.5 mt-1">
                     This part's shape (long/thin or mostly hollow) doesn't fit the standard billet
                     stock model well — the stock estimate is capped and worth a manual check before
                     quoting.
@@ -454,7 +454,7 @@ const PricingDisplay = ({
             <ReceiptSection
               title="Machining"
               amount={formatCurrency(Number(machining.machining_cost_per_part ?? 0))}
-              icon={<Factory className="w-4 h-4 text-gray-400" />}
+              icon={<Factory className="w-4 h-4 text-ink-subtle" />}
             >
               <div className="space-y-1.5">
                 <DetailRow
@@ -510,7 +510,7 @@ const PricingDisplay = ({
                   Number(nre.nre_cost_per_part ?? 0) +
                   Number(warp.stress_relief_per_part ?? 0),
               )}
-              icon={<Info className="w-4 h-4 text-gray-400" />}
+              icon={<Info className="w-4 h-4 text-ink-subtle" />}
             >
               <div className="space-y-1.5">
                 <DetailRow
@@ -556,7 +556,7 @@ const PricingDisplay = ({
             <ReceiptSection
               title="Quality & Inspection"
               amount={formatCurrency(Number(quality.inspection_cost_per_part ?? 0))}
-              icon={<ScanSearch className="w-4 h-4 text-gray-400" />}
+              icon={<ScanSearch className="w-4 h-4 text-ink-subtle" />}
             >
               <div className="space-y-1.5">
                 <DetailRow label="Inspection Level" value={String(quality.inspection_level ?? pricing.inspection_level.name)} />
@@ -589,7 +589,7 @@ const PricingDisplay = ({
                   />
                 )}
                 {quality.is_first_article_amortized && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+                  <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-2 py-1.5 mt-1">
                     First article inspection — one article is fully inspected, so this cost is
                     spread across all {Number(quality.amortized_batch_size ?? pricing.quantity)} unit
                     {Number(quality.amortized_batch_size ?? pricing.quantity) > 1 ? 's' : ''} instead of
@@ -603,30 +603,30 @@ const PricingDisplay = ({
       </div>
 
       {/* Part info */}
-      <div className="border-t border-gray-100 p-5 bg-gray-50">
-        <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 text-sm">
-          <Info className="w-4 h-4 text-gray-400" />
+      <div className="border-t border-edge p-5 bg-surface-muted">
+        <h3 className="font-semibold text-ink mb-3 flex items-center gap-2 text-sm">
+          <Info className="w-4 h-4 text-ink-subtle" />
           Part Information
         </h3>
 
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            <p className="text-gray-500 text-xs">Dimensions (X×Y×Z)</p>
-            <p className="font-medium text-gray-900">
+            <p className="text-ink-muted text-xs">Dimensions (X×Y×Z)</p>
+            <p className="font-medium text-ink">
               {formatNumber(pricing.bounding_box.x, 1)} × {formatNumber(pricing.bounding_box.y, 1)} × {formatNumber(pricing.bounding_box.z, 1)} cm
             </p>
           </div>
           <div>
-            <p className="text-gray-500 text-xs">Volume</p>
-            <p className="font-medium text-gray-900">{formatNumber(pricing.volume_cm3)} cm³</p>
+            <p className="text-ink-muted text-xs">Volume</p>
+            <p className="font-medium text-ink">{formatNumber(pricing.volume_cm3)} cm³</p>
           </div>
           <div>
-            <p className="text-gray-500 text-xs">Estimated Weight</p>
-            <p className="font-medium text-gray-900">{formatNumber(pricing.weight_kg, 3)} kg</p>
+            <p className="text-ink-muted text-xs">Estimated Weight</p>
+            <p className="font-medium text-ink">{formatNumber(pricing.weight_kg, 3)} kg</p>
           </div>
           <div>
-            <p className="text-gray-500 text-xs">Material</p>
-            <p className="font-medium text-gray-900">{pricing.material.name}</p>
+            <p className="text-ink-muted text-xs">Material</p>
+            <p className="font-medium text-ink">{pricing.material.name}</p>
           </div>
         </div>
       </div>

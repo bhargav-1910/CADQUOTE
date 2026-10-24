@@ -40,14 +40,14 @@ const PartThumbnail = ({ fileId, className = 'w-9 h-9' }: PartThumbnailProps) =>
 
   if (!url) {
     return (
-      <span className={`${className} rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0`}>
+      <span className={`${className} rounded-lg bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 flex items-center justify-center shrink-0`}>
         <Box className="w-4 h-4" />
       </span>
     );
   }
 
   return (
-    <span className={`${className} rounded-lg bg-white border border-gray-200 overflow-hidden flex items-center justify-center shrink-0`}>
+    <span className={`${className} rounded-lg bg-surface border border-edge overflow-hidden flex items-center justify-center shrink-0`}>
       <img src={url} alt="" className="w-full h-full object-contain" />
     </span>
   );

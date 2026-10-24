@@ -1,80 +1,152 @@
-/* Fonts are loaded non-blocking from index.html (preconnect + async link). */
+/* Fonts are loaded non-blocking from index.html (preconnect + display=swap). */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Semantic tokens (RGB triplets; see tailwind.config.js). Light by default;
+   any `.dark` element — <html> in dark mode, or an always-dark region such
+   as the landing hero — re-scopes them to the dark values. */
+/* Light values follow Apple's grouped-background model: a clearly grey
+   canvas so white cards read as raised, inset panels one visible step
+   darker than their card, and separators that survive on both. */
 :root {
-  font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  --fq-canvas: 229 233 239;
+  --fq-surface: 255 255 255;
+  --fq-surface-muted: 243 245 248;
+  --fq-surface-raised: 234 238 243;
+  --fq-fill: 219 225 233;
+  --fq-edge: 213 219 228;
+  --fq-edge-strong: 184 193 206;
+  --fq-ink: 15 23 42;
+  --fq-ink-secondary: 61 74 94;
+  --fq-ink-muted: 95 110 133;
+  --fq-ink-subtle: 122 137 158;
+  --fq-grid: 15 23 42;
   color-scheme: light;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  /* Tabular figures app-wide: prices and quantities align in columns and
-     don't jitter when values change (IBM Plex Sans ships the tnum feature). */
-  font-variant-numeric: tabular-nums;
-
-  /* Semantic surface/ink tokens — single source of truth for both themes.
-     New components should use bg-surface / text-ink / border-edge utilities;
-     the .dark remap layer below derives from the same variables. */
-  --fq-surface: #ffffff;
-  --fq-surface-muted: #f8fafc;
-  --fq-surface-raised: #f1f5f9;
-  --fq-border: #e2e8f0;
-  --fq-ink: #0f172a;
-  --fq-ink-secondary: #475569;
-  --fq-ink-muted: #64748b;
 }
 
 .dark {
-  /* Near-black neutral surfaces (not navy) — depth comes from subtle
-     lightness steps, color only from the semantic accents. */
-  --fq-surface: #101318;
-  --fq-surface-muted: #0a0c10;
-  --fq-surface-raised: #181c23;
-  --fq-border: #262b34;
-  --fq-ink: #f1f5f9;
-  --fq-ink-secondary: #a6b0bd;
-  --fq-ink-muted: #8b95a3;
+  --fq-canvas: 10 10 12;
+  --fq-surface: 17 18 22;
+  --fq-surface-muted: 13 14 17;
+  --fq-surface-raised: 24 26 31;
+  --fq-fill: 35 38 46;
+  --fq-edge: 38 41 50;
+  --fq-edge-strong: 52 56 67;
+  --fq-ink: 241 245 249;
+  --fq-ink-secondary: 180 190 203;
+  --fq-ink-muted: 154 164 178;
+  --fq-ink-subtle: 124 135 150;
+  --fq-grid: 143 174 245;
+  color-scheme: dark;
+  color: rgb(var(--fq-ink));
 }
 
-body {
-  @apply text-slate-900 min-h-screen;
-  /* Flat technical surface with a faint blueprint grid — echoes the landing
-     page's machine-shop language instead of decorative gradient blobs. */
-  background-color: #eef1f5;
-  background-image:
-    linear-gradient(to right, rgba(15, 23, 42, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
-  background-size: 36px 36px;
+@layer base {
+  :root {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Tabular figures app-wide: prices and quantities align in columns and
+       don't jitter when values change. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  body {
+    @apply min-h-screen text-ink;
+    /* Flat technical surface with a faint blueprint grid. */
+    background-color: rgb(var(--fq-canvas));
+    background-image:
+      linear-gradient(to right, rgb(var(--fq-grid) / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--fq-grid) / 0.04) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  /* Titles are semibold by default (Plex Sans carries hierarchy by weight);
+     a font-* class on the heading still wins. */
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Fields without an explicit background still follow the theme. */
+  input,
+  select,
+  textarea {
+    background-color: rgb(var(--fq-surface));
+    color: rgb(var(--fq-ink));
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--fq-ink-subtle));
+  }
 }
 
-/* Custom scrollbar */
+/* iOS Safari zooms the page when a focused field is under 16px. On touch
+   screens every text field gets 16px; the :not() chain outranks Tailwind's
+   single-class text-sm/text-xs without !important. */
+@media (pointer: coarse) {
+  :is(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='range']) {
+    font-size: 16px;
+  }
+}
+
+/* A modal <dialog> doesn't lock page scroll on its own. */
+html:has(dialog[open]) {
+  overflow: hidden;
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  background: rgb(var(--fq-surface-raised));
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded;
+  background: rgb(var(--fq-edge-strong));
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  background: rgb(var(--fq-ink-subtle));
 }
 
-/* Animation utilities */
+/* Light mode: bordered white cards get a hairline lift off the grey canvas.
+   :where() keeps this at zero specificity, so any shadow-* class wins. */
+:where(:root:not(.dark) .bg-surface.border, :root:not(.dark) .bg-surface.border-edge) {
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.05), 0 1px 3px rgb(15 23 42 / 0.04);
+}
+
+/* Shadows read as smudges on dark surfaces; deepen them instead. */
+.dark .shadow-sm,
+.dark .shadow,
+.dark .shadow-lg,
+.dark .shadow-xl,
+.dark .shadow-2xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.55);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+
+/* ------------------------------------------------------------------------
+   Motion — one rhythm: 200ms standard, 150ms exits, ease-out curve.
+   ------------------------------------------------------------------------ */
+:root {
+  --fq-ease: cubic-bezier(0.2, 0, 0, 1);
+  --fq-duration: 200ms;
+}
+
 @keyframes spin-slow {
-  from {
-    transform: rotate(0deg);
-  }
   to {
     transform: rotate(360deg);
   }
@@ -84,177 +156,96 @@ body {
   animation: spin-slow 20s linear infinite;
 }
 
-/* Card hover effect */
-.card-hover {
-  @apply transition-all duration-200;
-}
-
-.card-hover:hover {
-  @apply shadow-lg -translate-y-0.5;
-}
-
 @keyframes float-soft {
-  0% {
-    transform: translateY(0px);
-  }
   50% {
     transform: translateY(-6px);
   }
-  100% {
-    transform: translateY(0px);
-  }
-}
-
-@keyframes fade-up {
-  0% {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.surface-panel {
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(10px);
-}
-
-.surface-strong {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
 }
 
 .animate-float-soft {
   animation: float-soft 7s ease-in-out infinite;
 }
 
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
 .animate-fade-up {
-  animation: fade-up 0.6s ease-out both;
+  animation: fade-up 400ms var(--fq-ease) both;
 }
 
-/* ============================================================
-   Dark mode (class strategy) — utility remap layer.
-   Keeps every screen usable in dark without per-component edits.
-   ============================================================ */
-.dark {
-  color-scheme: dark;
+/* Cards: subtle press feedback instead of a hover lift (works on touch). */
+.card-hover {
+  transition: box-shadow var(--fq-duration) var(--fq-ease), transform var(--fq-duration) var(--fq-ease);
 }
 
-.dark body {
-  color: #e2e8f0;
-  background-color: #06080b;
-  background-image:
-    linear-gradient(to right, rgba(148, 163, 184, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
-  background-size: 36px 36px;
+.card-hover:hover {
+  @apply shadow-lg;
 }
 
-.dark .surface-panel { background: rgba(11, 13, 17, 0.85); }
-.dark .surface-strong { background: rgba(15, 18, 23, 0.94); }
-
-.dark .bg-white { background-color: var(--fq-surface) !important; }
-.dark .bg-white\/80, .dark .bg-white\/90, .dark .bg-white\/95 { background-color: rgba(17, 20, 26, 0.92) !important; }
-.dark .bg-gray-50, .dark .bg-slate-50 { background-color: var(--fq-surface-muted) !important; }
-.dark .bg-gray-50\/50, .dark .bg-gray-50\/60 { background-color: rgba(10, 12, 16, 0.6) !important; }
-.dark .bg-gray-100, .dark .bg-slate-100 { background-color: var(--fq-surface-raised) !important; }
-.dark .bg-gray-100\/70 { background-color: rgba(24, 28, 35, 0.7) !important; }
-.dark .bg-gray-200, .dark .bg-slate-200 { background-color: #232833 !important; }
-.dark .bg-primary-50 { background-color: rgba(14, 165, 233, 0.13) !important; }
-.dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.13) !important; }
-.dark .bg-amber-50, .dark .bg-yellow-50 { background-color: rgba(245, 158, 11, 0.12) !important; }
-.dark .bg-amber-50\/60 { background-color: rgba(245, 158, 11, 0.1) !important; }
-.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.12) !important; }
-.dark .bg-orange-50\/80 { background-color: rgba(249, 115, 22, 0.1) !important; }
-.dark .bg-primary-50\/40, .dark .bg-primary-50\/60 { background-color: rgba(14, 165, 233, 0.1) !important; }
-.dark .bg-green-50, .dark .bg-emerald-50, .dark .bg-emerald-50\/60 { background-color: rgba(16, 185, 129, 0.12) !important; }
-.dark .bg-red-50, .dark .bg-red-50\/50 { background-color: rgba(239, 68, 68, 0.13) !important; }
-.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.13) !important; }
-.dark .bg-purple-50 { background-color: rgba(168, 85, 247, 0.13) !important; }
-.dark .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.13) !important; }
-.dark .bg-primary-100 { background-color: rgba(14, 165, 233, 0.22) !important; }
-.dark .bg-green-100, .dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.2) !important; }
-.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
-.dark .bg-yellow-100, .dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.18) !important; }
-.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.2) !important; }
-
-.dark .text-gray-900, .dark .text-slate-900 { color: var(--fq-ink) !important; }
-.dark .text-gray-800, .dark .text-slate-800 { color: #e2e8f0 !important; }
-.dark .text-gray-700, .dark .text-slate-700 { color: #cbd5e1 !important; }
-.dark .text-gray-600, .dark .text-slate-600 { color: var(--fq-ink-secondary) !important; }
-.dark .text-gray-500, .dark .text-slate-500 { color: var(--fq-ink-muted) !important; }
-.dark .text-gray-400, .dark .text-slate-400 { color: #7e90a8 !important; }
-.dark .text-primary-900 { color: #bae6fd !important; }
-.dark .text-primary-700, .dark .text-primary-800 { color: #7dd3fc !important; }
-.dark .text-green-700, .dark .text-green-800, .dark .text-green-900,
-.dark .text-emerald-700, .dark .text-emerald-800, .dark .text-emerald-900 { color: #6ee7b7 !important; }
-.dark .text-amber-700, .dark .text-amber-800, .dark .text-amber-900 { color: #fcd34d !important; }
-.dark .text-red-600, .dark .text-red-700, .dark .text-red-800, .dark .text-red-900 { color: #fca5a5 !important; }
-.dark .text-blue-600, .dark .text-blue-700, .dark .text-blue-800, .dark .text-blue-900 { color: #93c5fd !important; }
-.dark .text-primary-600 { color: #7dd3fc !important; }
-.dark .text-orange-800 { color: #fdba74 !important; }
-.dark .text-sky-600, .dark .text-sky-700, .dark .text-sky-800 { color: #7dd3fc !important; }
-.dark .text-sky-900 { color: #bae6fd !important; }
-.dark .text-green-600, .dark .text-emerald-600 { color: #34d399 !important; }
-.dark .text-amber-600 { color: #fbbf24 !important; }
-.dark .text-orange-600 { color: #fb923c !important; }
-.dark .text-orange-900 { color: #fed7aa !important; }
-.dark .text-yellow-700, .dark .text-yellow-800, .dark .text-yellow-900 { color: #fde68a !important; }
-.dark .text-purple-600, .dark .text-purple-900 { color: #d8b4fe !important; }
-.dark .text-cyan-700 { color: #67e8f9 !important; }
-.dark .text-orange-700 { color: #fdba74 !important; }
-
-.dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300,
-.dark .border-slate-200, .dark .border-slate-300, .dark .border-slate-200\/70 { border-color: var(--fq-border) !important; }
-.dark .border-primary-200, .dark .border-primary-300 { border-color: rgba(14, 165, 233, 0.35) !important; }
-.dark .border-green-200, .dark .border-emerald-200 { border-color: rgba(16, 185, 129, 0.3) !important; }
-.dark .border-amber-200, .dark .border-amber-300 { border-color: rgba(245, 158, 11, 0.3) !important; }
-.dark .border-red-200 { border-color: rgba(239, 68, 68, 0.32) !important; }
-.dark .border-blue-200 { border-color: rgba(59, 130, 246, 0.3) !important; }
-.dark .border-sky-200 { border-color: rgba(14, 165, 233, 0.3) !important; }
-.dark .border-purple-200 { border-color: rgba(168, 85, 247, 0.3) !important; }
-.dark .border-cyan-200 { border-color: rgba(6, 182, 212, 0.3) !important; }
-
-.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
-.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #232833 !important; }
-
-.dark input, .dark select, .dark textarea {
-  background-color: #0a0c10;
-  color: #e2e8f0;
-  border-color: #262b34;
+.card-hover:active {
+  transform: scale(0.99);
 }
-.dark input::placeholder, .dark textarea::placeholder { color: #626c7a; }
 
-.dark .hover\:bg-gray-50:hover, .dark .hover\:bg-slate-50:hover { background-color: #171b22 !important; }
-.dark .hover\:bg-white:hover { background-color: #1a1e26 !important; }
-.dark .hover\:bg-gray-100:hover, .dark .hover\:bg-slate-100:hover { background-color: #20242d !important; }
-.dark .hover\:bg-primary-50:hover { background-color: rgba(14, 165, 233, 0.18) !important; }
-.dark .hover\:bg-primary-100:hover { background-color: rgba(14, 165, 233, 0.25) !important; }
-.dark .hover\:bg-amber-100:hover { background-color: rgba(245, 158, 11, 0.22) !important; }
+/* Dialogs scale+fade in from their centre. */
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
 
-.dark ::-webkit-scrollbar-track { background: #0a0c10; }
-.dark ::-webkit-scrollbar-thumb { background: #2e343f; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #3d4550; }
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
 
-.dark .shadow-sm, .dark .shadow, .dark .shadow-lg, .dark .shadow-xl, .dark .shadow-2xl {
-  --tw-shadow-color: rgba(0, 0, 0, 0.55);
-  --tw-shadow: var(--tw-shadow-colored);
+.fq-dialog[open] {
+  animation: dialog-in var(--fq-duration) var(--fq-ease);
+}
+
+.fq-dialog[open]::backdrop {
+  animation: backdrop-in var(--fq-duration) var(--fq-ease);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.fq-toast {
+  animation: toast-in var(--fq-duration) var(--fq-ease);
+}
+
+/* Translucent bars (mobile header / tab bar) — blur signals "floats above". */
+.surface-panel {
+  background: rgb(var(--fq-surface) / 0.8);
+  backdrop-filter: blur(12px);
+}
+
+.surface-strong {
+  background: rgb(var(--fq-surface) / 0.92);
+  backdrop-filter: blur(12px);
 }
 
 /* Decorative motion is disabled for users who ask for reduced motion;
    loading spinners (animate-spin/animate-pulse) stay, since they convey state. */
 @media (prefers-reduced-motion: reduce) {
   .animate-spin-slow,
-  .animate-float-soft {
+  .animate-float-soft,
+  .animate-fade-up,
+  .fq-dialog[open],
+  .fq-dialog[open]::backdrop,
+  .fq-toast {
     animation: none;
   }
-  .animate-fade-up {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
-  .card-hover:hover {
+  .card-hover:active {
     transform: none;
   }
 }

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { Quote } from '@/types';
 import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote, respondToQuote, recordQuoteActuals } from '@/services/api';
-import { StatusPill } from '@/components/ui';
+import { Button, Input, SkeletonPage, StatusPill, Textarea, buttonClasses } from '@/components/ui';
 
 interface CombinedFileLine {
   fileName: string;
@@ -235,23 +235,21 @@ const QuoteDetail = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
-      </div>
+      <SkeletonPage />
     );
   }
 
   if (loadError || !quote) {
     return (
       <div className="max-w-2xl mx-auto">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-4">
-          <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-6 flex items-start gap-4">
+          <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0" />
           <div>
-            <h2 className="text-lg font-semibold text-red-800">Error Loading Quote</h2>
-            <p className="text-red-600 mt-1">{loadError || 'Quote not found'}</p>
+            <h2 className="text-lg font-semibold text-red-800 dark:text-red-300">Error Loading Quote</h2>
+            <p className="text-red-600 dark:text-red-400 mt-1">{loadError || 'Quote not found'}</p>
             <Link
               to="/quotes"
-              className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 hover:text-red-800"
+              className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-300"
             >
               <ChevronRight className="w-4 h-4 rotate-180" />
               Back to My Quotes
@@ -308,45 +306,43 @@ const QuoteDetail = () => {
   return (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-gray-900 transition-colors">
+      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
+        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
           <Home className="w-3.5 h-3.5" />
           Home
         </Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <Link to="/quotes" className="hover:text-gray-900 transition-colors">My Quotes</Link>
+        <Link to="/quotes" className="hover:text-ink transition-colors">My Quotes</Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-gray-900 font-medium">{quote.quote_number}</span>
+        <span className="text-ink font-medium">{quote.quote_number}</span>
       </nav>
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-gray-900">{quote.quote_number}</h1>
+            <h1 className="text-2xl font-bold text-ink">{quote.quote_number}</h1>
             <StatusPill status={quote.status} />
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Created {formatDate(quote.created_at)}</p>
+          <p className="text-ink-muted text-sm mt-0.5">Created {formatDate(quote.created_at)}</p>
         </div>
         
         <div className="flex gap-3">
           <Link
             to={`/quote/${quote.id}/edit`}
-            className="flex items-center gap-2 px-4 py-2 border border-primary-200 text-primary-700 font-medium rounded-lg hover:bg-primary-50 transition-colors text-sm"
+            className="flex items-center gap-2 px-4 py-2 border border-primary-200 dark:border-primary-500/30 text-primary-700 dark:text-primary-300 font-medium rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors text-sm"
           >
             <Pencil className="w-4 h-4" />
             Edit in Configure
           </Link>
           <Link
-            to="/quotes"
-            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            to="/quotes" className={buttonClasses('secondary', 'md')}
           >
             All Quotes
           </Link>
-          <button
+          <Button
             onClick={shareUrl ? () => copyShareLink(shareUrl) : handleShareQuote}
             disabled={sharing}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 text-sm"
           >
             {sharing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -356,12 +352,12 @@ const QuoteDetail = () => {
               <Link2 className="w-4 h-4" />
             )}
             {shareCopied ? 'Link copied' : shareUrl ? 'Copy customer link' : 'Share with customer'}
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Lifecycle timeline */}
-      <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+      <div className="bg-surface rounded-xl border border-edge px-5 py-4">
         <div className="flex items-center">
           {lifecycleSteps.map((step, index) => (
             <div key={step.key} className={`flex items-center ${index < lifecycleSteps.length - 1 ? 'flex-1' : ''}`}>
@@ -369,10 +365,10 @@ const QuoteDetail = () => {
                 <span
                   className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
                     step.danger
-                      ? 'bg-red-50 border-red-400 text-red-600'
+                      ? 'bg-red-50 dark:bg-red-500/10 border-red-400 text-red-600 dark:text-red-400'
                       : step.done
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-600'
-                      : 'bg-gray-50 border-gray-300 text-gray-400'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-surface-muted border-edge-strong text-ink-subtle'
                   }`}
                 >
                   {step.danger ? (
@@ -384,14 +380,14 @@ const QuoteDetail = () => {
                   )}
                 </span>
                 <div className="hidden sm:block">
-                  <p className={`text-xs font-semibold ${step.danger ? 'text-red-700' : step.done ? 'text-gray-900' : 'text-gray-400'}`}>
+                  <p className={`text-xs font-semibold ${step.danger ? 'text-red-700 dark:text-red-300' : step.done ? 'text-ink' : 'text-ink-subtle'}`}>
                     {step.label}
                   </p>
-                  <p className="text-[10px] text-gray-400">{step.detail}</p>
+                  <p className="text-[10px] text-ink-subtle">{step.detail}</p>
                 </div>
               </div>
               {index < lifecycleSteps.length - 1 && (
-                <div className={`flex-1 h-px mx-3 ${step.done ? 'bg-emerald-300' : 'bg-gray-200'}`} />
+                <div className={`flex-1 h-px mx-3 ${step.done ? 'bg-emerald-300' : 'bg-fill'}`} />
               )}
             </div>
           ))}
@@ -400,12 +396,12 @@ const QuoteDetail = () => {
 
       {/* Validity warning + re-quote action */}
       {isExpired && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex items-start gap-3 flex-1">
-            <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-amber-800 font-medium">Quote Expired</p>
-              <p className="text-sm text-amber-600">
+              <p className="text-amber-800 dark:text-amber-300 font-medium">Quote Expired</p>
+              <p className="text-sm text-amber-600 dark:text-amber-400">
                 This quote expired on {formatDate(quote.valid_until)}. Material and machine rates may have moved — re-quote to get current pricing.
               </p>
             </div>
@@ -420,9 +416,9 @@ const QuoteDetail = () => {
       )}
 
       {actionError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">{actionError}</p>
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 dark:text-red-300">{actionError}</p>
         </div>
       )}
 
@@ -430,35 +426,35 @@ const QuoteDetail = () => {
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
           {/* Customer info */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <User className="w-5 h-5 text-gray-400" />
+          <div className="bg-surface rounded-xl border border-edge p-6">
+            <h2 className="text-lg font-semibold text-ink mb-4 flex items-center gap-2">
+              <User className="w-5 h-5 text-ink-subtle" />
               Customer Information
             </h2>
             
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-gray-500">Name</p>
+                <p className="text-sm text-ink-muted">Name</p>
                 {quote.customer_id ? (
                   <Link
                     to={`/customers/${quote.customer_id}`}
-                    className="font-medium text-primary-700 hover:text-primary-800 hover:underline"
+                    className="font-medium text-primary-700 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-300 hover:underline"
                   >
                     {quote.customer_name || 'View customer'}
                   </Link>
                 ) : (
-                  <p className="font-medium text-gray-900">{quote.customer_name || 'Not specified'}</p>
+                  <p className="font-medium text-ink">{quote.customer_name || 'Not specified'}</p>
                 )}
               </div>
               <div>
-                <p className="text-sm text-gray-500">Email</p>
-                <p className="font-medium text-gray-900">
+                <p className="text-sm text-ink-muted">Email</p>
+                <p className="font-medium text-ink">
                   {quote.customer_email || 'Not specified'}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Company</p>
-                <p className="font-medium text-gray-900">
+                <p className="text-sm text-ink-muted">Company</p>
+                <p className="font-medium text-ink">
                   {quote.customer_company || 'Not specified'}
                 </p>
               </div>
@@ -466,9 +462,9 @@ const QuoteDetail = () => {
           </div>
 
           {/* Part details */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Package className="w-5 h-5 text-gray-400" />
+          <div className="bg-surface rounded-xl border border-edge p-6">
+            <h2 className="text-lg font-semibold text-ink mb-4 flex items-center gap-2">
+              <Package className="w-5 h-5 text-ink-subtle" />
               {combinedQuote.files.length > 0 ? 'Uploaded Files' : 'Part Details'}
             </h2>
             
@@ -476,22 +472,22 @@ const QuoteDetail = () => {
               {combinedQuote.files.length > 0 ? (
                 <div className="space-y-2">
                   {combinedQuote.files.map((file) => (
-                    <div key={`${file.fileName}-${file.quantity}-${file.totalPrice}`} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between gap-3">
+                    <div key={`${file.fileName}-${file.quantity}-${file.totalPrice}`} className="bg-surface-muted rounded-lg p-3 flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-900 truncate">{file.fileName}</p>
-                        <p className="text-xs text-gray-500">Qty {file.quantity}</p>
+                        <p className="font-medium text-ink truncate">{file.fileName}</p>
+                        <p className="text-xs text-ink-muted">Qty {file.quantity}</p>
                       </div>
-                      <p className="text-sm font-semibold text-gray-900">{formatCurrency(file.totalPrice)}</p>
+                      <p className="text-sm font-semibold text-ink">{formatCurrency(file.totalPrice)}</p>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm text-gray-500">File</p>
-                  <p className="font-medium text-gray-900">
+                <div className="bg-surface-muted rounded-lg p-4">
+                  <p className="text-sm text-ink-muted">File</p>
+                  <p className="font-medium text-ink">
                     {quote.cad_file.original_filename}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-ink-muted mt-1">
                     {quote.cad_file.file_format.toUpperCase()} • 
                     {(quote.cad_file.file_size / 1024).toFixed(1)} KB
                   </p>
@@ -500,88 +496,88 @@ const QuoteDetail = () => {
 
               <div className="grid sm:grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm text-gray-500">Material</p>
-                  <p className="font-medium text-gray-900">{quote.material.name}</p>
-                  <p className="text-xs text-gray-500">{quote.material.category}</p>
+                  <p className="text-sm text-ink-muted">Material</p>
+                  <p className="font-medium text-ink">{quote.material.name}</p>
+                  <p className="text-xs text-ink-muted">{quote.material.category}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Surface Finish</p>
-                  <p className="font-medium text-gray-900">{quote.surface_finish.name}</p>
+                  <p className="text-sm text-ink-muted">Surface Finish</p>
+                  <p className="font-medium text-ink">{quote.surface_finish.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Inspection</p>
-                  <p className="font-medium text-gray-900">{quote.inspection_level.name}</p>
+                  <p className="text-sm text-ink-muted">Inspection</p>
+                  <p className="font-medium text-ink">{quote.inspection_level.name}</p>
                 </div>
               </div>
 
               <div>
-                <p className="text-sm text-gray-500">Quantity</p>
-                <p className="font-medium text-gray-900">{quote.quantity} units</p>
+                <p className="text-sm text-ink-muted">Quantity</p>
+                <p className="font-medium text-ink">{quote.quantity} units</p>
               </div>
             </div>
           </div>
 
           {/* Price breakdown */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <div className="bg-surface rounded-xl border border-edge p-6">
+            <h2 className="text-lg font-semibold text-ink mb-4">
               Price Breakdown
             </h2>
             
             <div className="space-y-3">
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Material Cost</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="text-ink-secondary">Material Cost</span>
+                <span className="font-medium text-ink">
                   {formatCurrency(quote.material_cost)}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Machining Cost</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="text-ink-secondary">Machining Cost</span>
+                <span className="font-medium text-ink">
                   {formatCurrency(quote.machining_cost)}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Surface Finish</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="text-ink-secondary">Surface Finish</span>
+                <span className="font-medium text-ink">
                   {formatCurrency(quote.finish_cost)}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Inspection</span>
-                <span className="font-medium text-gray-900">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="text-ink-secondary">Inspection</span>
+                <span className="font-medium text-ink">
                   {formatCurrency(quote.inspection_cost)}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-500">Subtotal (per unit)</span>
-                <span className="text-gray-500">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="text-ink-muted">Subtotal (per unit)</span>
+                <span className="text-ink-muted">
                   {formatCurrency(quote.subtotal)}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-500">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="text-ink-muted">
                   Margin ({((quote.margin_factor - 1) * 100).toFixed(0)}%)
                 </span>
-                <span className="text-gray-500">
+                <span className="text-ink-muted">
                   {formatCurrency(quote.unit_price - Number(quote.subtotal))}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="font-medium text-gray-700">Unit Price</span>
-                <span className="font-semibold text-gray-900">
+              <div className="flex justify-between py-2 border-b border-edge">
+                <span className="font-medium text-ink-secondary">Unit Price</span>
+                <span className="font-semibold text-ink">
                   {formatCurrency(quote.unit_price)}
                 </span>
               </div>
               {quote.quantity > 1 && (
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="font-medium text-gray-700">
+                <div className="flex justify-between py-2 border-b border-edge">
+                  <span className="font-medium text-ink-secondary">
                     × {quote.quantity} units
                   </span>
                 </div>
               )}
-              <div className="flex justify-between py-3 bg-primary-50 -mx-6 px-6 rounded">
-                <span className="font-semibold text-primary-900 text-lg">Total</span>
-                <span className="font-bold text-primary-900 text-lg">
+              <div className="flex justify-between py-3 bg-primary-50 dark:bg-primary-500/10 -mx-6 px-6 rounded-lg">
+                <span className="font-semibold text-primary-900 dark:text-primary-300 text-lg">Total</span>
+                <span className="font-bold text-primary-900 dark:text-primary-300 text-lg">
                   {formatCurrency(quote.total_price)}
                 </span>
               </div>
@@ -590,20 +586,20 @@ const QuoteDetail = () => {
 
           {/* Notes */}
           {combinedQuote.cleanNotes && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Notes</h2>
-              <p className="text-gray-700 whitespace-pre-wrap">{combinedQuote.cleanNotes}</p>
+            <div className="bg-surface rounded-xl border border-edge p-6">
+              <h2 className="text-lg font-semibold text-ink mb-4">Notes</h2>
+              <p className="text-ink-secondary whitespace-pre-wrap">{combinedQuote.cleanNotes}</p>
             </div>
           )}
 
           {previewVisible && previewUrl && (
-            <div ref={previewSectionRef} className="bg-white rounded-xl border border-gray-200 p-4">
+            <div ref={previewSectionRef} className="bg-surface rounded-xl border border-edge p-4">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-gray-900">Quote Preview</h2>
+                <h2 className="text-lg font-semibold text-ink">Quote Preview</h2>
                 <button
                   type="button"
                   onClick={() => setPreviewVisible(false)}
-                  className="text-sm text-gray-600 hover:text-gray-900"
+                  className="text-sm text-ink-secondary hover:text-ink"
                 >
                   Hide Preview
                 </button>
@@ -611,25 +607,25 @@ const QuoteDetail = () => {
               <iframe
                 title="Quote PDF Preview"
                 src={previewUrl}
-                className="w-full h-[70vh] rounded-lg border border-gray-200"
+                className="w-full h-[70vh] rounded-lg border border-edge"
               />
             </div>
           )}
 
           <ActualCostingCard quote={quote} onSaved={setQuote} />
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">RFQ and Commercial Terms</h2>
+          <div className="bg-surface rounded-xl border border-edge p-6">
+            <h2 className="text-lg font-semibold text-ink mb-4">RFQ and Commercial Terms</h2>
             <div className="grid sm:grid-cols-2 gap-4 text-sm">
-              <div><p className="text-gray-500">RFQ Number</p><p className="font-medium text-gray-900">{quote.rfq_number || 'Not specified'}</p></div>
-              <div><p className="text-gray-500">RFQ Date</p><p className="font-medium text-gray-900">{quote.rfq_date ? formatDate(quote.rfq_date) : 'Not specified'}</p></div>
-              <div><p className="text-gray-500">Quote Due Date</p><p className="font-medium text-gray-900">{quote.quote_due_date ? formatDate(quote.quote_due_date) : 'Not specified'}</p></div>
-              <div><p className="text-gray-500">HSN Code</p><p className="font-medium text-gray-900">{quote.hsn_code || 'Not specified'}</p></div>
-              <div className="sm:col-span-2"><p className="text-gray-500">Tolerance Notes (Part-wise)</p><p className="font-medium text-gray-900 whitespace-pre-wrap">{quote.tolerance_notes || 'Not specified'}</p></div>
-              <div><p className="text-gray-500">Payment Terms</p><p className="font-medium text-gray-900">{quote.payment_terms || 'Not specified'}</p></div>
-              <div><p className="text-gray-500">Delivery</p><p className="font-medium text-gray-900">{quote.delivery || 'Not specified'}</p></div>
-              <div><p className="text-gray-500">GST</p><p className="font-medium text-gray-900">{quote.gst || 'Not specified'}</p></div>
-              <div><p className="text-gray-500">Price Validity</p><p className="font-medium text-gray-900">{quote.price_validity || 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">RFQ Number</p><p className="font-medium text-ink">{quote.rfq_number || 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">RFQ Date</p><p className="font-medium text-ink">{quote.rfq_date ? formatDate(quote.rfq_date) : 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">Quote Due Date</p><p className="font-medium text-ink">{quote.quote_due_date ? formatDate(quote.quote_due_date) : 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">HSN Code</p><p className="font-medium text-ink">{quote.hsn_code || 'Not specified'}</p></div>
+              <div className="sm:col-span-2"><p className="text-ink-muted">Tolerance Notes (Part-wise)</p><p className="font-medium text-ink whitespace-pre-wrap">{quote.tolerance_notes || 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">Payment Terms</p><p className="font-medium text-ink">{quote.payment_terms || 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">Delivery</p><p className="font-medium text-ink">{quote.delivery || 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">GST</p><p className="font-medium text-ink">{quote.gst || 'Not specified'}</p></div>
+              <div><p className="text-ink-muted">Price Validity</p><p className="font-medium text-ink">{quote.price_validity || 'Not specified'}</p></div>
             </div>
           </div>
         </div>
@@ -661,113 +657,111 @@ const QuoteDetail = () => {
 
           {/* Validity */}
           <div className={`rounded-xl p-6 ${
-            isExpired ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'
+            isExpired ? 'bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30' : 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30'
           }`}>
             <div className="flex items-center gap-2 mb-2">
               {isExpired ? (
-                <AlertCircle className="w-5 h-5 text-red-600" />
+                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
               ) : (
-                <CheckCircle className="w-5 h-5 text-green-600" />
+                <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               )}
-              <span className={`font-semibold ${isExpired ? 'text-red-800' : 'text-green-800'}`}>
+              <span className={`font-semibold ${isExpired ? 'text-red-800 dark:text-red-300' : 'text-emerald-800 dark:text-emerald-300'}`}>
                 {isExpired ? 'Expired' : 'Valid Quote'}
               </span>
             </div>
-            <p className={`text-sm ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
+            <p className={`text-sm ${isExpired ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
               {isExpired ? 'Expired on' : 'Valid until'} {formatDate(quote.valid_until)}
             </p>
           </div>
 
           {/* Customer link & response */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              <Link2 className="w-4 h-4 text-gray-400" />
+          <div className="bg-surface rounded-xl border border-edge p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-ink flex items-center gap-2">
+              <Link2 className="w-4 h-4 text-ink-subtle" />
               Customer Link
             </h2>
 
             {shareUrl ? (
               <>
                 <div className="flex items-center gap-2">
-                  <input
+                  <Input
                     readOnly
                     value={shareUrl}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700"
+                    onFocus={(e) => e.currentTarget.select()} className="flex-1 min-w-0 font-mono"
                     aria-label="Customer quote link"
                   />
                   <button
                     onClick={() => copyShareLink(shareUrl)}
                     title="Copy link"
-                    className="shrink-0 rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="shrink-0 rounded-lg border border-edge p-2 text-ink-secondary hover:bg-surface-muted transition-colors"
                   >
-                    {shareCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    {shareCopied ? <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-4 h-4" />}
                   </button>
                   <a
                     href={shareUrl}
                     target="_blank"
                     rel="noreferrer"
                     title="Open customer view"
-                    className="shrink-0 rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="shrink-0 rounded-lg border border-edge p-2 text-ink-secondary hover:bg-surface-muted transition-colors"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-ink-muted">
                   Anyone with this link can view the quote, download the PDF, and accept or decline it.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-ink-secondary">
                   Create a link your customer can open to view this quote and respond to it.
                 </p>
-                <button
+                <Button size="lg" className="w-full"
                   onClick={handleShareQuote}
                   disabled={sharing}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
                 >
                   {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
                   {sharing ? 'Creating link...' : 'Create customer link'}
-                </button>
+                </Button>
               </>
             )}
 
             {quote.status === 'accepted' ? (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3">
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-800">
+              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 p-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                   <CheckCircle className="w-4 h-4" />
                   Accepted by customer
                 </p>
                 {quote.responded_at && (
-                  <p className="text-xs text-emerald-700 mt-0.5">{formatDate(quote.responded_at)}</p>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">{formatDate(quote.responded_at)}</p>
                 )}
                 {quote.customer_response_note && (
-                  <p className="text-xs text-emerald-800 mt-2 whitespace-pre-wrap">
+                  <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-2 whitespace-pre-wrap">
                     “{quote.customer_response_note}”
                   </p>
                 )}
               </div>
             ) : quote.status === 'declined' ? (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-red-800">
+              <div className="rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 p-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-red-800 dark:text-red-300">
                   <XCircle className="w-4 h-4" />
                   Declined by customer
                 </p>
                 {quote.responded_at && (
-                  <p className="text-xs text-red-700 mt-0.5">{formatDate(quote.responded_at)}</p>
+                  <p className="text-xs text-red-700 dark:text-red-300 mt-0.5">{formatDate(quote.responded_at)}</p>
                 )}
                 {quote.customer_response_note && (
-                  <p className="text-xs text-red-800 mt-2 whitespace-pre-wrap">
+                  <p className="text-xs text-red-800 dark:text-red-300 mt-2 whitespace-pre-wrap">
                     “{quote.customer_response_note}”
                   </p>
                 )}
               </div>
             ) : (
-              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-2.5">
+              <div className="rounded-lg bg-surface-muted border border-edge p-3 space-y-2.5">
                 {shareUrl && (
                   <div>
-                    <p className="text-sm font-medium text-gray-700">Awaiting customer response</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-sm font-medium text-ink-secondary">Awaiting customer response</p>
+                    <p className="text-xs text-ink-muted mt-0.5">
                       Their decision will appear here once they respond.
                     </p>
                   </div>
@@ -775,15 +769,14 @@ const QuoteDetail = () => {
 
                 {marking ? (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-800">
+                    <p className="text-sm font-medium text-ink">
                       Mark this quote as {marking === 'accept' ? 'accepted' : 'declined'}?
                     </p>
-                    <textarea
+                    <Textarea
                       value={markNote}
                       onChange={(e) => setMarkNote(e.target.value)}
                       rows={2}
-                      placeholder="Optional note — e.g. “Confirmed on phone, PO to follow”"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="Optional note — e.g. “Confirmed on phone, PO to follow”" className="w-full"
                     />
                     <div className="flex gap-2">
                       <button
@@ -802,38 +795,36 @@ const QuoteDetail = () => {
                         )}
                         Confirm {marking === 'accept' ? 'accepted' : 'declined'}
                       </button>
-                      <button
+                      <Button variant="secondary"
                         onClick={() => {
                           setMarking(null);
                           setMarkNote('');
                         }}
                         disabled={markSaving}
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-ink-muted">
                       Sent the PDF yourself? Record the customer's decision here.
                     </p>
                     <div className="mt-2 flex gap-2">
                       <button
                         onClick={() => setMarking('accept')}
-                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
                       >
                         <CheckCircle className="w-4 h-4" />
                         Mark as accepted
                       </button>
-                      <button
+                      <Button variant="secondary"
                         onClick={() => setMarking('decline')}
-                        className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
                       >
                         <XCircle className="w-4 h-4" />
                         Declined
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -842,11 +833,11 @@ const QuoteDetail = () => {
           </div>
 
           {/* Actions */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+          <div className="bg-surface rounded-xl border border-edge p-6 space-y-3">
             <button
               onClick={handlePreviewQuote}
               disabled={previewLoading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-primary-300 text-primary-700 font-medium rounded-lg hover:bg-primary-50 transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-primary-300 dark:border-primary-500/30 text-primary-700 dark:text-primary-300 font-medium rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors disabled:opacity-50"
             >
               {previewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
               {previewLoading ? 'Loading Preview...' : 'Preview Quote'}
@@ -854,7 +845,7 @@ const QuoteDetail = () => {
             <button
               onClick={handleDownloadPDF}
               disabled={generating}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-ink text-surface font-medium rounded-lg hover:bg-ink/85 transition-colors disabled:opacity-50"
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -864,7 +855,7 @@ const QuoteDetail = () => {
               Download PDF Quote
             </button>
             {!hasPreviewed && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-2">
                 Preview is required before download.
               </p>
             )}
@@ -928,9 +919,9 @@ const ActualCostingCard = ({ quote, onSaved }: { quote: Quote; onSaved: (q: Quot
   const hasInput = Object.values(values).some((v) => v.trim() !== '') || notes.trim() !== '';
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-1">Actual Costing (Calibration)</h2>
-      <p className="text-sm text-gray-500 mb-4">
+    <div className="bg-surface rounded-xl border border-edge p-6">
+      <h2 className="text-lg font-semibold text-ink mb-1">Actual Costing (Calibration)</h2>
+      <p className="text-sm text-ink-muted mb-4">
         Record what the job really took — corrections are compared against the engine's
         prediction to improve future quotes.
       </p>
@@ -938,16 +929,15 @@ const ActualCostingCard = ({ quote, onSaved }: { quote: Quote; onSaved: (q: Quot
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {ACTUAL_FIELDS.map(({ key, label }) => (
           <div key={key}>
-            <label className="block text-xs text-gray-500 mb-1">{label}</label>
-            <input
+            <label className="block text-xs text-ink-muted mb-1">{label}</label>
+            <Input
               type="number"
               min="0"
               value={values[key] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-              placeholder={fmt(predicted[key]) ?? '—'}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder={fmt(predicted[key]) ?? '—'} className="w-full"
             />
-            <p className="text-[11px] text-gray-400 mt-0.5">
+            <p className="text-[11px] text-ink-subtle mt-0.5">
               {fmt(actual[key]) != null
                 ? `Recorded: ${fmt(actual[key])}`
                 : fmt(predicted[key]) != null
@@ -959,22 +949,20 @@ const ActualCostingCard = ({ quote, onSaved }: { quote: Quote; onSaved: (q: Quot
       </div>
 
       <div className="mt-3 flex gap-3 items-start">
-        <input
+        <Input
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Notes (tooling issues, rework, why it differed...)"
-          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+          placeholder="Notes (tooling issues, rework, why it differed...)" className="flex-1"
         />
-        <button
+        <Button size="sm"
           onClick={handleSave}
           disabled={saving || !hasInput}
-          className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save actuals'}
-        </button>
+        </Button>
       </div>
-      {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error}</p>}
     </div>
   );
 };

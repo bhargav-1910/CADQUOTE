@@ -83,18 +83,18 @@ const BillingPage = () => {
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
       <div className="text-center pt-4">
-        <h1 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">
-          Choose your <span className="text-sky-600">plan</span>
+        <h1 className="text-3xl sm:text-4xl font-bold text-ink">
+          Choose your <span className="text-primary-600 dark:text-primary-400">plan</span>
         </h1>
-        <p className="mt-2 text-slate-500">Quote faster, win more work. Upgrade when you're ready.</p>
+        <p className="mt-2 text-ink-muted">Quote faster, win more work. Upgrade when you're ready.</p>
 
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm">
-          <span className="text-slate-500">Current plan:</span>
-          <span className={`font-semibold ${isPro ? 'text-sky-700' : 'text-slate-800'}`}>
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-edge bg-surface px-4 py-1.5 text-sm">
+          <span className="text-ink-muted">Current plan:</span>
+          <span className={`font-semibold ${isPro ? 'text-primary-700 dark:text-primary-300' : 'text-ink'}`}>
             {isPro ? 'Professional' : 'Starter (free)'}
           </span>
           {isPro && (
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-ink-subtle">
               {user?.plan_expires_at ? `· renews ${formatDate(user.plan_expires_at)}` : '· active'}
             </span>
           )}
@@ -108,14 +108,14 @@ const BillingPage = () => {
           return (
             <div
               key={plan.key}
-              className={`relative flex flex-col rounded-2xl border bg-white p-6 ${
+              className={`relative flex flex-col rounded-2xl border bg-surface p-6 ${
                 plan.popular
-                  ? 'border-sky-300 shadow-lg shadow-sky-100 ring-1 ring-sky-200'
-                  : 'border-slate-200 shadow-sm'
+                  ? 'border-primary-300 dark:border-primary-500/30 shadow-lg shadow-primary-100 ring-1 ring-primary-200'
+                  : 'border-edge shadow-sm'
               }`}
             >
               {plan.popular && (
-                <span className="absolute -top-3 right-5 rounded-full bg-sky-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+                <span className="absolute -top-3 right-5 rounded-full bg-primary-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
                   Popular
                 </span>
               )}
@@ -123,19 +123,19 @@ const BillingPage = () => {
               <div className="flex items-center gap-2.5">
                 <span
                   className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                    plan.popular ? 'bg-sky-600 text-white' : 'bg-slate-900 text-white'
+                    plan.popular ? 'bg-primary-600 text-white' : 'bg-ink text-surface'
                   }`}
                 >
                   <Icon className="w-[18px] h-[18px]" />
                 </span>
-                <h2 className="text-lg font-bold text-slate-900">{plan.name}</h2>
+                <h2 className="text-lg font-bold text-ink">{plan.name}</h2>
               </div>
 
-              <p className="mt-3 text-sm text-slate-500 min-h-[40px]">{plan.blurb}</p>
+              <p className="mt-3 text-sm text-ink-muted min-h-[40px]">{plan.blurb}</p>
 
               <p className="mt-4">
-                <span className="font-display text-4xl font-bold text-slate-900">{plan.price}</span>
-                {plan.priceSuffix && <span className="text-sm text-slate-500">{plan.priceSuffix}</span>}
+                <span className="text-4xl font-bold text-ink">{plan.price}</span>
+                {plan.priceSuffix && <span className="text-sm text-ink-muted">{plan.priceSuffix}</span>}
               </p>
 
               <button
@@ -144,10 +144,10 @@ const BillingPage = () => {
                 disabled={isCurrent}
                 className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
                   isCurrent
-                    ? 'border border-emerald-300 bg-emerald-50 text-emerald-700 cursor-default'
+                    ? 'border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 cursor-default'
                     : plan.popular
-                    ? 'bg-sky-600 text-white hover:bg-sky-700'
-                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    ? 'bg-primary-600 text-white hover:bg-primary-700'
+                    : 'border border-edge-strong text-ink-secondary hover:bg-surface-muted'
                 }`}
               >
                 {isCurrent ? 'Your current plan' : plan.cta}
@@ -155,8 +155,8 @@ const BillingPage = () => {
 
               <ul className="mt-6 space-y-2.5">
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2.5 text-sm text-slate-600">
-                    <Check className={`w-4 h-4 mt-0.5 shrink-0 ${plan.popular ? 'text-sky-600' : 'text-emerald-600'}`} />
+                  <li key={feature} className="flex items-start gap-2.5 text-sm text-ink-secondary">
+                    <Check className={`w-4 h-4 mt-0.5 shrink-0 ${plan.popular ? 'text-primary-600 dark:text-primary-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
                     {feature}
                   </li>
                 ))}
@@ -167,12 +167,12 @@ const BillingPage = () => {
       </div>
 
       {requested && (
-        <div className="mx-auto max-w-2xl rounded-2xl border border-sky-200 bg-sky-50 p-5 text-center">
-          <p className="flex items-center justify-center gap-2 text-sm font-semibold text-sky-900">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-primary-200 dark:border-primary-500/30 bg-primary-50 dark:bg-primary-500/10 p-5 text-center">
+          <p className="flex items-center justify-center gap-2 text-sm font-semibold text-primary-900 dark:text-primary-300">
             <Mail className="w-4 h-4" />
             Online payments are launching soon.
           </p>
-          <p className="mt-1 text-sm text-sky-800">
+          <p className="mt-1 text-sm text-primary-800 dark:text-primary-300">
             To activate {requested === 'enterprise' ? 'an Enterprise plan' : 'Professional'} today, email{' '}
             <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold underline">
               {CONTACT_EMAIL}
@@ -182,7 +182,7 @@ const BillingPage = () => {
         </div>
       )}
 
-      <p className="text-center text-xs text-slate-400">
+      <p className="text-center text-xs text-ink-subtle">
         Prices exclude GST. Cancel anytime — your quotes and customer records stay accessible.
       </p>
     </div>

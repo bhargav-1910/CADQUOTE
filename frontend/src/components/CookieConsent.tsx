@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
 import {
@@ -10,12 +10,10 @@ import {
   saveConsent,
 } from '@/legal/consent';
 import { useLegalInfo } from '@/legal/useLegalInfo';
+import { buttonClasses } from '@/components/ui';
 
 /** Footer links dispatch this to reopen the panel after a decision was made. */
 export const COOKIE_PREFERENCES_EVENT = 'consent:open-preferences';
-
-const INK = { panel: '#0E0E11', inset: '#0A0A0D' };
-const ACCENT_BLUE = '#8FAEF5';
 
 interface CategoryProps {
   id: string;
@@ -27,21 +25,21 @@ interface CategoryProps {
 }
 
 const Category = ({ id, title, description, checked, locked, onChange }: CategoryProps) => (
-  <div className="flex items-start gap-3 rounded-lg border border-white/[0.07] p-3" style={{ backgroundColor: INK.inset }}>
+  <div className="flex items-start gap-3 rounded-lg border border-edge bg-surface-muted p-3">
     <input
       id={id}
       type="checkbox"
       checked={checked}
       disabled={locked}
       onChange={(event) => onChange?.(event.target.checked)}
-      className="mt-1 h-4 w-4 shrink-0 accent-sky-500 disabled:opacity-60"
+      className="mt-1 h-4 w-4 shrink-0 accent-primary-500 disabled:opacity-60"
     />
     <label htmlFor={id} className="cursor-pointer">
-      <span className="block text-sm font-semibold text-white">
+      <span className="block text-sm font-semibold text-ink">
         {title}
-        {locked && <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-slate-500">Always on</span>}
+        {locked && <span className="ml-2 text-xs font-medium text-ink-muted">Always on</span>}
       </span>
-      <span className="mt-1 block text-xs leading-relaxed text-slate-400">{description}</span>
+      <span className="mt-1 block text-xs leading-relaxed text-ink-muted">{description}</span>
     </label>
   </div>
 );
@@ -96,40 +94,55 @@ const CookieConsent = () => {
     [info.policy_version],
   );
 
+  // Reserve the banner's height at the bottom of the page so it never sits
+  // on top of content (e.g. the sign-in button on a phone).
+  const bannerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const banner = bannerRef.current;
+    if (!visible || !banner) return;
+    const observer = new ResizeObserver(() => {
+      document.body.style.paddingBottom = `${banner.offsetHeight}px`;
+    });
+    observer.observe(banner);
+    return () => {
+      observer.disconnect();
+      document.body.style.paddingBottom = '';
+    };
+  }, [visible]);
+
   if (!visible) return null;
 
   return (
     <div
+      ref={bannerRef}
       role="dialog"
       aria-modal="false"
       aria-labelledby="cookie-consent-title"
       className="fixed inset-x-0 bottom-0 z-[100] p-3 sm:p-4"
     >
       <div
-        className="mx-auto w-full max-w-3xl rounded-2xl border border-white/[0.1] p-5 shadow-2xl shadow-black/70 sm:p-6"
-        style={{ backgroundColor: INK.panel }}
+        className="mx-auto w-full max-w-3xl rounded-2xl border border-edge bg-surface p-5 shadow-2xl sm:p-6"
       >
         <div className="flex items-start gap-3">
           <span
             aria-hidden
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            style={{ backgroundColor: 'rgba(143,174,245,0.12)', color: ACCENT_BLUE }}
+            className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-500/10 text-primary-600 dark:text-primary-300 sm:flex"
           >
             <Cookie className="h-4.5 w-4.5" />
           </span>
 
           <div className="min-w-0 flex-1">
-            <h2 id="cookie-consent-title" className="font-display text-lg text-white">
+            <h2 id="cookie-consent-title" className="text-lg font-semibold text-ink">
               Cookies on {info.app_name}
             </h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-slate-400">
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-secondary">
               We use strictly necessary storage to keep you signed in. Anything beyond that is
               optional and off unless you turn it on. Read our{' '}
-              <Link to="/legal/cookies" className="text-sky-300 underline-offset-2 hover:underline">
+              <Link to="/legal/cookies" className="font-medium text-primary-700 underline-offset-2 hover:underline dark:text-primary-300">
                 Cookie Policy
               </Link>{' '}
               and{' '}
-              <Link to="/legal/privacy" className="text-sky-300 underline-offset-2 hover:underline">
+              <Link to="/legal/privacy" className="font-medium text-primary-700 underline-offset-2 hover:underline dark:text-primary-300">
                 Privacy Policy
               </Link>
               .
@@ -143,7 +156,7 @@ const CookieConsent = () => {
               type="button"
               onClick={() => setShowDetail(false)}
               aria-label="Close preferences"
-              className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-ink-muted transition hover:bg-surface-raised hover:text-ink"
             >
               <X className="h-4 w-4" />
             </button>
@@ -183,13 +196,14 @@ const CookieConsent = () => {
           </div>
         )}
 
-        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        {/* Phone: Reject | Accept side by side, preferences as a link below. */}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:flex sm:justify-end">
           {showDetail ? (
             <button
               type="button"
               disabled={saving}
               onClick={() => commit(draft, 'preferences')}
-              className="rounded-lg border border-white/[0.12] px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:opacity-60"
+              className={buttonClasses('secondary', 'md', 'order-last col-span-2 sm:order-none')}
             >
               Save preferences
             </button>
@@ -198,7 +212,7 @@ const CookieConsent = () => {
               type="button"
               disabled={saving}
               onClick={() => setShowDetail(true)}
-              className="rounded-lg border border-white/[0.12] px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:opacity-60"
+              className={buttonClasses('ghost', 'md', 'order-last col-span-2 sm:order-none sm:mr-auto')}
             >
               Manage preferences
             </button>
@@ -208,7 +222,7 @@ const CookieConsent = () => {
             type="button"
             disabled={saving}
             onClick={() => commit(ESSENTIAL_ONLY, showDetail ? 'preferences' : 'banner')}
-            className="rounded-lg border border-white/[0.12] px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:opacity-60"
+            className={buttonClasses('secondary', 'md')}
           >
             Reject non-essential
           </button>
@@ -217,8 +231,7 @@ const CookieConsent = () => {
             type="button"
             disabled={saving}
             onClick={() => commit(ALL_ACCEPTED, showDetail ? 'preferences' : 'banner')}
-            className="rounded-lg px-4 py-2.5 text-sm font-semibold text-[#0A0A0D] transition hover:brightness-110 disabled:opacity-60"
-            style={{ backgroundColor: '#F2A35E' }}
+            className={buttonClasses('accent', 'md')}
           >
             Accept all
           </button>
