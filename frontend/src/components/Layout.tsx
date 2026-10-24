@@ -39,9 +39,8 @@ interface LayoutProps {
 }
 
 // `adminOnly` entries are hidden from ordinary users. The API enforces the
-// same rule, so hiding a link is presentation, not protection. Nothing is
-// admin-only today — Cost Master edits are private to each workspace — but
-// the flag stays wired for the next privileged screen.
+// same rule, so hiding a link is presentation, not protection. The admin page
+// is deliberately never linked: it lives at an unlisted URL (see App.tsx).
 const NAV: Array<{
   path: string;
   icon: LucideIcon;

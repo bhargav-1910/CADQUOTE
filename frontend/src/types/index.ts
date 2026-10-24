@@ -666,3 +666,82 @@ export interface CustomerCreateRequest {
 }
 
 export type CustomerUpdateRequest = Partial<CustomerCreateRequest>;
+
+// ============================================================================
+// Admin
+// ============================================================================
+
+export interface AdminOverview {
+  days: number;
+  users_total: number;
+  users_new: number;
+  users_active: number;
+  users_pro: number;
+  users_suspended: number;
+  quotes_total: number;
+  quotes_new: number;
+  quotes_accepted: number;
+  cad_failed: number;
+  daily: Array<{ date: string; signups: number; quotes: number }>;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  company_name: string;
+  plan: 'free' | 'pro' | string;
+  plan_expires_at: string | null;
+  plan_active: boolean;
+  is_admin: boolean;
+  is_active: boolean;
+  email_verified: boolean;
+  totp_enabled: boolean;
+  quote_count: number;
+  created_at: string | null;
+  last_login_at: string | null;
+  last_activity_at: string | null;
+}
+
+export interface AdminPage<T> {
+  items: T[];
+  total: number;
+}
+
+export interface AdminCadFailure {
+  id: string;
+  original_filename: string;
+  file_format: string;
+  file_size: number;
+  processing_status: string;
+  processing_error: string | null;
+  created_at: string | null;
+  user_id: string;
+  user_email: string;
+}
+
+export interface AdminSecurityEvent {
+  id: string;
+  created_at: string;
+  event: string;
+  outcome: 'success' | 'failure' | 'denied' | string;
+  user_id: string | null;
+  email: string | null;
+  ip: string | null;
+  path: string | null;
+  details: Record<string, unknown> | null;
+}
+
+export interface AdminPrivacySummary {
+  user: AdminUser;
+  counts: Record<string, number>;
+  consents: Array<{
+    created_at: string | null;
+    policy_version: string;
+    necessary: boolean;
+    preferences: boolean;
+    analytics: boolean;
+    marketing: boolean;
+    source: string;
+  }>;
+}

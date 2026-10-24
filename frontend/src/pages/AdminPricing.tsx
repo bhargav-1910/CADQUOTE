@@ -6,7 +6,7 @@ import {
   getMaterials, getSurfaceFinishes, getInspectionLevels,
   updateMaterial, updateSurfaceFinish, updateInspectionLevel,
   resetMaterial, resetSurfaceFinish, resetInspectionLevel, resetMachineRate,
-  getMachineRates, updateMachineRate, type MachineRate,
+  getMachineRates, updateMachineRate, type MachineRate, type CatalogScope,
 } from '@/services/api';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -200,7 +200,13 @@ function PricingSection<T extends { id: string; name: string }>({
   );
 }
 
-const AdminPricing = () => {
+/**
+ * Rate editor. scope='mine' is Cost Master: a user's edits copy the default
+ * into their own workspace. scope='global' (admin page) edits the shared
+ * defaults every workspace starts from, in place.
+ */
+const AdminPricing = ({ scope = 'mine' }: { scope?: CatalogScope }) => {
+  const shared = scope === 'global';
   const [materials, setMaterials] = useState<Material[]>([]);
   const [finishes, setFinishes] = useState<SurfaceFinish[]>([]);
   const [inspections, setInspections] = useState<InspectionLevel[]>([]);
@@ -210,7 +216,7 @@ const AdminPricing = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getMaterials(false), getSurfaceFinishes(false), getInspectionLevels(false), getMachineRates()])
+    Promise.all([getMaterials(false, scope), getSurfaceFinishes(false, scope), getInspectionLevels(false, scope), getMachineRates(scope)])
       .then(([m, f, i, mr]) => {
         setMaterials(m);
         setFinishes(f);
@@ -219,7 +225,7 @@ const AdminPricing = () => {
       })
       .catch(() => setError('Failed to load pricing configuration'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [scope]);
 
 
   // After a reset the shared default reappears under its own id, so the list
@@ -231,7 +237,7 @@ const AdminPricing = () => {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8"><SkeletonList rows={6} /></div>
+      <div className={shared ? '' : 'p-4 sm:p-6 lg:p-8'}><SkeletonList rows={6} /></div>
     );
   }
 
@@ -247,14 +253,20 @@ const AdminPricing = () => {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <Settings className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-          <h1 className="text-xl sm:text-2xl font-bold text-ink">Pricing Configuration</h1>
+    <div className={shared ? 'space-y-6' : 'p-4 sm:p-6 lg:p-8 space-y-6'}>
+      {shared ? (
+        <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          These are the shared defaults every workspace starts from. A change applies to all users who have not set their own rate for that item in Cost Master; existing quotes keep their saved prices.
+        </p>
+      ) : (
+        <div>
+          <div className="flex items-center gap-3">
+            <Settings className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+            <h1 className="text-xl sm:text-2xl font-bold text-ink">Pricing Configuration</h1>
+          </div>
+          <p className="text-ink-muted mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. Changes apply only to your own future quotes. All values in INR (₹).</p>
         </div>
-        <p className="text-ink-muted mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. All values in INR (₹).</p>
-      </div>
+      )}
 
       <div className="bg-surface rounded-xl border border-edge p-2 flex flex-wrap gap-2">
         {[
@@ -287,12 +299,12 @@ const AdminPricing = () => {
             fieldLabel="Cost/kg"
             fieldUnit="₹/kg"
             onSave={(id, value) =>
-              updateMaterial(id, { cost_per_kg: value }).then((updated) => {
+              updateMaterial(id, { cost_per_kg: value }, scope).then((updated) => {
                 setMaterials((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMaterial(id).then(reloadMaterials)}
+            onReset={shared ? undefined : (id) => resetMaterial(id).then(reloadMaterials)}
           />
 
           <PricingSection
@@ -303,12 +315,12 @@ const AdminPricing = () => {
             fieldUnit="g/cm3"
             fieldPrefix=""
             onSave={(id, value) =>
-              updateMaterial(id, { density: value }).then((updated) => {
+              updateMaterial(id, { density: value }, scope).then((updated) => {
                 setMaterials((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMaterial(id).then(reloadMaterials)}
+            onReset={shared ? undefined : (id) => resetMaterial(id).then(reloadMaterials)}
           />
 
           <PricingSection
@@ -318,12 +330,12 @@ const AdminPricing = () => {
             fieldLabel="Scrap Saving"
             fieldUnit="₹/kg"
             onSave={(id, value) =>
-              updateMaterial(id, { scrap_cost_per_kg: value }).then((updated) => {
+              updateMaterial(id, { scrap_cost_per_kg: value }, scope).then((updated) => {
                 setMaterials((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMaterial(id).then(reloadMaterials)}
+            onReset={shared ? undefined : (id) => resetMaterial(id).then(reloadMaterials)}
           />
         </div>
       )}
@@ -337,12 +349,12 @@ const AdminPricing = () => {
             fieldLabel="Fixed Cost"
             fieldUnit="₹"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { fixed_cost: value }).then((updated) => {
+              updateSurfaceFinish(id, { fixed_cost: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -352,12 +364,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/kg"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_kg: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_kg: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -367,12 +379,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/sq.in"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_sq_inch: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_sq_inch: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -382,12 +394,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/sq.ft"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_sq_ft: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_sq_ft: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
 
           <PricingSection
@@ -397,12 +409,12 @@ const AdminPricing = () => {
             fieldLabel="Rate"
             fieldUnit="₹/piece"
             onSave={(id, value) =>
-              updateSurfaceFinish(id, { rate_per_piece: value }).then((updated) => {
+              updateSurfaceFinish(id, { rate_per_piece: value }, scope).then((updated) => {
                 setFinishes((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetSurfaceFinish(id).then(reloadFinishes)}
+            onReset={shared ? undefined : (id) => resetSurfaceFinish(id).then(reloadFinishes)}
           />
         </div>
       )}
@@ -416,12 +428,12 @@ const AdminPricing = () => {
             fieldLabel="Fixed Cost"
             fieldUnit="₹"
             onSave={(id, value) =>
-              updateInspectionLevel(id, { fixed_cost: value }).then((updated) => {
+              updateInspectionLevel(id, { fixed_cost: value }, scope).then((updated) => {
                 setInspections((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetInspectionLevel(id).then(reloadInspections)}
+            onReset={shared ? undefined : (id) => resetInspectionLevel(id).then(reloadInspections)}
           />
 
           <PricingSection
@@ -432,12 +444,12 @@ const AdminPricing = () => {
             fieldUnit="%"
             fieldPrefix=""
             onSave={(id, value) =>
-              updateInspectionLevel(id, { percentage_cost: value }).then((updated) => {
+              updateInspectionLevel(id, { percentage_cost: value }, scope).then((updated) => {
                 setInspections((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetInspectionLevel(id).then(reloadInspections)}
+            onReset={shared ? undefined : (id) => resetInspectionLevel(id).then(reloadInspections)}
           />
         </div>
       )}
@@ -451,12 +463,12 @@ const AdminPricing = () => {
             fieldLabel="Hourly Rate"
             fieldUnit="₹/hr"
             onSave={(id, value) =>
-              updateMachineRate(id, { hourly_rate: value }).then((updated) => {
+              updateMachineRate(id, { hourly_rate: value }, scope).then((updated) => {
                 setMachineRates((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMachineRate(id).then(reloadMachineRates)}
+            onReset={shared ? undefined : (id) => resetMachineRate(id).then(reloadMachineRates)}
           />
 
           <PricingSection
@@ -466,12 +478,12 @@ const AdminPricing = () => {
             fieldLabel="Setup Hour"
             fieldUnit="₹/hr"
             onSave={(id, value) =>
-              updateMachineRate(id, { setup_hour_rate: value }).then((updated) => {
+              updateMachineRate(id, { setup_hour_rate: value }, scope).then((updated) => {
                 setMachineRates((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMachineRate(id).then(reloadMachineRates)}
+            onReset={shared ? undefined : (id) => resetMachineRate(id).then(reloadMachineRates)}
           />
 
           <PricingSection
@@ -482,12 +494,12 @@ const AdminPricing = () => {
             fieldUnit="hours"
             fieldPrefix=""
             onSave={(id, value) =>
-              updateMachineRate(id, { setup_time_hours: value }).then((updated) => {
+              updateMachineRate(id, { setup_time_hours: value }, scope).then((updated) => {
                 setMachineRates((prev) => prev.map((row) => (row.id === id ? updated : row)));
                 return updated.id;
               })
             }
-            onReset={(id) => resetMachineRate(id).then(reloadMachineRates)}
+            onReset={shared ? undefined : (id) => resetMachineRate(id).then(reloadMachineRates)}
           />
         </div>
       )}

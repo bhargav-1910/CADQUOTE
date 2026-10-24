@@ -23,6 +23,7 @@ from app.services.catalog import (
     apply_update,
     effective_catalog,
     get_for_user,
+    system_catalog,
     user_override_count,
 )
 from app.models.models import (
@@ -127,12 +128,17 @@ async def _get_vendor_with_relations(db: AsyncSession, vendor_id: uuid.UUID) -> 
 
 @router.get("/materials", response_model=List[MaterialResponse])
 async def list_materials(
+    request: Request,
     active_only: bool = True,
+    scope: Scope = Query("mine", description="'global' lists only the shared defaults (admin only)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List the materials this workspace uses: your own rows, plus the
     system defaults you have not customised."""
+    if scope == "global":
+        _require_global_scope(request, current_user, "material.list")
+        return await system_catalog(db, Material, active_only=active_only, order_by=(Material.category, Material.name,))
     return await effective_catalog(
         db, Material, current_user.id,
         active_only=active_only, order_by=(Material.category, Material.name,),
@@ -222,12 +228,17 @@ async def reset_material(
 
 @router.get("/finishes", response_model=List[SurfaceFinishResponse])
 async def list_surface_finishs(
+    request: Request,
     active_only: bool = True,
+    scope: Scope = Query("mine", description="'global' lists only the shared defaults (admin only)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List the surface finishs this workspace uses: your own rows, plus the
     system defaults you have not customised."""
+    if scope == "global":
+        _require_global_scope(request, current_user, "finishe.list")
+        return await system_catalog(db, SurfaceFinish, active_only=active_only, order_by=(SurfaceFinish.name,))
     return await effective_catalog(
         db, SurfaceFinish, current_user.id,
         active_only=active_only, order_by=(SurfaceFinish.name,),
@@ -317,12 +328,17 @@ async def reset_surface_finish(
 
 @router.get("/inspections", response_model=List[InspectionLevelResponse])
 async def list_inspection_levels(
+    request: Request,
     active_only: bool = True,
+    scope: Scope = Query("mine", description="'global' lists only the shared defaults (admin only)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List the inspection levels this workspace uses: your own rows, plus the
     system defaults you have not customised."""
+    if scope == "global":
+        _require_global_scope(request, current_user, "inspection.list")
+        return await system_catalog(db, InspectionLevel, active_only=active_only, order_by=(InspectionLevel.fixed_cost,))
     return await effective_catalog(
         db, InspectionLevel, current_user.id,
         active_only=active_only, order_by=(InspectionLevel.fixed_cost,),
@@ -412,12 +428,17 @@ async def reset_inspection_level(
 
 @router.get("/machine-rates", response_model=List[MachineRateResponse])
 async def list_machine_rates(
+    request: Request,
     active_only: bool = True,
+    scope: Scope = Query("mine", description="'global' lists only the shared defaults (admin only)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List the machine rates this workspace uses: your own rows, plus the
     system defaults you have not customised."""
+    if scope == "global":
+        _require_global_scope(request, current_user, "machine_rate.list")
+        return await system_catalog(db, MachineRate, active_only=active_only, order_by=(MachineRate.name,))
     return await effective_catalog(
         db, MachineRate, current_user.id,
         active_only=active_only, order_by=(MachineRate.name,),

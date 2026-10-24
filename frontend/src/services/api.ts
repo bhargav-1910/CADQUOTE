@@ -28,6 +28,12 @@ import type {
   CustomerCreateRequest,
   CustomerUpdateRequest,
   PointsPackage,
+  AdminOverview,
+  AdminUser,
+  AdminPage,
+  AdminCadFailure,
+  AdminSecurityEvent,
+  AdminPrivacySummary,
   PointsWallet,
   PointsLedgerEntry,
   CreatePointsPackageRequest,
@@ -521,10 +527,10 @@ export const updateCurrentUser = async (payload: UpdateProfileRequest): Promise<
 // Configuration API
 // ============================================================================
 
-export const getMaterials = async (activeOnly = true): Promise<Material[]> => {
+export const getMaterials = async (activeOnly = true, scope: CatalogScope = 'mine'): Promise<Material[]> => {
   try {
     const response = await api.get<Material[]>('/config/materials', {
-      params: { active_only: activeOnly },
+      params: { active_only: activeOnly, ...(scope === 'global' ? { scope } : {}) },
     });
     return response.data;
   } catch (error) {
@@ -532,10 +538,10 @@ export const getMaterials = async (activeOnly = true): Promise<Material[]> => {
   }
 };
 
-export const getSurfaceFinishes = async (activeOnly = true): Promise<SurfaceFinish[]> => {
+export const getSurfaceFinishes = async (activeOnly = true, scope: CatalogScope = 'mine'): Promise<SurfaceFinish[]> => {
   try {
     const response = await api.get<SurfaceFinish[]>('/config/finishes', {
-      params: { active_only: activeOnly },
+      params: { active_only: activeOnly, ...(scope === 'global' ? { scope } : {}) },
     });
     return response.data;
   } catch (error) {
@@ -543,10 +549,10 @@ export const getSurfaceFinishes = async (activeOnly = true): Promise<SurfaceFini
   }
 };
 
-export const getInspectionLevels = async (activeOnly = true): Promise<InspectionLevel[]> => {
+export const getInspectionLevels = async (activeOnly = true, scope: CatalogScope = 'mine'): Promise<InspectionLevel[]> => {
   try {
     const response = await api.get<InspectionLevel[]>('/config/inspections', {
-      params: { active_only: activeOnly },
+      params: { active_only: activeOnly, ...(scope === 'global' ? { scope } : {}) },
     });
     return response.data;
   } catch (error) {
@@ -1055,9 +1061,11 @@ export interface VendorMatchPreviewResponse {
   details: Record<string, unknown>;
 }
 
-export const getMachineRates = async (): Promise<MachineRate[]> => {
+export const getMachineRates = async (scope: CatalogScope = 'mine'): Promise<MachineRate[]> => {
   try {
-    const response = await api.get<MachineRate[]>('/config/machine-rates');
+    const response = await api.get<MachineRate[]>('/config/machine-rates', {
+      params: { active_only: scope === 'mine', ...(scope === 'global' ? { scope } : {}) },
+    });
     return response.data;
   } catch (error) {
     return handleError(error as AxiosError);
@@ -1160,3 +1168,115 @@ export const getCustomerQuotes = async (customerId: string): Promise<QuoteListIt
 
 // Export api instance for advanced usage
 export default api;
+
+// ============================================================================
+// Admin API (every route is admin-only server side)
+// ============================================================================
+
+export const getAdminOverview = async (days = 30): Promise<AdminOverview> => {
+  try {
+    const response = await api.get<AdminOverview>('/admin/overview', { params: { days } });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export interface AdminUserFilters {
+  q?: string;
+  plan?: 'free' | 'pro';
+  status?: 'active' | 'suspended';
+  skip?: number;
+  limit?: number;
+}
+
+export const listAdminUsers = async (filters: AdminUserFilters = {}): Promise<AdminPage<AdminUser>> => {
+  try {
+    const response = await api.get<AdminPage<AdminUser>>('/admin/users', { params: filters });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const setAdminUserPlan = async (
+  userId: string,
+  plan: 'free' | 'pro',
+  expiresAt: string | null = null,
+): Promise<AdminUser> => {
+  try {
+    const response = await api.patch<AdminUser>(`/admin/users/${userId}/plan`, { plan, expires_at: expiresAt });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const setAdminUserActive = async (userId: string, active: boolean): Promise<AdminUser> => {
+  try {
+    const response = await api.patch<AdminUser>(`/admin/users/${userId}/status`, { active });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const listCadFailures = async (skip = 0, limit = 50): Promise<AdminPage<AdminCadFailure>> => {
+  try {
+    const response = await api.get<AdminPage<AdminCadFailure>>('/admin/cad-failures', { params: { skip, limit } });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const retryCadFile = async (fileId: string): Promise<void> => {
+  try {
+    await api.post(`/admin/cad-files/${fileId}/retry`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export interface AuditFilters {
+  event?: string;
+  outcome?: 'success' | 'failure' | 'denied';
+  user_id?: string;
+  skip?: number;
+  limit?: number;
+}
+
+export const listAuditEvents = async (filters: AuditFilters = {}): Promise<AdminPage<AdminSecurityEvent>> => {
+  try {
+    const response = await api.get<AdminPage<AdminSecurityEvent>>('/admin/audit-events', { params: filters });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const getAdminPrivacy = async (userId: string): Promise<AdminPrivacySummary> => {
+  try {
+    const response = await api.get<AdminPrivacySummary>(`/admin/users/${userId}/privacy`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const exportAdminUserData = async (userId: string): Promise<void> => {
+  try {
+    const response = await api.get<Blob>(`/admin/users/${userId}/export`, { responseType: 'blob' });
+    triggerBlobDownload(response.data, `forgequote-export-${userId}.json`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const deleteAdminUser = async (userId: string, confirmEmail: string): Promise<void> => {
+  try {
+    await api.delete(`/admin/users/${userId}`, { data: { confirm_email: confirmEmail } });
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};

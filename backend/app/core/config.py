@@ -141,6 +141,9 @@ class Settings(BaseSettings):
     # Require a verified address before the admin role takes effect.
     REQUIRE_VERIFIED_EMAIL_FOR_ADMIN: bool = True
 
+    # Security events persisted for the admin audit log are pruned after this.
+    SECURITY_EVENT_RETENTION_DAYS: int = 180
+
     # Comma-separated addresses RESERVED from public registration, so nobody
     # can claim the operator's own address on a fresh deployment. This does not
     # grant anything: the admin role is set out of band with
