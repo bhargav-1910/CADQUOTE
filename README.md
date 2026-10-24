@@ -138,6 +138,7 @@ Vercel is best used to host the React frontend. The FastAPI backend needs a long
 3. Set **Build Command** to `npm run build` and **Output Directory** to `dist`.
 4. Add environment variables:
    - `VITE_API_BASE_URL` = your backend URL, e.g. `https://api.example.com`
+   - `VITE_SITE_URL` = the site's public URL, e.g. `https://forgequote.app` (no trailing slash). Adds the link-preview image tags, canonical URL and `sitemap.xml`; without it only `robots.txt` is generated.
    - `VITE_ADMIN_PATH` = a private path for the admin page, e.g. `/ops-4f9c2a` (defaults to `/control-room`). The page is never linked; anyone who is not an admin gets the normal 404 there, and the API returns 404 to them as well.
 5. Deploy.
 

@@ -12,7 +12,7 @@ import { useAuth } from '@/components/AuthProvider';
 import PartThumbnail from '@/components/PartThumbnail';
 import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
 import { createSamplePartFile } from '@/services/samplePart';
-import { Button, SkeletonList, StatusPill, buttonClasses } from '@/components/ui';
+import { Button, SkeletonList, StatusPill } from '@/components/ui';
 
 interface WeekBucket {
   label: string;
@@ -525,7 +525,8 @@ const HomePage = () => {
               {quotes.slice(0, 5).map((quote, index) => (
                 <li key={quote.id}>
                   <Link
-                    to={`/quotes/${quote.id}`} className={buttonClasses('secondary', 'lg')}
+                    to={`/quotes/${quote.id}`}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-edge bg-surface px-3 py-3 transition hover:border-edge-strong hover:shadow-sm"
                     style={{ animationDelay: `${index * 60}ms` }}
                   >
                     <div className="flex items-center gap-3 min-w-0">

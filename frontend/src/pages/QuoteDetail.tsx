@@ -317,20 +317,20 @@ const QuoteDetail = () => {
         <span className="text-ink font-medium">{quote.quote_number}</span>
       </nav>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
+      {/* Header: actions wrap under the title on narrow screens. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-2xl font-bold text-ink">{quote.quote_number}</h1>
             <StatusPill status={quote.status} />
           </div>
           <p className="text-ink-muted text-sm mt-0.5">Created {formatDate(quote.created_at)}</p>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <Link
             to={`/quote/${quote.id}/edit`}
-            className="flex items-center gap-2 px-4 py-2 border border-primary-200 dark:border-primary-500/30 text-primary-700 dark:text-primary-300 font-medium rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors text-sm"
+            className={buttonClasses('secondary', 'md')}
           >
             <Pencil className="w-4 h-4" />
             Edit in Configure
@@ -811,15 +811,15 @@ const QuoteDetail = () => {
                     <p className="text-xs text-ink-muted">
                       Sent the PDF yourself? Record the customer's decision here.
                     </p>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         onClick={() => setMarking('accept')}
-                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+                        className="flex-1 whitespace-nowrap flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
                       >
                         <CheckCircle className="w-4 h-4" />
                         Mark as accepted
                       </button>
-                      <Button variant="secondary"
+                      <Button variant="secondary" className="flex-1"
                         onClick={() => setMarking('decline')}
                       >
                         <XCircle className="w-4 h-4" />

@@ -50,21 +50,28 @@ export const EmptyState = ({ icon, title, children }: { icon: ReactNode; title: 
   </div>
 );
 
-/** Table chrome shared by the admin lists: card, horizontal scroll, head row. */
-export const AdminTable = ({ head, children, minWidth = 720 }: { head: string[]; children: ReactNode; minWidth?: number }) => (
+/** A column header; `className` carries responsive visibility (e.g. "hidden xl:table-cell"),
+ *  which the matching <td>s must repeat. */
+export type AdminColumn = string | { label: string; className: string };
+
+/** Table chrome shared by the admin lists: card, horizontal scroll fallback, head row. */
+export const AdminTable = ({ head, children, minWidth = 0 }: { head: AdminColumn[]; children: ReactNode; minWidth?: number }) => (
   <div className="overflow-x-auto rounded-2xl border border-edge bg-surface">
     <table className="w-full text-sm" style={{ minWidth }}>
       <thead className="border-b border-edge bg-surface-muted">
         <tr>
-          {head.map((label, index) => (
-            <th
-              key={label || index}
-              scope="col"
-              className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted ${index === head.length - 1 && !label ? 'text-right' : 'text-left'}`}
-            >
-              {label}
-            </th>
-          ))}
+          {head.map((column, index) => {
+            const { label, className = '' } = typeof column === 'string' ? { label: column } : column;
+            return (
+              <th
+                key={label || index}
+                scope="col"
+                className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted ${index === head.length - 1 && !label ? 'text-right' : 'text-left'} ${className}`}
+              >
+                {label || (index === head.length - 1 ? <span className="sr-only">Actions</span> : null)}
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody className="divide-y divide-edge">{children}</tbody>

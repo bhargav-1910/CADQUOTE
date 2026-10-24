@@ -696,21 +696,21 @@ const LandingPage = () => {
               </div>
 
               <div className="overflow-x-auto">
-                <div className="min-w-[420px]">
-                  <div className="grid grid-cols-[1.1fr_1.2fr_1fr_1.2fr] gap-2 px-5 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+                <div>
+                  <div className="grid grid-cols-[1.1fr_1.2fr_1.2fr] sm:grid-cols-[1.1fr_1.2fr_1fr_1.2fr] gap-2 px-5 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
                     <span>Quote_ID</span>
                     <span>Process</span>
-                    <span>Tolerance</span>
+                    <span className="hidden sm:block">Tolerance</span>
                     <span>Status</span>
                   </div>
                   {PIPELINE_ROWS.map(({ id, process, tolerance, status, dot, pulse }) => (
                     <div
                       key={id}
-                      className="grid grid-cols-[1.1fr_1.2fr_1fr_1.2fr] gap-2 border-t border-edge px-5 py-3 font-mono text-xs"
+                      className="grid grid-cols-[1.1fr_1.2fr_1.2fr] sm:grid-cols-[1.1fr_1.2fr_1fr_1.2fr] gap-2 border-t border-edge px-5 py-3 font-mono text-xs"
                     >
                       <span className="text-primary-700 dark:text-primary-300">{id}</span>
                       <span className="text-ink-secondary">{process}</span>
-                      <span className="text-ink-secondary">{tolerance}</span>
+                      <span className="hidden text-ink-secondary sm:block">{tolerance}</span>
                       <span className="flex items-center gap-2 text-ink-secondary">
                         <span
                           className={`h-1.5 w-1.5 rounded-full ${pulse ? 'animate-pulse' : ''}`}

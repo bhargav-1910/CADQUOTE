@@ -42,7 +42,7 @@ const AdminPage = () => {
         </div>
       </div>
 
-      <nav aria-label="Admin sections" className="flex gap-1 overflow-x-auto rounded-xl border border-edge bg-surface p-1">
+      <nav aria-label="Admin sections" className="flex flex-wrap gap-1 rounded-xl border border-edge bg-surface p-1">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}

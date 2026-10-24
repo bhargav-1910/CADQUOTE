@@ -275,18 +275,18 @@ const CustomerDetail = () => {
                   <li key={quote.id}>
                     <Link
                       to={`/quotes/${quote.id}`}
-                      className="flex items-center justify-between gap-4 px-6 py-3.5 hover:bg-surface-muted transition-colors"
+                      className="flex items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-surface-muted sm:px-6"
                     >
                       <div className="min-w-0">
-                        <p className="font-medium text-ink">{quote.quote_number}</p>
+                        <p className="truncate font-medium text-ink">{quote.quote_number}</p>
                         <p className="text-xs text-ink-muted">
                           {formatDate(quote.created_at)} · valid until {formatDate(quote.valid_until)}
                         </p>
                       </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <span className="font-semibold text-ink">{formatCurrency(Number(quote.total_price))}</span>
+                      <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
+                        <span className="whitespace-nowrap font-semibold text-ink">{formatCurrency(Number(quote.total_price))}</span>
                         <StatusPill status={quote.status} />
-                        <ChevronRight className="w-4 h-4 text-ink-subtle" />
+                        <ChevronRight className="hidden w-4 h-4 text-ink-subtle sm:block" />
                       </div>
                     </Link>
                   </li>

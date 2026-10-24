@@ -36,20 +36,74 @@ const ValidityCell = ({ validUntil, status }: { validUntil: string; status: stri
 
   if (expired) {
     return (
-      <span className="inline-flex items-center rounded-full bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
+      <span className="inline-flex items-center whitespace-nowrap rounded-full bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
         Expired {formatDate(validUntil)}
       </span>
     );
   }
   if (daysLeft <= 5) {
     return (
-      <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+      <span className="inline-flex items-center whitespace-nowrap rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
         {daysLeft} day{daysLeft === 1 ? '' : 's'} left
       </span>
     );
   }
   return <span className="text-sm text-ink-secondary">{formatDate(validUntil)}</span>;
 };
+
+/** View / edit / download / delete, shared by the card and table layouts. */
+const QuoteRowActions = ({
+  quote,
+  downloading,
+  onDownload,
+  onDelete,
+}: {
+  quote: QuoteListItem;
+  downloading: boolean;
+  onDownload: (event: React.MouseEvent, quote: QuoteListItem) => void;
+  onDelete: (event: React.MouseEvent, quote: QuoteListItem) => void;
+}) => (
+  <>
+    <Link
+      to={`/quotes/${quote.id}`}
+      onClick={(event) => event.stopPropagation()}
+      title="View"
+      aria-label={`View ${quote.quote_number}`}
+      className={buttonClasses('ghost', 'icon')}
+    >
+      <Eye className="w-4 h-4" />
+    </Link>
+    <Link
+      to={`/quote/${quote.id}/edit`}
+      onClick={(event) => event.stopPropagation()}
+      title="Edit in configure"
+      aria-label={`Edit in configure ${quote.quote_number}`}
+      className={buttonClasses('ghost', 'icon')}
+    >
+      <Pencil className="w-4 h-4" />
+    </Link>
+    <button
+      type="button"
+      onClick={(event) => onDownload(event, quote)}
+      title="Download PDF"
+      aria-label={`Download PDF ${quote.quote_number}`}
+      className={buttonClasses('ghost', 'icon')}
+    >
+      {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+    </button>
+    {quote.status !== 'accepted' && quote.status !== 'declined' && (
+      <button
+        type="button"
+        onClick={(event) => onDelete(event, quote)}
+        title="Delete quote"
+        aria-label={`Delete quote ${quote.quote_number}`}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary transition hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    )}
+  </>
+);
 
 const QuoteList = () => {
   const [quotes, setQuotes] = useState<QuoteListItem[]>([]);
@@ -190,7 +244,7 @@ const QuoteList = () => {
       </div>
 
       {/* Search + filters */}
-      <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+      <div className="flex flex-col xl:flex-row gap-3 xl:items-center">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-subtle" />
           <Input
@@ -266,94 +320,88 @@ const QuoteList = () => {
           )}
         </div>
       ) : (
-        <div className="bg-surface rounded-xl border border-edge overflow-hidden overflow-x-auto">
-          <table className="w-full min-w-[760px]">
-            <thead className="bg-surface-muted border-b border-edge">
-              <tr>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Quote #</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer</th>
-                <th className="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Total</th>
-                <th className="text-center px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Status</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Validity</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Created</th>
-                <th className="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-edge">
-              {filtered.map((quote) => (
-                <tr
-                  key={quote.id}
-                  className="hover:bg-surface-muted cursor-pointer group"
-                  onClick={() => navigate(`/quotes/${quote.id}`)}
-                >
-                  <td className="px-6 py-3.5">
-                    <span className="flex items-center gap-3">
-                      <PartThumbnail fileId={quote.cad_file_id} />
-                      <span className="font-medium font-mono text-sm text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
+        <>
+          {/* Phones: one card per quote; the whole card opens the quote. */}
+          <ul className="space-y-3 md:hidden">
+            {filtered.map((quote) => (
+              <li key={quote.id} className="rounded-2xl border border-edge bg-surface">
+                <Link to={`/quotes/${quote.id}`} className="flex items-start gap-3 p-4">
+                  <PartThumbnail fileId={quote.cad_file_id} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="truncate font-mono text-sm font-medium text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
+                      <span className="shrink-0 font-mono text-sm font-semibold text-ink">{formatCurrency(quote.total_price)}</span>
                     </span>
-                  </td>
-                  <td className="px-6 py-3.5 text-sm text-ink-secondary">{quote.customer_name || '—'}</td>
-                  <td className="px-6 py-3.5 text-right font-semibold font-mono text-sm text-ink">
-                    {formatCurrency(quote.total_price)}
-                  </td>
-                  <td className="px-6 py-3.5 text-center">
-                    <StatusPill status={quote.status} />
-                  </td>
-                  <td className="px-6 py-3.5">
-                    <ValidityCell validUntil={quote.valid_until} status={quote.status} />
-                  </td>
-                  <td className="px-6 py-3.5 text-sm text-ink-muted">{formatDate(quote.created_at)}</td>
-                  <td className="px-6 py-3.5">
-                    <div className="flex items-center justify-end gap-1">
-                      <Link
-                        to={`/quotes/${quote.id}`}
-                        onClick={(event) => event.stopPropagation()}
-                        title="View"
-                        aria-label={`View ${quote.quote_number}`}
-                        className={buttonClasses('ghost', 'icon')}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Link>
-                      <Link
-                        to={`/quote/${quote.id}/edit`}
-                        onClick={(event) => event.stopPropagation()}
-                        title="Edit in configure"
-                        aria-label={`Edit in configure ${quote.quote_number}`}
-                        className={buttonClasses('ghost', 'icon')}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={(event) => handleDownload(event, quote)}
-                        title="Download PDF"
-                        aria-label={`Download PDF ${quote.quote_number}`}
-                        className={buttonClasses('ghost', 'icon')}
-                      >
-                        {downloadingId === quote.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4" />
-                        )}
-                      </button>
-                      {quote.status !== 'accepted' && quote.status !== 'declined' && (
-                        <button
-                          type="button"
-                          onClick={(event) => handleDelete(event, quote)}
-                          title="Delete quote"
-                          aria-label={`Delete quote ${quote.quote_number}`}
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary transition hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                    <span className="mt-0.5 block truncate text-sm text-ink-secondary">{quote.customer_name || 'No customer'}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-2">
+                      <StatusPill status={quote.status} />
+                      <ValidityCell validUntil={quote.valid_until} status={quote.status} />
+                    </span>
+                  </span>
+                </Link>
+                <div className="flex items-center justify-between border-t border-edge px-2 py-1">
+                  <span className="px-2 text-xs text-ink-muted">Created {formatDate(quote.created_at)}</span>
+                  <span className="flex">
+                    <QuoteRowActions quote={quote} downloading={downloadingId === quote.id} onDownload={handleDownload} onDelete={handleDelete} />
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Tablet and up: a table whose secondary columns appear as width allows. */}
+          <div className="hidden overflow-hidden rounded-2xl border border-edge bg-surface md:block">
+            <table className="w-full">
+              <thead className="bg-surface-muted border-b border-edge">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Quote #</th>
+                  <th className="hidden text-left xl:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Total</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Status</th>
+                  <th className="hidden text-left xl:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Validity</th>
+                  <th className="hidden text-left 2xl:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Created</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted"><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-edge">
+                {filtered.map((quote) => (
+                  <tr
+                    key={quote.id}
+                    className="hover:bg-surface-muted cursor-pointer"
+                    onClick={() => navigate(`/quotes/${quote.id}`)}
+                  >
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-3">
+                        <PartThumbnail fileId={quote.cad_file_id} />
+                        <span className="min-w-0">
+                          <span className="block whitespace-nowrap font-mono text-sm font-medium text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
+                          {/* Customer column is hidden below xl; show it here instead. */}
+                          <span className="block max-w-[14rem] truncate text-xs text-ink-muted xl:hidden">{quote.customer_name || 'No customer'}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="hidden max-w-[12rem] truncate px-4 py-3 text-sm text-ink-secondary xl:table-cell">{quote.customer_name || '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-sm font-semibold text-ink">
+                      {formatCurrency(quote.total_price)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <StatusPill status={quote.status} />
+                    </td>
+                    <td className="hidden whitespace-nowrap px-4 py-3 xl:table-cell">
+                      <ValidityCell validUntil={quote.valid_until} status={quote.status} />
+                    </td>
+                    <td className="hidden whitespace-nowrap px-4 py-3 text-sm text-ink-muted 2xl:table-cell">{formatDate(quote.created_at)}</td>
+                    <td className="px-2 py-3">
+                      <div className="flex items-center justify-end">
+                        <QuoteRowActions quote={quote} downloading={downloadingId === quote.id} onDownload={handleDownload} onDelete={handleDelete} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

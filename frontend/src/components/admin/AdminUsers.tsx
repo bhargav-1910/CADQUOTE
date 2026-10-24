@@ -149,7 +149,17 @@ const AdminUsers = ({ onPrivacy }: { onPrivacy: (userId: string) => void }) => {
         </EmptyState>
       ) : (
         <>
-          <AdminTable head={['User', 'Plan', 'Status', 'Quotes', 'Joined', 'Last active', '']} minWidth={900}>
+          <AdminTable
+            head={[
+              'User',
+              { label: 'Plan', className: 'hidden md:table-cell' },
+              { label: 'Status', className: 'hidden lg:table-cell' },
+              { label: 'Quotes', className: 'hidden 2xl:table-cell' },
+              { label: 'Joined', className: 'hidden 2xl:table-cell' },
+              { label: 'Last active', className: 'hidden xl:table-cell' },
+              '',
+            ]}
+          >
             {page.items.map((u) => {
               const isMe = u.id === me?.id;
               return (
@@ -164,10 +174,15 @@ const AdminUsers = ({ onPrivacy }: { onPrivacy: (userId: string) => void }) => {
                       )}
                       {isMe && <span className="text-xs text-ink-muted">(you)</span>}
                     </p>
-                    <p className="text-ink-secondary">{u.email}</p>
+                    <p className="break-all text-ink-secondary">{u.email}</p>
+                                        <p className="mt-1 flex flex-wrap gap-1 lg:hidden">
+                      {/* Plan column is hidden below md and Status below lg; show them here instead. */}
+                      <span className="md:hidden">{u.plan_active ? <Badge tone="green">Pro</Badge> : <Badge>Free</Badge>}</span>
+                      {!u.is_active && <Badge tone="red">Suspended</Badge>}
+                    </p>
                     <p className="text-xs text-ink-muted">{u.company_name}</p>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className="hidden whitespace-nowrap px-4 py-3 md:table-cell">
                     {u.plan_active ? (
                       <Badge tone="green">
                         <Crown className="h-3 w-3" /> Pro
@@ -180,15 +195,15 @@ const AdminUsers = ({ onPrivacy }: { onPrivacy: (userId: string) => void }) => {
                     )}
                     {!u.plan_active && u.plan === 'pro' && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">expired</p>}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className="hidden whitespace-nowrap px-4 py-3 lg:table-cell">
                     {u.is_active ? <Badge tone="green">Active</Badge> : <Badge tone="red">Suspended</Badge>}
                     <p className="mt-1 text-xs text-ink-muted">{u.email_verified ? 'Email verified' : 'Email unverified'}</p>
                   </td>
-                  <td className="px-4 py-3 text-ink-secondary">{u.quote_count}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{formatDate(u.created_at)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{formatDateTime(u.last_activity_at)}</td>
+                  <td className="hidden px-4 py-3 text-ink-secondary 2xl:table-cell">{u.quote_count}</td>
+                  <td className="hidden whitespace-nowrap px-4 py-3 text-ink-secondary 2xl:table-cell">{formatDate(u.created_at)}</td>
+                  <td className="hidden whitespace-nowrap px-4 py-3 text-ink-secondary xl:table-cell">{formatDateTime(u.last_activity_at)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                       {u.plan_active ? (
                         <Button variant="secondary" size="sm" loading={busyId === u.id} onClick={() => revoke(u)}>
                           Revoke Pro

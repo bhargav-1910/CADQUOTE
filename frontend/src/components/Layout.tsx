@@ -47,6 +47,8 @@ const NAV: Array<{
   label: string;
   exact: boolean;
   adminOnly?: boolean;
+  /** false = desktop sidebar only; reached from the account menu on phones. */
+  inBottomBar?: boolean;
 }> = [
   { path: '/workspace', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { path: '/quote', icon: Layers, label: 'New Quote', exact: true },
@@ -54,7 +56,7 @@ const NAV: Array<{
   { path: '/customers', icon: Users, label: 'Customers', exact: false },
   // Every shop tunes its own rates here; edits are private to the workspace.
   { path: '/admin/pricing', icon: SlidersHorizontal, label: 'Cost Master', exact: false },
-  { path: '/billing', icon: CreditCard, label: 'Billing', exact: false },
+  { path: '/billing', icon: CreditCard, label: 'Billing', exact: false, inBottomBar: false },
 ];
 
 // Desktop sidebar renders NAV grouped; New Quote is promoted to a CTA button.
@@ -77,6 +79,8 @@ const Layout = ({ children }: LayoutProps) => {
   // regardless, this just avoids a dead link.
   const visibleNav = NAV.filter((item) => !item.adminOnly || user?.role === 'admin');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
@@ -204,6 +208,25 @@ const Layout = ({ children }: LayoutProps) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) setMobileMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [mobileMenuOpen]);
+
+  // Close the menu when navigating.
+  useEffect(() => setMobileMenuOpen(false), [location.pathname]);
 
   const isActive = (path: string, exact: boolean) =>
     exact ? location.pathname === path : location.pathname.startsWith(path);
@@ -492,20 +515,70 @@ const Layout = ({ children }: LayoutProps) => {
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <button
-              type="button"
-              onClick={() => setProfileSettingsOpen(true)}
-              aria-label="Profile settings"
-              className="w-11 h-11 rounded-lg border border-edge bg-surface/80 text-ink-secondary flex items-center justify-center"
-            >
-              <User className="w-4 h-4" />
-            </button>
-            <Button variant="danger-subtle" className="w-11 h-11"
-              onClick={logout}
-              aria-label="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
+            <div className="relative" ref={mobileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((open) => !open)}
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={mobileMenuOpen}
+                className="w-11 h-11 rounded-lg border border-edge bg-surface/80 text-ink-secondary flex items-center justify-center overflow-hidden"
+              >
+                {user?.company_logo_url ? (
+                  <img src={user.company_logo_url} alt="" className="h-full w-full bg-white object-contain" />
+                ) : (
+                  <User className="w-4 h-4" />
+                )}
+              </button>
+              {mobileMenuOpen && (
+                <div role="menu" className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-edge bg-surface p-2 shadow-2xl z-50">
+                  <div className="border-b border-edge px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                      <span className="truncate">{user?.full_name || 'User'}</span>
+                      {!isFreePlan && (
+                        <span className="shrink-0 rounded-lg border border-primary-500/40 bg-primary-500/15 px-1.5 py-px text-[10px] font-bold text-primary-700 dark:text-primary-300">PRO</span>
+                      )}
+                    </p>
+                    <p className="truncate text-xs text-ink-muted">{user?.email}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setProfileSettingsOpen(true);
+                    }}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Profile settings
+                  </button>
+                  <Link
+                    to="/billing"
+                    role="menuitem"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Billing
+                  </Link>
+                  {/* Destructive action set apart from the rest. */}
+                  <div className="my-1 border-t border-edge" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      logout();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -561,7 +634,7 @@ const Layout = ({ children }: LayoutProps) => {
         aria-label="Primary"
       >
         <div className="flex items-stretch justify-around px-1 py-1">
-          {visibleNav.map(({ path, icon: Icon, label, exact }) => {
+          {visibleNav.filter((item) => item.inBottomBar !== false).map(({ path, icon: Icon, label, exact }) => {
             const active = isActive(path, exact);
             return (
               <Link

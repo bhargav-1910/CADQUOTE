@@ -114,18 +114,42 @@ const CustomersPage = () => {
           )}
         </div>
       ) : (
-        <div className="bg-surface rounded-xl border border-edge overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+        <>
+          {/* Phones: one card per customer. */}
+          <ul className="space-y-3 md:hidden">
+            {customers.map((customer) => {
+              const winPct = customer.quote_count > 0 ? Math.round((customer.accepted_count / customer.quote_count) * 100) : null;
+              return (
+                <li key={customer.id}>
+                  <Link to={`/customers/${customer.id}`} className="flex items-center gap-3 rounded-2xl border border-edge bg-surface p-4">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-ink">{customer.name}</span>
+                      <span className="block truncate text-xs text-ink-muted">{customer.company || customer.email || customer.phone || '—'}</span>
+                      <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-secondary">
+                        <span>{customer.quote_count} quote{customer.quote_count === 1 ? '' : 's'}</span>
+                        <span className="font-medium text-ink">{formatCurrency(Number(customer.total_quoted_value))}</span>
+                        {winPct !== null && <span>{customer.accepted_count} won ({winPct}%)</span>}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-subtle" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Tablet and up: secondary columns appear as width allows. */}
+          <div className="hidden overflow-hidden rounded-2xl border border-edge bg-surface md:block">
+            <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-edge text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  <th className="px-5 py-3">Customer</th>
-                  <th className="px-5 py-3">Contact</th>
-                  <th className="px-5 py-3 text-right">Quotes</th>
-                  <th className="px-5 py-3 text-right">Total quoted</th>
-                  <th className="px-5 py-3 text-right">Won</th>
-                  <th className="px-5 py-3">Last activity</th>
-                  <th className="px-3 py-3" />
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="hidden px-4 py-3 lg:table-cell">Contact</th>
+                  <th className="px-4 py-3 text-right">Quotes</th>
+                  <th className="px-4 py-3 text-right">Total quoted</th>
+                  <th className="hidden px-4 py-3 text-right xl:table-cell">Won</th>
+                  <th className="hidden px-4 py-3 xl:table-cell">Last activity</th>
+                  <th className="px-2 py-3"><span className="sr-only">Open</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -136,18 +160,20 @@ const CustomersPage = () => {
                       : null;
                   return (
                     <tr key={customer.id} className="border-b border-edge last:border-0 hover:bg-surface-muted transition-colors">
-                      <td className="px-5 py-3.5">
+                      <td className="px-4 py-3.5">
                         <Link to={`/customers/${customer.id}`} className="font-medium text-ink hover:text-primary-700 dark:hover:text-primary-300">
                           {customer.name}
                         </Link>
                         {customer.company && <p className="text-xs text-ink-muted">{customer.company}</p>}
+                        {/* Contact column is hidden below lg; show it here instead. */}
+                        <p className="max-w-[16rem] truncate text-xs text-ink-muted lg:hidden">{customer.email || customer.phone}</p>
                       </td>
-                      <td className="px-5 py-3.5 text-ink-secondary">{customer.email || customer.phone || '—'}</td>
-                      <td className="px-5 py-3.5 text-right font-medium text-ink">{customer.quote_count}</td>
-                      <td className="px-5 py-3.5 text-right font-medium text-ink">
+                      <td className="hidden max-w-[16rem] truncate px-4 py-3.5 text-ink-secondary lg:table-cell">{customer.email || customer.phone || '—'}</td>
+                      <td className="px-4 py-3.5 text-right font-medium text-ink">{customer.quote_count}</td>
+                      <td className="whitespace-nowrap px-4 py-3.5 text-right font-medium text-ink">
                         {formatCurrency(Number(customer.total_quoted_value))}
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="hidden whitespace-nowrap px-4 py-3.5 text-right xl:table-cell">
                         {winPct === null ? (
                           <span className="text-ink-subtle">—</span>
                         ) : (
@@ -156,10 +182,10 @@ const CustomersPage = () => {
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3.5 text-ink-secondary">{formatDate(customer.last_quote_at)}</td>
-                      <td className="px-3 py-3.5">
-                        <Link to={`/customers/${customer.id}`} aria-label={`Open ${customer.name}`}>
-                          <ChevronRight className="w-4 h-4 text-ink-subtle" />
+                      <td className="hidden whitespace-nowrap px-4 py-3.5 text-ink-secondary xl:table-cell">{formatDate(customer.last_quote_at)}</td>
+                      <td className="px-2 py-3.5">
+                        <Link to={`/customers/${customer.id}`} aria-label={`Open ${customer.name}`} className={buttonClasses('ghost', 'icon')}>
+                          <ChevronRight className="w-4 h-4" />
                         </Link>
                       </td>
                     </tr>
@@ -168,7 +194,7 @@ const CustomersPage = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
