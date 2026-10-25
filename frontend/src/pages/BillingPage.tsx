@@ -1,67 +1,9 @@
 import { useState } from 'react';
-import { Check, Mail, Sparkles, Building2, Box } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Check, Mail, Sparkles } from 'lucide-react';
+import { buttonClasses } from '@/components/ui';
+import { PLANS, type Plan } from '@/content/plans';
 import { useAuth } from '@/components/AuthProvider';
-
-interface Plan {
-  key: 'free' | 'pro' | 'enterprise';
-  name: string;
-  price: string;
-  priceSuffix?: string;
-  blurb: string;
-  features: string[];
-  cta: string;
-  popular?: boolean;
-  icon: typeof Box;
-}
-
-const PLANS: Plan[] = [
-  {
-    key: 'free',
-    name: 'Starter',
-    price: '₹0',
-    blurb: 'Try the full quoting flow on the built-in sample part.',
-    features: [
-      'Sample part quoting, end to end',
-      'Geometry analysis & DFM checks',
-      'PDF preview and download',
-      'Share link with customer response',
-    ],
-    cta: 'Included on signup',
-    icon: Box,
-  },
-  {
-    key: 'pro',
-    name: 'Professional',
-    price: '₹1,999',
-    priceSuffix: '/month',
-    blurb: 'For job shops quoting real customer work every day.',
-    features: [
-      'Unlimited CAD uploads (STEP & STL)',
-      'Exact B-rep hole & setup detection',
-      'Customer records with win-rate stats',
-      'Branded PDF quotes with your logo',
-      'Share links, responses & manual marking',
-      'Priority support',
-    ],
-    cta: 'Get Professional',
-    popular: true,
-    icon: Sparkles,
-  },
-  {
-    key: 'enterprise',
-    name: 'Enterprise',
-    price: 'Custom',
-    blurb: 'For manufacturers needing tailored workflows and volume.',
-    features: [
-      'Everything in Professional',
-      'Multiple team members',
-      'Vendor routing & custom machine rates',
-      'Onboarding & dedicated support',
-    ],
-    cta: 'Contact sales',
-    icon: Building2,
-  },
-];
 
 const CONTACT_EMAIL = 'bhargav191007@gmail.com';
 
@@ -81,7 +23,7 @@ const BillingPage = () => {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <div className="text-center pt-4">
         <h1 className="text-3xl sm:text-4xl font-bold text-ink">
           Choose your <span className="text-primary-600 dark:text-primary-400">plan</span>
@@ -100,6 +42,21 @@ const BillingPage = () => {
           )}
         </div>
       </div>
+
+      {!isPro && (
+        <section className="mx-auto max-w-3xl rounded-2xl border border-edge bg-surface p-5 sm:p-6">
+          <h2 className="font-semibold text-ink">You're on Starter (free)</h2>
+          <ul className="mt-3 space-y-2 text-sm text-ink-secondary">
+            <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />Try the whole flow on the built-in sample part: price it, generate the PDF, share it and record the customer's response.</li>
+            <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />Set up your own rates in Cost Master now; they carry over when you upgrade.</li>
+            <li className="flex gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400" />Upgrade to Professional to quote your own STEP and STL files.</li>
+          </ul>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link to="/dashboard" className={buttonClasses('secondary', 'sm')}>Try the sample part</Link>
+            <Link to="/help/plans-and-billing" className={buttonClasses('ghost', 'sm')}>How upgrading works</Link>
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-5 md:grid-cols-3 items-stretch">
         {PLANS.map((plan) => {

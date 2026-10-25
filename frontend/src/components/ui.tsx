@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Loader2, CheckCircle2, XCircle, Clock, Send, FileText, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Clock, Send, FileText, AlertTriangle, Eye, EyeOff, Info } from 'lucide-react';
 import type { QuoteStatus } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -178,6 +178,44 @@ export const SkeletonPage = () => (
     </div>
   </div>
 );
+
+// ---------------------------------------------------------------------------
+// InfoTip — "what does this mean?" next to a term. Opens on hover, focus and
+// tap (touch has no hover), closes on Escape / blur / leaving.
+// ---------------------------------------------------------------------------
+
+export const InfoTip = ({ term, children, className = '' }: { term: string; children: ReactNode; className?: string }) => {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <span className={`relative inline-flex align-middle ${className}`}>
+      <button
+        type="button"
+        aria-label={`What is ${term}?`}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}
+        className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-ink-subtle transition hover:text-ink-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          id={id}
+          className="absolute left-1/2 top-full z-40 mt-1.5 w-64 max-w-[75vw] -translate-x-1/2 rounded-lg border border-edge bg-surface p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-secondary shadow-xl"
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // SectionLabel — mono eyebrow used above section headings

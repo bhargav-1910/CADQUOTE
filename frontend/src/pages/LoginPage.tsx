@@ -19,7 +19,7 @@ const LoginPage = () => {
     /^\/(?![/\\])/.test(requestedFrom) &&
     !requestedFrom.includes('\\')
       ? requestedFrom
-      : '/workspace';
+      : '/dashboard';
   const justSignedUp = Boolean(location.state?.justSignedUp);
   const prefillEmail = (location.state?.email as string | undefined) ?? '';
 

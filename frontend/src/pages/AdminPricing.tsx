@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Settings, Save, Loader2, AlertCircle, CheckCircle, ChevronDown, ChevronUp , RotateCcw} from 'lucide-react';
+import { Settings, Save, Loader2, AlertCircle, CheckCircle, ChevronDown, ChevronUp, RotateCcw, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { Material, SurfaceFinish, InspectionLevel } from '@/types';
 import { Button, Input, SkeletonList } from '@/components/ui';
 import {
@@ -200,6 +201,8 @@ function PricingSection<T extends { id: string; name: string }>({
   );
 }
 
+const COST_MASTER_INTRO_KEY = 'fq-cost-master-intro-dismissed';
+
 /**
  * Rate editor. scope='mine' is Cost Master: a user's edits copy the default
  * into their own workspace. scope='global' (admin page) edits the shared
@@ -207,6 +210,13 @@ function PricingSection<T extends { id: string; name: string }>({
  */
 const AdminPricing = ({ scope = 'mine' }: { scope?: CatalogScope }) => {
   const shared = scope === 'global';
+  const [introDismissed, setIntroDismissed] = useState(() => {
+    try { return localStorage.getItem(COST_MASTER_INTRO_KEY) === '1'; } catch { return false; }
+  });
+  const dismissIntro = () => {
+    setIntroDismissed(true);
+    try { localStorage.setItem(COST_MASTER_INTRO_KEY, '1'); } catch { /* private mode */ }
+  };
   const [materials, setMaterials] = useState<Material[]>([]);
   const [finishes, setFinishes] = useState<SurfaceFinish[]>([]);
   const [inspections, setInspections] = useState<InspectionLevel[]>([]);
@@ -237,13 +247,13 @@ const AdminPricing = ({ scope = 'mine' }: { scope?: CatalogScope }) => {
 
   if (loading) {
     return (
-      <div className={shared ? '' : 'p-4 sm:p-6 lg:p-8'}><SkeletonList rows={6} /></div>
+      <SkeletonList rows={6} />
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8">
+      <div>
         <div role="alert" className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl p-4 sm:p-6 flex items-center gap-3">
           <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
           <p className="text-red-700 dark:text-red-300">{error}</p>
@@ -253,7 +263,7 @@ const AdminPricing = ({ scope = 'mine' }: { scope?: CatalogScope }) => {
   }
 
   return (
-    <div className={shared ? 'space-y-6' : 'p-4 sm:p-6 lg:p-8 space-y-6'}>
+    <div className="space-y-6">
       {shared ? (
         <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
           These are the shared defaults every workspace starts from. A change applies to all users who have not set their own rate for that item in Cost Master; existing quotes keep their saved prices.
@@ -262,9 +272,21 @@ const AdminPricing = ({ scope = 'mine' }: { scope?: CatalogScope }) => {
         <div>
           <div className="flex items-center gap-3">
             <Settings className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-            <h1 className="text-xl sm:text-2xl font-bold text-ink">Pricing Configuration</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-ink">Cost Master</h1>
           </div>
           <p className="text-ink-muted mt-1 text-sm sm:text-base">Customize material costs, surface finish fees, inspection charges, and machine rates. Changes apply only to your own future quotes. All values in INR (₹).</p>
+          {!introDismissed && (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 dark:border-primary-500/30 dark:bg-primary-500/10 dark:text-primary-100">
+              <p className="flex-1">
+                You start from shared default rates. Change any value and it becomes yours: only your new quotes use it, and existing quotes keep their prices.
+                Use <RotateCcw className="inline h-3.5 w-3.5 align-[-2px]" aria-label="reset" /> to go back to the default.{' '}
+                <Link to="/help/cost-master" className="font-medium underline">Learn more</Link>
+              </p>
+              <button type="button" onClick={dismissIntro} className="shrink-0 rounded p-1 text-primary-700 hover:bg-primary-500/10 dark:text-primary-300" aria-label="Dismiss">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -221,8 +221,8 @@ async def create_checkout_session(
         raise HTTPException(status_code=404, detail="Points package not found")
 
     base = settings.FRONTEND_BASE_URL.rstrip("/")
-    success_url = _validate_return_url(payload.success_url, fallback=f"{base}/billing?status=success")
-    cancel_url = _validate_return_url(payload.cancel_url, fallback=f"{base}/billing?status=cancel")
+    success_url = _validate_return_url(payload.success_url, fallback=f"{base}/settings/billing?status=success")
+    cancel_url = _validate_return_url(payload.cancel_url, fallback=f"{base}/settings/billing?status=cancel")
 
     session = stripe_client.checkout.Session.create(
         mode="payment",

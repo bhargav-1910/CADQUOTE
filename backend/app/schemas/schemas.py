@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Literal, Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 
 # ============================================================================
@@ -507,6 +507,22 @@ class VendorMatchPreviewResponse(BaseModel):
     selected_vendor: Optional[VendorMatchSummary]
     details: dict
 
+class QuoteLineItem(BaseModel):
+    """A manual line on top of the engine price: an extra charge (fixture,
+    packing, freight), a discount, or a text-only note."""
+    kind: Literal["charge", "discount", "note"]
+    label: str = Field(..., min_length=1, max_length=200)
+    amount: Optional[Decimal] = Field(None, ge=0, le=Decimal("100000000"))
+
+    @model_validator(mode="after")
+    def _amount_matches_kind(self):
+        if self.kind == "note":
+            self.amount = None
+        elif self.amount is None:
+            raise ValueError("Charges and discounts need an amount")
+        return self
+
+
 class QuoteCreateRequest(BaseModel):
     """Request to create a formal quote."""
     cad_file_id: UUID
@@ -562,6 +578,10 @@ class QuoteCreateRequest(BaseModel):
     
     pricing_overrides: Optional[PricingOverrides] = None
     notes: Optional[str] = None
+
+    # Editing an existing quote: the new quote becomes its next version.
+    previous_version_id: Optional[UUID] = None
+    line_items: Optional[List[QuoteLineItem]] = Field(None, max_length=30)
 
 
 class BatchQuoteCreateRequest(BaseModel):
@@ -623,6 +643,10 @@ class CombinedQuoteCreateRequest(BaseModel):
     """Request to create a single quotation that aggregates multiple files."""
     items: List[CombinedQuoteLineItemRequest] = Field(..., min_length=1)
 
+    # Editing an existing quote: the new quote becomes its next version.
+    previous_version_id: Optional[UUID] = None
+    line_items: Optional[List[QuoteLineItem]] = Field(None, max_length=30)
+
     customer_id: Optional[UUID] = None
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_email: Optional[str] = Field(None, max_length=200)
@@ -683,6 +707,13 @@ class QuoteResponse(BaseSchema):
     """Quote response schema."""
     id: UUID
     quote_number: str
+    title: Optional[str] = None
+    version: int = 1
+    root_quote_id: Optional[UUID] = None
+    superseded_at: Optional[datetime] = None
+    customer_viewed_at: Optional[datetime] = None
+    line_items: Optional[List[QuoteLineItem]] = None
+    engine_total: Optional[Decimal] = None
 
     # Customer
     customer_id: Optional[UUID] = None
@@ -766,6 +797,8 @@ class QuoteListResponse(BaseSchema):
     """Simplified quote list item."""
     id: UUID
     quote_number: str
+    title: Optional[str] = None
+    version: int = 1
     cad_file_id: Optional[UUID] = None
     customer_name: Optional[str]
     total_price: Decimal
@@ -783,6 +816,60 @@ class BatchQuoteResponse(BaseModel):
     quote_count: int
 
 
+class QuoteVersionItem(BaseSchema):
+    """One version in a quote family (history panel)."""
+    id: UUID
+    quote_number: str
+    version: int
+    status: str
+    total_price: Decimal
+    created_at: datetime
+    superseded_at: Optional[datetime] = None
+    customer_viewed_at: Optional[datetime] = None
+    responded_at: Optional[datetime] = None
+
+
+class QuoteExtendValidityRequest(BaseModel):
+    days: int = Field(..., ge=1, le=90)
+
+
+class QuoteRenameRequest(BaseModel):
+    """Blank clears the name; the quote then shows its number only."""
+    title: Optional[str] = Field(None, max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def _blank_to_none(cls, value: Optional[str]) -> Optional[str]:
+        value = (value or "").strip()
+        return value or None
+
+
+class QuoteTemplateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    payload: dict
+
+
+class QuoteTemplateResponse(BaseSchema):
+    id: UUID
+    name: str
+    payload: dict
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class QuoteAttachmentResponse(BaseSchema):
+    id: UUID
+    original_filename: str
+    content_type: str
+    file_size: int
+    share_with_customer: bool
+    created_at: Optional[datetime] = None
+
+
+class QuoteAttachmentUpdate(BaseModel):
+    share_with_customer: bool
+
+
 class QuoteShareResponse(BaseModel):
     """Share token for the customer-facing quote page."""
     quote_id: UUID
@@ -795,6 +882,20 @@ class PublicQuoteLineItem(BaseModel):
     quantity: int
     unit_price: Decimal
     line_total: Decimal
+
+
+class PublicQuoteAdjustment(BaseModel):
+    """A manual charge, discount or note shown under the part lines."""
+    kind: str
+    label: str
+    amount: Optional[Decimal] = None
+
+
+class PublicQuoteAttachment(BaseModel):
+    """A drawing the shop chose to share with the customer."""
+    id: UUID
+    original_filename: str
+    file_size: int
 
 
 class PublicSellerInfo(BaseModel):
@@ -810,6 +911,7 @@ class PublicSellerInfo(BaseModel):
 class PublicQuoteResponse(BaseModel):
     """Customer-facing quote view — no internal cost or margin data."""
     quote_number: str
+    title: Optional[str] = None
     status: str
     customer_name: Optional[str]
     customer_company: Optional[str]
@@ -819,6 +921,9 @@ class PublicQuoteResponse(BaseModel):
     inspection_level_name: Optional[str]
     tolerance_notes: Optional[str]
     line_items: List[PublicQuoteLineItem]
+    adjustments: List[PublicQuoteAdjustment] = []
+    attachments: List[PublicQuoteAttachment] = []
+    version: int = 1
     total_price: Decimal
     estimated_lead_time_days: float
     valid_until: datetime

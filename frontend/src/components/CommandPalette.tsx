@@ -10,6 +10,8 @@ import {
   Moon,
   FileText,
   CornerDownLeft,
+  LifeBuoy,
+  UserCog,
 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
@@ -53,11 +55,13 @@ const CommandPalette = ({ open, onClose, onToggleTheme }: CommandPaletteProps) =
       navigate(path);
     };
     const base: PaletteItem[] = [
-      { id: 'nav-dashboard', label: 'Dashboard', hint: 'Upload hub & activity', icon: Upload, run: go('/workspace'), section: 'Navigate' },
-      { id: 'nav-new-quote', label: 'New Quote', hint: 'Upload CAD and price', icon: Layers, run: go('/quote'), section: 'Navigate' },
-      { id: 'nav-quotes', label: 'My Quotes', hint: 'All quotations', icon: FolderOpen, run: go('/quotes'), section: 'Navigate' },
-      { id: 'nav-cost-master', label: 'Cost Master', hint: 'Rates, materials, finishes', icon: Settings, run: go('/admin/pricing'), section: 'Navigate' },
-      { id: 'nav-billing', label: 'Billing', hint: 'Points & packages', icon: CreditCard, run: go('/billing'), section: 'Navigate' },
+      { id: 'nav-dashboard', label: 'Dashboard', hint: 'Upload hub & activity', icon: Upload, run: go('/dashboard'), section: 'Navigate' },
+      { id: 'nav-new-quote', label: 'New quote', hint: 'Upload CAD and price', icon: Layers, run: go('/quotes/new'), section: 'Navigate' },
+      { id: 'nav-quotes', label: 'Quotes', hint: 'All quotations', icon: FolderOpen, run: go('/quotes'), section: 'Navigate' },
+      { id: 'nav-cost-master', label: 'Cost Master', hint: 'Rates, materials, finishes', icon: Settings, run: go('/settings/rates'), section: 'Navigate' },
+      { id: 'nav-billing', label: 'Billing', hint: 'Plan and upgrades', icon: CreditCard, run: go('/settings/billing'), section: 'Navigate' },
+      { id: 'nav-account', label: 'Account settings', hint: 'Company details, logo, security', icon: UserCog, run: go('/settings/account'), section: 'Navigate' },
+      { id: 'nav-help', label: 'Help center', hint: 'Guides and how pricing works', icon: LifeBuoy, run: go('/help'), section: 'Navigate' },
       {
         id: 'action-theme',
         label: 'Toggle dark mode',
@@ -73,8 +77,8 @@ const CommandPalette = ({ open, onClose, onToggleTheme }: CommandPaletteProps) =
 
     const quoteItems: PaletteItem[] = quotes.map((quote) => ({
       id: `quote-${quote.id}`,
-      label: quote.quote_number,
-      hint: `${quote.customer_name ?? 'No customer'} · ${quote.status}`,
+      label: quote.title || quote.quote_number,
+      hint: `${quote.title ? `${quote.quote_number} · ` : ''}${quote.customer_name ?? 'No customer'} · ${quote.status}`,
       icon: FileText,
       run: go(`/quotes/${quote.id}`),
       section: 'Quotes',

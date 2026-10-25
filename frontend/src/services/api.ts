@@ -34,6 +34,9 @@ import type {
   AdminCadFailure,
   AdminSecurityEvent,
   AdminPrivacySummary,
+  QuoteVersion,
+  QuoteTemplate,
+  QuoteAttachment,
   PointsWallet,
   PointsLedgerEntry,
   CreatePointsPackageRequest,
@@ -763,6 +766,10 @@ export const getPublicQuotePdfUrl = (shareToken: string): string => {
   return `${apiBaseUrl}/public/quotes/${shareToken}/pdf`;
 };
 
+export const getPublicAttachmentUrl = (shareToken: string, attachmentId: string): string => {
+  return `${apiBaseUrl}/public/quotes/${shareToken}/attachments/${attachmentId}`;
+};
+
 // ============================================================================
 // Billing API
 // ============================================================================
@@ -1276,6 +1283,111 @@ export const exportAdminUserData = async (userId: string): Promise<void> => {
 export const deleteAdminUser = async (userId: string, confirmEmail: string): Promise<void> => {
   try {
     await api.delete(`/admin/users/${userId}`, { data: { confirm_email: confirmEmail } });
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+// ============================================================================
+// Quote workflow: versions, validity, templates, drawings
+// ============================================================================
+
+export const getQuoteVersions = async (quoteId: string): Promise<QuoteVersion[]> => {
+  try {
+    const response = await api.get<QuoteVersion[]>(`/quotes/${quoteId}/versions`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const renameQuote = async (quoteId: string, title: string): Promise<Quote> => {
+  try {
+    const response = await api.patch<Quote>(`/quotes/${quoteId}/title`, { title });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const extendQuoteValidity = async (quoteId: string, days: number): Promise<Quote> => {
+  try {
+    const response = await api.post<Quote>(`/quotes/${quoteId}/extend`, { days });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const listQuoteTemplates = async (): Promise<QuoteTemplate[]> => {
+  try {
+    const response = await api.get<QuoteTemplate[]>('/quote-templates');
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const saveQuoteTemplate = async (name: string, payload: Record<string, unknown>, templateId?: string): Promise<QuoteTemplate> => {
+  try {
+    const response = templateId
+      ? await api.put<QuoteTemplate>(`/quote-templates/${templateId}`, { name, payload })
+      : await api.post<QuoteTemplate>('/quote-templates', { name, payload });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const deleteQuoteTemplate = async (templateId: string): Promise<void> => {
+  try {
+    await api.delete(`/quote-templates/${templateId}`);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const listQuoteAttachments = async (quoteId: string): Promise<QuoteAttachment[]> => {
+  try {
+    const response = await api.get<QuoteAttachment[]>(`/quotes/${quoteId}/attachments`);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const uploadQuoteAttachment = async (quoteId: string, file: File): Promise<QuoteAttachment> => {
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await api.post<QuoteAttachment>(`/quotes/${quoteId}/attachments`, form);
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const setQuoteAttachmentShared = async (quoteId: string, attachmentId: string, share: boolean): Promise<QuoteAttachment> => {
+  try {
+    const response = await api.patch<QuoteAttachment>(`/quotes/${quoteId}/attachments/${attachmentId}`, { share_with_customer: share });
+    return response.data;
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const downloadQuoteAttachment = async (quoteId: string, attachment: QuoteAttachment): Promise<void> => {
+  try {
+    const response = await api.get<Blob>(`/quotes/${quoteId}/attachments/${attachment.id}/download`, { responseType: 'blob' });
+    triggerBlobDownload(response.data, attachment.original_filename);
+  } catch (error) {
+    return handleError(error as AxiosError);
+  }
+};
+
+export const deleteQuoteAttachment = async (quoteId: string, attachmentId: string): Promise<void> => {
+  try {
+    await api.delete(`/quotes/${quoteId}/attachments/${attachmentId}`);
   } catch (error) {
     return handleError(error as AxiosError);
   }

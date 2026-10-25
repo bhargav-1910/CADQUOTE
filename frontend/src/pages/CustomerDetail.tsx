@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  AlertCircle, Building2, ChevronRight, Clock, FileText, Home,
+  AlertCircle, Building2, ChevronRight, Clock, FileText,
   Mail, Pencil, Phone, Receipt, Users, X,
 } from 'lucide-react';
 import type { Customer, CustomerUpdateRequest, QuoteListItem } from '@/types';
 import { getCustomer, getCustomerQuotes, updateCustomer } from '@/services/api';
 import { Button, Input, SkeletonPage, StatusPill, Textarea } from '@/components/ui';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
@@ -114,17 +115,8 @@ const CustomerDetail = () => {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
-          <Home className="w-3.5 h-3.5" />
-          Home
-        </Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <Link to="/customers" className="hover:text-ink transition-colors">Customers</Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-ink font-medium">{customer.name}</span>
-      </nav>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <Breadcrumbs items={[{ label: 'Customers', to: '/customers' }, { label: customer.name }]} />
 
       <div className="flex items-center justify-between">
         <div>
@@ -253,7 +245,7 @@ const CustomerDetail = () => {
               <div className="mt-2 space-y-1">
                 {expiringSoon.map((q) => (
                   <Link key={q.id} to={`/quotes/${q.id}`} className="block text-sm text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-300 hover:underline">
-                    {q.quote_number} · {formatCurrency(Number(q.total_price))} · valid until {formatDate(q.valid_until)}
+                    {q.title || q.quote_number} · {formatCurrency(Number(q.total_price))} · valid until {formatDate(q.valid_until)}
                   </Link>
                 ))}
               </div>
@@ -278,7 +270,7 @@ const CustomerDetail = () => {
                       className="flex items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-surface-muted sm:px-6"
                     >
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-ink">{quote.quote_number}</p>
+                        <p className="truncate font-medium text-ink">{quote.title || quote.quote_number}</p>
                         <p className="text-xs text-ink-muted">
                           {formatDate(quote.created_at)} · valid until {formatDate(quote.valid_until)}
                         </p>

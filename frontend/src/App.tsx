@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import { AuthProvider, useAuth } from './components/AuthProvider';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -16,8 +16,12 @@ import CustomersPage from './pages/CustomersPage';
 import CustomerDetail from './pages/CustomerDetail';
 import AdminPricing from './pages/AdminPricing';
 import BillingPage from './pages/BillingPage';
+import AccountSettings from './pages/AccountSettings';
+import SettingsShell from './components/SettingsShell';
 import PublicQuotePage from './pages/PublicQuotePage';
 import LegalPage from './pages/LegalPage';
+import HelpPage from './pages/HelpPage';
+import PricingPage from './pages/PricingPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
@@ -40,6 +44,19 @@ const AdminGate = ({ children }: { children: JSX.Element }) => {
   return user?.role === 'admin' ? children : <NotFoundPage />;
 };
 
+const app = (page: JSX.Element) => (
+  <ProtectedRoute>
+    <Layout>{page}</Layout>
+  </ProtectedRoute>
+);
+
+/** Redirect a renamed route, keeping its :quoteId, query string and navigation state. */
+const Moved = ({ to }: { to: string }) => {
+  const location = useLocation();
+  const { quoteId = '' } = useParams();
+  return <Navigate to={`${to.replace(':quoteId', quoteId)}${location.search}`} state={location.state} replace />;
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -52,6 +69,9 @@ function App() {
           {/* Policy pages are public: they must be readable before signing up. */}
           <Route path="/legal" element={<Navigate to="/legal/privacy" replace />} />
           <Route path="/legal/:slug" element={<LegalPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/help/:slug" element={<HelpPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
@@ -70,76 +90,17 @@ function App() {
               </PublicOnlyRoute>
             )}
           />
-          <Route
-            path="/workspace"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <HomePage />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/quote"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <QuoteBuilder />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/quote/:quoteId/edit"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <QuoteBuilder />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/quotes"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <QuoteList />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/quotes/:quoteId"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <QuoteDetail />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/customers"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <CustomersPage />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/customers/:customerId"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <CustomerDetail />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
+          <Route path="/dashboard" element={app(<HomePage />)} />
+          <Route path="/quotes" element={app(<QuoteList />)} />
+          <Route path="/quotes/new" element={app(<QuoteBuilder />)} />
+          <Route path="/quotes/:quoteId" element={app(<QuoteDetail />)} />
+          <Route path="/quotes/:quoteId/edit" element={app(<QuoteBuilder />)} />
+          <Route path="/customers" element={app(<CustomersPage />)} />
+          <Route path="/customers/:customerId" element={app(<CustomerDetail />)} />
+          <Route path="/settings" element={<Navigate to="/settings/account" replace />} />
+          <Route path="/settings/account" element={app(<SettingsShell title="Account"><AccountSettings /></SettingsShell>)} />
+          <Route path="/settings/rates" element={app(<SettingsShell title="Cost Master"><AdminPricing /></SettingsShell>)} />
+          <Route path="/settings/billing" element={app(<SettingsShell title="Billing"><BillingPage /></SettingsShell>)} />
           <Route
             path={ADMIN_PATH}
             element={(
@@ -152,26 +113,12 @@ function App() {
               </AdminGate>
             )}
           />
-          <Route
-            path="/admin/pricing"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <AdminPricing />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/billing"
-            element={(
-              <ProtectedRoute>
-                <Layout>
-                  <BillingPage />
-                </Layout>
-              </ProtectedRoute>
-            )}
-          />
+          {/* Old addresses, kept so bookmarks and earlier links still land. */}
+          <Route path="/workspace" element={<Moved to="/dashboard" />} />
+          <Route path="/quote" element={<Moved to="/quotes/new" />} />
+          <Route path="/quote/:quoteId/edit" element={<Moved to="/quotes/:quoteId/edit" />} />
+          <Route path="/admin/pricing" element={<Moved to="/settings/rates" />} />
+          <Route path="/billing" element={<Moved to="/settings/billing" />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <CookieConsent />

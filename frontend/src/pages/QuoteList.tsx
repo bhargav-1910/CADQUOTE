@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, Home, Search, Pencil, Eye, Download, Trash2 } from 'lucide-react';
+import { FileText, Plus, Loader2, AlertCircle, CheckCircle, Search, Pencil, Eye, Download, Trash2 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes, downloadQuotePDF, deleteQuote } from '@/services/api';
 import PartThumbnail from '@/components/PartThumbnail';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 import { Button, Input, SkeletonList, StatusPill, buttonClasses } from '@/components/ui';
 import { useToast } from '@/components/Toast';
@@ -74,7 +75,7 @@ const QuoteRowActions = ({
       <Eye className="w-4 h-4" />
     </Link>
     <Link
-      to={`/quote/${quote.id}/edit`}
+      to={`/quotes/${quote.id}/edit`}
       onClick={(event) => event.stopPropagation()}
       title="Edit in configure"
       aria-label={`Edit in configure ${quote.quote_number}`}
@@ -144,6 +145,7 @@ const QuoteList = () => {
       if (!q) return true;
       return (
         quote.quote_number.toLowerCase().includes(q) ||
+        (quote.title ?? '').toLowerCase().includes(q) ||
         (quote.customer_name ?? '').toLowerCase().includes(q)
       );
     });
@@ -201,15 +203,7 @@ const QuoteList = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
-          <Home className="w-3.5 h-3.5" />
-          Home
-        </Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-ink font-medium">My Quotes</span>
-      </nav>
+      <Breadcrumbs items={[{ label: 'Quotes' }]} />
 
       {/* Batch success banner */}
       {batchResult?.batchIds && batchResult.batchIds.length > 0 && (
@@ -236,10 +230,10 @@ const QuoteList = () => {
           </p>
         </div>
         <Link
-          to="/quote" className={buttonClasses('accent', 'md', 'w-fit')}
+          to="/quotes/new" className={buttonClasses('accent', 'md', 'w-fit')}
         >
           <Plus className="w-4 h-4" />
-          New Quote
+          New quote
         </Link>
       </div>
 
@@ -251,7 +245,7 @@ const QuoteList = () => {
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by quote number or customer…" className="w-full pl-9 pr-3"
+            placeholder="Search by name, number or customer…" className="w-full pl-9 pr-3"
           />
         </div>
         <div className="flex gap-1.5 flex-wrap">
@@ -306,7 +300,7 @@ const QuoteList = () => {
           </p>
           {quotes.length === 0 ? (
             <Link
-              to="/quote" className={buttonClasses('primary', 'lg')}
+              to="/quotes/new" className={buttonClasses('primary', 'lg')}
             >
               <Plus className="w-5 h-5" />
               Create Quote
@@ -329,7 +323,10 @@ const QuoteList = () => {
                   <PartThumbnail fileId={quote.cad_file_id} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-start justify-between gap-2">
-                      <span className="truncate font-mono text-sm font-medium text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
+                      <span className="min-w-0">
+                        {quote.title && <span className="block truncate text-sm font-semibold text-ink">{quote.title}</span>}
+                        <span className="block truncate font-mono text-sm font-medium text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
+                      </span>
                       <span className="shrink-0 font-mono text-sm font-semibold text-ink">{formatCurrency(quote.total_price)}</span>
                     </span>
                     <span className="mt-0.5 block truncate text-sm text-ink-secondary">{quote.customer_name || 'No customer'}</span>
@@ -354,7 +351,7 @@ const QuoteList = () => {
             <table className="w-full">
               <thead className="bg-surface-muted border-b border-edge">
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Quote #</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Quote</th>
                   <th className="hidden text-left xl:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Total</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Status</th>
@@ -374,6 +371,7 @@ const QuoteList = () => {
                       <span className="flex items-center gap-3">
                         <PartThumbnail fileId={quote.cad_file_id} />
                         <span className="min-w-0">
+                          {quote.title && <span className="block max-w-[16rem] truncate text-sm font-semibold text-ink">{quote.title}</span>}
                           <span className="block whitespace-nowrap font-mono text-sm font-medium text-primary-700 dark:text-primary-300">{quote.quote_number}</span>
                           {/* Customer column is hidden below xl; show it here instead. */}
                           <span className="block max-w-[14rem] truncate text-xs text-ink-muted xl:hidden">{quote.customer_name || 'No customer'}</span>

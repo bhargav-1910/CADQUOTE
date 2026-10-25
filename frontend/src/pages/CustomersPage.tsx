@@ -5,6 +5,7 @@ import type { Customer } from '@/types';
 import { listCustomers } from '@/services/api';
 
 import { Button, Input, SkeletonList, buttonClasses } from '@/components/ui';
+import Breadcrumbs from '@/components/Breadcrumbs';
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -50,7 +51,8 @@ const CustomersPage = () => {
   );
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <Breadcrumbs items={[{ label: 'Customers' }]} />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink flex items-center gap-2.5">
@@ -99,6 +101,20 @@ const CustomersPage = () => {
               ? 'Try a different name, company or email.'
               : 'Customers are created automatically when you add their details to a quote.'}
           </p>
+          {!search && (
+            <ol className="mx-auto mt-5 max-w-sm space-y-2 text-left text-sm text-ink-secondary">
+              {[
+                'Create a quote and fill in the customer’s name, company or email.',
+                'Share it. Their responses show up here and on the quote.',
+                'Each customer keeps their quote history, quoted value and win rate.',
+              ].map((step, index) => (
+                <li key={step} className="flex gap-3">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-500/10 text-xs font-semibold text-primary-700 dark:text-primary-300">{index + 1}</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+          )}
           {search ? (
             <Button variant="secondary" className="mt-4"
               onClick={() => setSearch('')}
@@ -107,7 +123,7 @@ const CustomersPage = () => {
             </Button>
           ) : (
             <Link
-              to="/quote" className={buttonClasses('primary', 'md', 'mt-4')}
+              to="/quotes/new" className={buttonClasses('primary', 'md', 'mt-4')}
             >
               Create Quote
             </Link>

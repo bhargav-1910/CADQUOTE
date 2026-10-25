@@ -61,7 +61,7 @@ const VerifyEmailPage = () => {
             <h1 className="mt-4 text-2xl text-ink">Email confirmed</h1>
             <p className="mt-2 text-sm leading-relaxed text-ink-subtle">{message}</p>
             <Link
-              to="/workspace" className={buttonClasses('primary', 'md', 'mt-6')}
+              to="/dashboard" className={buttonClasses('primary', 'md', 'mt-6')}
             >
               Go to workspace
             </Link>

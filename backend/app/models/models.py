@@ -602,7 +602,9 @@ class Quote(Base):
     
     id = Column(UUID(), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
-    quote_number = Column(String(20), unique=True, nullable=False, index=True)
+    quote_number = Column(String(32), unique=True, nullable=False, index=True)
+    # Free-text name ("Acme bracket – batch 2"); shared by every version of a quote.
+    title = Column(String(200), nullable=True)
     
     # Customer info (free-text snapshot; customer_id links the CRM record)
     customer_id = Column(UUID(), ForeignKey("customers.id"), nullable=True, index=True)
@@ -666,6 +668,20 @@ class Quote(Base):
     status = Column(SQLEnum(QuoteStatus), default=QuoteStatus.DRAFT)
     valid_until = Column(DateTime, nullable=False)
 
+    # Versions: editing creates the next version in the same family. v1 has
+    # root_quote_id NULL; later versions point at v1. A superseded version is
+    # read-only history, and the share link always lives on the latest one.
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    root_quote_id = Column(UUID(), nullable=True, index=True)
+    superseded_at = Column(DateTime, nullable=True)
+    customer_viewed_at = Column(DateTime, nullable=True)
+
+    # Manual lines on top of the engine price: [{"kind": "charge"|"discount"|
+    # "note", "label": str, "amount": "123.45"}]. total_price includes them;
+    # engine_total is the computed price before them (NULL when none).
+    line_items = Column(JSON, nullable=True)
+    engine_total = Column(Numeric(14, 2), nullable=True)
+
     # Customer-facing share link and response
     share_token = Column(String(64), unique=True, nullable=True, index=True)
     customer_response_note = Column(Text, nullable=True)
@@ -705,6 +721,35 @@ class Quote(Base):
     surface_finish = relationship("SurfaceFinish", back_populates="quotes")
     inspection_level = relationship("InspectionLevel", back_populates="quotes")
     matched_vendor = relationship("Vendor", back_populates="quotes")
+
+
+class QuoteTemplate(Base):
+    """Saved quote defaults (material, finish, terms, line items...) a user can
+    start a new quote from. The payload is opaque to the server."""
+    __tablename__ = "quote_templates"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class QuoteAttachment(Base):
+    """A 2D drawing or reference file attached to a quote family (all versions
+    share it). Private unless share_with_customer is set."""
+    __tablename__ = "quote_attachments"
+
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    quote_root_id = Column(UUID(), nullable=False, index=True)
+    original_filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    share_with_customer = Column(Boolean, nullable=False, default=False, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class SecurityEvent(Base):

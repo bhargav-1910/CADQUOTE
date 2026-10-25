@@ -135,7 +135,7 @@ const LegalPage = () => {
             </p>
             <a
               href={`mailto:${info.security_email}`}
-              className="mt-2 block break-all text-sm text-primary-300 transition hover:text-primary-200"
+              className="mt-2 block break-all text-sm text-primary-700 transition hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
             >
               {info.security_email}
             </a>
@@ -161,11 +161,11 @@ const LegalPage = () => {
           <div className="mt-12 rounded-xl border border-edge p-5 bg-surface">
             <p className="text-sm leading-relaxed text-ink-subtle">
               {info.company_name}, {info.company_address}. General enquiries{' '}
-              <a href={`mailto:${info.contact_email}`} className="text-primary-300 hover:text-primary-200">
+              <a href={`mailto:${info.contact_email}`} className="text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200">
                 {info.contact_email}
               </a>
               , privacy{' '}
-              <a href={`mailto:${info.privacy_email}`} className="text-primary-300 hover:text-primary-200">
+              <a href={`mailto:${info.privacy_email}`} className="text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200">
                 {info.privacy_email}
               </a>
               .

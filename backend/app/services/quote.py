@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import func, or_, select, desc
 from sqlalchemy.orm import selectinload
 
 from app.models.models import (
@@ -23,6 +23,83 @@ def generate_quote_number() -> str:
     date_prefix = datetime.utcnow().strftime("%Y%m%d")
     random_suffix = uuid.uuid4().hex[:6].upper()
     return f"QT-{date_prefix}-{random_suffix}"
+
+
+_CENT = Decimal("0.01")
+
+
+def apply_line_items(quote: Quote, line_items: Optional[List[Dict[str, Any]]]) -> None:
+    """Store manual lines and fold charges/discounts into the quote total.
+
+    Call after the engine price is on ``quote.total_price``. The engine figure
+    is kept in ``engine_total`` so the breakdown can show both; with no lines,
+    engine_total stays NULL and the total is the engine price. A discount can
+    bring the total to zero but never below.
+    """
+    items = []
+    for item in line_items or []:
+        kind = item["kind"]
+        amount = None if kind == "note" else Decimal(str(item["amount"])).quantize(_CENT)
+        items.append({"kind": kind, "label": item["label"].strip(), "amount": None if amount is None else str(amount)})
+    if not items:
+        quote.line_items = None
+        quote.engine_total = None
+        return
+
+    engine = Decimal(str(quote.total_price)).quantize(_CENT)
+    adjustment = sum(
+        (Decimal(i["amount"]) if i["kind"] == "charge" else -Decimal(i["amount"]))
+        for i in items if i["kind"] != "note"
+    )
+    quote.line_items = items
+    quote.engine_total = engine
+    quote.total_price = max(engine + adjustment, Decimal("0")).quantize(_CENT)
+
+
+def family_root_id(quote: Quote) -> uuid.UUID:
+    """The id of version 1 of this quote's family."""
+    return quote.root_quote_id or quote.id
+
+
+def family_filter(root_id: uuid.UUID):
+    """SQL condition selecting every version in a family."""
+    return or_(Quote.id == root_id, Quote.root_quote_id == root_id)
+
+
+async def link_previous_version(
+    db: AsyncSession, user_id: uuid.UUID, quote: Quote, previous_version_id: Optional[uuid.UUID]
+) -> None:
+    """Make an unsaved ``quote`` the next version of ``previous_version_id``.
+
+    The previous version is marked superseded and read-only. The customer's
+    share link moves to the new version, so the one link they hold always
+    shows the latest; if they already had it, the new version starts as SENT.
+    """
+    if previous_version_id is None:
+        return
+    previous = await db.get(Quote, previous_version_id)
+    if previous is None or previous.user_id != user_id:
+        raise ValueError("Quote to revise not found")
+    if previous.superseded_at is not None:
+        raise ValueError("A newer version of this quote already exists; edit the latest version")
+
+    root_id = family_root_id(previous)
+    root = previous if root_id == previous.id else await db.get(Quote, root_id)
+    latest = (await db.execute(select(func.max(Quote.version)).where(family_filter(root_id)))).scalar() or 1
+
+    quote.version = latest + 1
+    quote.root_quote_id = root_id
+    base_number = (root.quote_number if root else previous.quote_number).split("-v")[0]
+    quote.quote_number = f"{base_number}-v{quote.version}"
+    quote.title = quote.title or previous.title
+
+    previous.superseded_at = datetime.utcnow()
+    if previous.share_token:
+        token = previous.share_token
+        previous.share_token = None
+        await db.flush()  # free the unique token before the new row claims it
+        quote.share_token = token
+        quote.status = QuoteStatus.SENT
 
 
 def predicted_costing_snapshot(details: Dict[str, Any]) -> Dict[str, Any]:
@@ -91,6 +168,8 @@ async def create_quote(
     dfm_exceptions: Optional[str] = None,
     pricing_overrides: Optional[Dict[str, Any]] = None,
     notes: Optional[str] = None,
+    line_items: Optional[List[Dict[str, Any]]] = None,
+    previous_version_id: Optional[uuid.UUID] = None,
 ) -> Quote:
     """
     Create a formal quotation.
@@ -210,6 +289,9 @@ async def create_quote(
         notes=notes,
     )
     
+    apply_line_items(quote, line_items)
+    await link_previous_version(db, user_id, quote, previous_version_id)
+
     # Link the CRM customer record (find-or-create from the free-text
     # fields; an explicit customer_id wins after an ownership check).
     from app.services.customers import link_quote_customer
@@ -273,7 +355,11 @@ async def list_quotes(
     status: Optional[QuoteStatus] = None,
 ) -> List[Quote]:
     """List quotes with optional filtering."""
-    query = select(Quote).where(Quote.user_id == user_id).order_by(desc(Quote.created_at))
+    query = (
+        select(Quote)
+        .where(Quote.user_id == user_id, Quote.superseded_at.is_(None))
+        .order_by(desc(Quote.created_at))
+    )
     
     if status:
         query = query.where(Quote.status == status)

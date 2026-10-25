@@ -14,7 +14,7 @@ const PublicOnlyRoute = ({ children }: { children: ReactNode }) => {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/workspace" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

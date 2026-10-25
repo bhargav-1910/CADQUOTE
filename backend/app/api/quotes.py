@@ -5,8 +5,8 @@ from typing import List, Optional, Dict, Any
 from decimal import Decimal
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -16,7 +16,8 @@ from app.core.errors import internal_error
 from app.api.deps import get_current_user
 from app.models.models import (
     CADFile, GeometryAnalysis, Material, SurfaceFinish, 
-    InspectionLevel, Quote, ProcessingStatus, QuoteStatus, User
+    InspectionLevel, Quote, ProcessingStatus, QuoteStatus, User,
+    QuoteAttachment, QuoteTemplate,
 )
 from app.schemas.schemas import (
     PricingRequest, PricingResponse, BatchPricingRequest, BatchPricingResponse,
@@ -25,6 +26,8 @@ from app.schemas.schemas import (
     QuoteResponse, QuoteListResponse, VendorMatchSummary,
     VendorMatchPreviewRequest, VendorMatchPreviewResponse,
     QuoteShareResponse, PublicQuoteRespondRequest, QuoteActualsUpdate,
+    QuoteVersionItem, QuoteExtendValidityRequest, QuoteRenameRequest, QuoteTemplateRequest, QuoteTemplateResponse,
+    QuoteAttachmentResponse, QuoteAttachmentUpdate,
     MaterialResponse, SurfaceFinishResponse, InspectionLevelResponse,
     CADFileResponse,
 )
@@ -38,7 +41,12 @@ from app.services.quote import (
     list_quotes,
     generate_quote_number,
     predicted_costing_snapshot,
+    apply_line_items,
+    link_previous_version,
+    family_root_id,
+    family_filter,
 )
+from app.services.storage import storage
 from app.services.document import generate_quote_document, ensure_quote_document
 from app.core.config import settings
 from app.services.billing import consume_points, InsufficientPointsError
@@ -618,6 +626,12 @@ async def create_combined_quotation(
         notes=final_notes,
     )
 
+    apply_line_items(quote, [item.model_dump() for item in request.line_items] if request.line_items else None)
+    try:
+        await link_previous_version(db, current_user.id, quote, request.previous_version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     from app.services.customers import link_quote_customer
 
     await link_quote_customer(db, quote, customer_id=request.customer_id)
@@ -701,6 +715,8 @@ async def create_quotation(
             dfm_exceptions=request.dfm_exceptions,
             pricing_overrides=_serialize_pricing_overrides(request.pricing_overrides),
             notes=request.notes,
+            line_items=[item.model_dump() for item in request.line_items] if request.line_items else None,
+            previous_version_id=request.previous_version_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -722,6 +738,8 @@ async def list_quotations(
         QuoteListResponse(
             id=q.id,
             quote_number=q.quote_number,
+            title=q.title,
+            version=q.version or 1,
             cad_file_id=q.cad_file_id,
             customer_name=q.customer_name,
             total_price=q.total_price,
@@ -900,18 +918,29 @@ async def delete_quotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a quote. Quotes with a customer response are business records
-    and cannot be deleted."""
+    """Delete a quote with all its versions and drawings. A family where any
+    version has a customer response is a business record and is kept."""
     quote = await get_quote(db, current_user.id, quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
-    if quote.status in (QuoteStatus.ACCEPTED, QuoteStatus.DECLINED):
+    root_id = family_root_id(quote)
+    family = (await db.execute(
+        select(Quote).where(Quote.user_id == current_user.id, family_filter(root_id))
+    )).scalars().all()
+    if any(q.status in (QuoteStatus.ACCEPTED, QuoteStatus.DECLINED) for q in family):
         raise HTTPException(
             status_code=409,
             detail="This quote has a customer response and can't be deleted",
         )
 
-    await db.delete(quote)
+    attachments = (await db.execute(
+        select(QuoteAttachment).where(QuoteAttachment.user_id == current_user.id, QuoteAttachment.quote_root_id == root_id)
+    )).scalars().all()
+    for attachment in attachments:
+        await storage.delete(attachment.file_path)
+        await db.delete(attachment)
+    for version in family:
+        await db.delete(version)
     await db.commit()
 
 
@@ -942,6 +971,307 @@ async def record_quote_response(
     return _quote_to_response(quote)
 
 
+# ---------------------------------------------------------------------------
+# Versions & validity
+# ---------------------------------------------------------------------------
+
+@router.get("/quotes/{quote_id}/versions", response_model=List[QuoteVersionItem])
+async def list_quote_versions(
+    quote_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every version in this quote's family, oldest first."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    rows = (await db.execute(
+        select(Quote)
+        .where(Quote.user_id == current_user.id, family_filter(family_root_id(quote)))
+        .order_by(Quote.version)
+    )).scalars().all()
+    return [
+        QuoteVersionItem(
+            id=q.id, quote_number=q.quote_number, version=q.version or 1,
+            status=_effective_quote_status(q).value, total_price=q.total_price,
+            created_at=q.created_at, superseded_at=q.superseded_at,
+            customer_viewed_at=q.customer_viewed_at, responded_at=q.responded_at,
+        )
+        for q in rows
+    ]
+
+
+@router.post("/quotes/{quote_id}/extend", response_model=QuoteResponse)
+async def extend_quote_validity(
+    quote_id: uuid.UUID,
+    request: QuoteExtendValidityRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Push the validity date out by N days (from today if already lapsed)."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    if quote.superseded_at is not None:
+        raise HTTPException(status_code=400, detail="Extend the latest version of this quote")
+    if quote.status in (QuoteStatus.ACCEPTED, QuoteStatus.DECLINED):
+        raise HTTPException(status_code=409, detail="This quote already has a customer response")
+    start = max(quote.valid_until or datetime.utcnow(), datetime.utcnow())
+    quote.valid_until = start + timedelta(days=request.days)
+    if quote.status == QuoteStatus.EXPIRED:
+        quote.status = QuoteStatus.SENT if quote.share_token else QuoteStatus.GENERATED
+    await db.commit()
+    quote = await get_quote(db, current_user.id, quote_id)
+    return _quote_to_response(quote)
+
+
+@router.patch("/quotes/{quote_id}/title", response_model=QuoteResponse)
+async def rename_quote(
+    quote_id: uuid.UUID,
+    request: QuoteRenameRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Rename a quote. The name belongs to the quote, so every version gets it."""
+    quote = await get_quote(db, current_user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    family = (await db.execute(
+        select(Quote).where(Quote.user_id == current_user.id, family_filter(family_root_id(quote)))
+    )).scalars().all()
+    for member in family:
+        member.title = request.title
+    await db.commit()
+    quote = await get_quote(db, current_user.id, quote_id)
+    return _quote_to_response(quote)
+
+
+# ---------------------------------------------------------------------------
+# Templates (saved quote defaults; payload is whatever the builder stores)
+# ---------------------------------------------------------------------------
+
+_TEMPLATE_PAYLOAD_LIMIT = 20_000  # bytes of JSON
+
+
+def _check_template_payload(payload: dict) -> None:
+    import json
+
+    if len(json.dumps(payload, default=str)) > _TEMPLATE_PAYLOAD_LIMIT:
+        raise HTTPException(status_code=413, detail="Template is too large")
+
+
+@router.get("/quote-templates", response_model=List[QuoteTemplateResponse])
+async def list_quote_templates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = await db.execute(
+        select(QuoteTemplate).where(QuoteTemplate.user_id == current_user.id).order_by(QuoteTemplate.name)
+    )
+    return list(rows.scalars().all())
+
+
+@router.post("/quote-templates", response_model=QuoteTemplateResponse, status_code=201)
+async def create_quote_template(
+    request: QuoteTemplateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _check_template_payload(request.payload)
+    count = (await db.execute(
+        select(QuoteTemplate.id).where(QuoteTemplate.user_id == current_user.id)
+    )).scalars().all()
+    if len(count) >= 50:
+        raise HTTPException(status_code=400, detail="You can keep up to 50 templates")
+    template = QuoteTemplate(user_id=current_user.id, name=request.name.strip(), payload=request.payload)
+    db.add(template)
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+
+async def _owned_template(db: AsyncSession, template_id: uuid.UUID, user: User) -> QuoteTemplate:
+    template = await db.get(QuoteTemplate, template_id)
+    if template is None or template.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template
+
+
+@router.put("/quote-templates/{template_id}", response_model=QuoteTemplateResponse)
+async def update_quote_template(
+    template_id: uuid.UUID,
+    request: QuoteTemplateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    template = await _owned_template(db, template_id, current_user)
+    _check_template_payload(request.payload)
+    template.name = request.name.strip()
+    template.payload = request.payload
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+
+@router.delete("/quote-templates/{template_id}", status_code=204)
+async def delete_quote_template(
+    template_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    template = await _owned_template(db, template_id, current_user)
+    await db.delete(template)
+    await db.commit()
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Drawings / attachments (shared by every version of a quote)
+# ---------------------------------------------------------------------------
+
+ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
+# Extension -> (content type, magic-byte prefixes). SVG and HTML are refused:
+# both can carry script.
+ATTACHMENT_TYPES = {
+    ".pdf": ("application/pdf", (b"%PDF",)),
+    ".png": ("image/png", (b"\x89PNG",)),
+    ".jpg": ("image/jpeg", (b"\xff\xd8\xff",)),
+    ".jpeg": ("image/jpeg", (b"\xff\xd8\xff",)),
+    ".webp": ("image/webp", (b"RIFF",)),
+}
+
+
+async def _owned_quote_root(db: AsyncSession, quote_id: uuid.UUID, user: User) -> uuid.UUID:
+    quote = await get_quote(db, user.id, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return family_root_id(quote)
+
+
+async def _owned_attachment(db: AsyncSession, quote_id: uuid.UUID, attachment_id: uuid.UUID, user: User) -> QuoteAttachment:
+    root_id = await _owned_quote_root(db, quote_id, user)
+    attachment = await db.get(QuoteAttachment, attachment_id)
+    if attachment is None or attachment.user_id != user.id or attachment.quote_root_id != root_id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return attachment
+
+
+@router.get("/quotes/{quote_id}/attachments", response_model=List[QuoteAttachmentResponse])
+async def list_quote_attachments(
+    quote_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    root_id = await _owned_quote_root(db, quote_id, current_user)
+    rows = await db.execute(
+        select(QuoteAttachment)
+        .where(QuoteAttachment.user_id == current_user.id, QuoteAttachment.quote_root_id == root_id)
+        .order_by(QuoteAttachment.created_at)
+    )
+    return list(rows.scalars().all())
+
+
+@router.post("/quotes/{quote_id}/attachments", response_model=QuoteAttachmentResponse, status_code=201)
+async def upload_quote_attachment(
+    quote_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Attach a 2D drawing (PDF or image) to the quote. Private by default."""
+    import os
+
+    root_id = await _owned_quote_root(db, quote_id, current_user)
+    filename = os.path.basename(file.filename or "drawing")[:255]
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ATTACHMENT_TYPES:
+        raise HTTPException(status_code=400, detail="Attach a PDF, PNG, JPG or WebP file")
+    content = await file.read(ATTACHMENT_MAX_BYTES + 1)
+    if len(content) > ATTACHMENT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Drawings can be up to 20 MB")
+    if not content:
+        raise HTTPException(status_code=400, detail="The file is empty")
+    content_type, magics = ATTACHMENT_TYPES[ext]
+    if not any(content.startswith(m) for m in magics):
+        raise HTTPException(status_code=400, detail="The file content doesn't match its extension")
+
+    from app.services.antivirus import assert_clean
+
+    await assert_clean(content, filename=filename)
+
+    existing = (await db.execute(
+        select(QuoteAttachment.id).where(QuoteAttachment.quote_root_id == root_id)
+    )).scalars().all()
+    if len(existing) >= 20:
+        raise HTTPException(status_code=400, detail="A quote can have up to 20 attachments")
+
+    stored = await storage.save(content, f"attachments/{current_user.id}/{uuid.uuid4().hex}{ext}")
+    attachment = QuoteAttachment(
+        user_id=current_user.id, quote_root_id=root_id, original_filename=filename,
+        file_path=stored, content_type=content_type, file_size=len(content),
+    )
+    db.add(attachment)
+    await db.commit()
+    await db.refresh(attachment)
+    return attachment
+
+
+@router.patch("/quotes/{quote_id}/attachments/{attachment_id}", response_model=QuoteAttachmentResponse)
+async def update_quote_attachment(
+    quote_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    request: QuoteAttachmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attachment = await _owned_attachment(db, quote_id, attachment_id, current_user)
+    attachment.share_with_customer = request.share_with_customer
+    await db.commit()
+    await db.refresh(attachment)
+    return attachment
+
+
+@router.get("/quotes/{quote_id}/attachments/{attachment_id}/download")
+async def download_quote_attachment(
+    quote_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attachment = await _owned_attachment(db, quote_id, attachment_id, current_user)
+    return attachment_response(attachment, await storage.get(attachment.file_path))
+
+
+@router.delete("/quotes/{quote_id}/attachments/{attachment_id}", status_code=204)
+async def delete_quote_attachment(
+    quote_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attachment = await _owned_attachment(db, quote_id, attachment_id, current_user)
+    await storage.delete(attachment.file_path)
+    await db.delete(attachment)
+    await db.commit()
+    return Response(status_code=204)
+
+
+def attachment_response(attachment: QuoteAttachment, content: bytes) -> Response:
+    """Serve an uploaded drawing as a download (never rendered inline: it is
+    user-supplied content on our origin)."""
+    from urllib.parse import quote as url_quote
+
+    safe_name = attachment.original_filename.replace('"', "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type,
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{url_quote(safe_name)}",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 def _quote_to_response(quote: Quote) -> QuoteResponse:
     """Convert Quote model to response schema."""
     matched_vendor = None
@@ -961,6 +1291,13 @@ def _quote_to_response(quote: Quote) -> QuoteResponse:
     return QuoteResponse(
         id=quote.id,
         quote_number=quote.quote_number,
+        title=quote.title,
+        version=quote.version or 1,
+        root_quote_id=quote.root_quote_id,
+        superseded_at=quote.superseded_at,
+        customer_viewed_at=quote.customer_viewed_at,
+        line_items=quote.line_items,
+        engine_total=quote.engine_total,
         customer_id=quote.customer_id,
         customer_name=quote.customer_name,
         customer_email=quote.customer_email,

@@ -1,12 +1,16 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { HELP_ARTICLES } from './src/content/help'
 
 // Public, indexable pages. Everything else is behind login or private.
 const PUBLIC_PATHS = [
   '/',
   '/login',
   '/signup',
+  '/pricing',
+  '/help',
+  ...HELP_ARTICLES.map((a) => `/help/${a.slug}`),
   ...['privacy', 'terms', 'cookies', 'disclaimer', 'security', 'disclosure'].map((slug) => `/legal/${slug}`),
 ]
 
@@ -34,9 +38,11 @@ const siteMeta = (siteUrl: string): Plugin => ({
       'User-agent: *',
       // Customer quote links are private; the app itself is behind login.
       'Disallow: /q/',
-      'Disallow: /workspace',
-      'Disallow: /quote',
+      'Disallow: /dashboard',
+      'Disallow: /quote', // also covers /quotes
       'Disallow: /customers',
+      'Disallow: /settings',
+      'Disallow: /workspace',
       'Disallow: /billing',
       ...(siteUrl ? ['', `Sitemap: ${siteUrl}/sitemap.xml`] : []),
       '',

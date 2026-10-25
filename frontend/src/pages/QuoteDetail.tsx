@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  ChevronRight, Copy, ExternalLink, FileText, Loader2, Home,
+  ChevronRight, Copy, ExternalLink, FileText, Loader2,
   AlertCircle, CheckCircle, Package, Clock, User, Pencil, Eye,
   Link2, Check, XCircle,
 } from 'lucide-react';
 import type { Quote } from '@/types';
 import { getQuote, generateQuotePDF, downloadQuotePDF, fetchQuotePDFPreviewBlob, shareQuote, respondToQuote, recordQuoteActuals } from '@/services/api';
-import { Button, Input, SkeletonPage, StatusPill, Textarea, buttonClasses } from '@/components/ui';
+import { Button, InfoTip, Input, SkeletonPage, Textarea, buttonClasses } from '@/components/ui';
+import { PriceExplainer } from '@/components/PriceExplainer';
+import { GLOSSARY } from '@/content/glossary';
+import { ExtendValidity, QuoteDrawings, QuoteName, VersionHistory } from '@/components/QuoteWorkflowPanels';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 interface CombinedFileLine {
   fileName: string;
@@ -252,7 +256,7 @@ const QuoteDetail = () => {
               className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-300"
             >
               <ChevronRight className="w-4 h-4 rotate-180" />
-              Back to My Quotes
+              Back to Quotes
             </Link>
           </div>
         </div>
@@ -266,6 +270,8 @@ const QuoteDetail = () => {
   const hasResponse = quote.status === 'accepted' || quote.status === 'declined';
   const isShared = Boolean(quote.share_token) || quote.status === 'sent' || hasResponse;
   const shareUrl = quote.share_token ? `${window.location.origin}/q/${quote.share_token}` : null;
+  // An older version is read-only history; edits and sharing happen on the latest.
+  const isSuperseded = Boolean(quote.superseded_at);
 
   // Lifecycle: created -> generated -> shared -> customer response -> valid/expired
   const lifecycleSteps = [
@@ -304,42 +310,28 @@ const QuoteDetail = () => {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
-          <Home className="w-3.5 h-3.5" />
-          Home
-        </Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <Link to="/quotes" className="hover:text-ink transition-colors">My Quotes</Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-ink font-medium">{quote.quote_number}</span>
-      </nav>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <Breadcrumbs items={[{ label: 'Quotes', to: '/quotes' }, { label: quote.title || quote.quote_number }]} />
 
       {/* Header: actions wrap under the title on narrow screens. */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h1 className="text-2xl font-bold text-ink">{quote.quote_number}</h1>
-            <StatusPill status={quote.status} />
-          </div>
+          <QuoteName quote={quote} onRenamed={setQuote} />
           <p className="text-ink-muted text-sm mt-0.5">Created {formatDate(quote.created_at)}</p>
         </div>
         
         <div className="flex flex-wrap gap-2 sm:gap-3">
-          <Link
-            to={`/quote/${quote.id}/edit`}
-            className={buttonClasses('secondary', 'md')}
-          >
-            <Pencil className="w-4 h-4" />
-            Edit in Configure
-          </Link>
-          <Link
-            to="/quotes" className={buttonClasses('secondary', 'md')}
-          >
-            All Quotes
-          </Link>
+          {!isSuperseded && (
+            <Link
+              to={`/quotes/${quote.id}/edit`}
+              className={buttonClasses('secondary', 'md')}
+              title="Saving creates the next version"
+            >
+              <Pencil className="w-4 h-4" />
+              Edit (new version)
+            </Link>
+          )}
+          {!isSuperseded && (
           <Button
             onClick={shareUrl ? () => copyShareLink(shareUrl) : handleShareQuote}
             disabled={sharing}
@@ -353,8 +345,17 @@ const QuoteDetail = () => {
             )}
             {shareCopied ? 'Link copied' : shareUrl ? 'Copy customer link' : 'Share with customer'}
           </Button>
+          )}
         </div>
       </div>
+
+      {isSuperseded && (
+        <div role="status" className="flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 dark:border-primary-500/30 dark:bg-primary-500/10 sm:flex-row sm:items-center">
+          <p className="flex-1 text-sm text-primary-800 dark:text-primary-300">
+            You're viewing <strong>v{quote.version}</strong>, an older version kept for reference. The customer's link shows the latest version; open it from <strong>Versions</strong> below.
+          </p>
+        </div>
+      )}
 
       {/* Lifecycle timeline */}
       <div className="bg-surface rounded-xl border border-edge px-5 py-4">
@@ -395,7 +396,7 @@ const QuoteDetail = () => {
       </div>
 
       {/* Validity warning + re-quote action */}
-      {isExpired && (
+      {isExpired && !isSuperseded && (
         <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex items-start gap-3 flex-1">
             <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
@@ -407,7 +408,7 @@ const QuoteDetail = () => {
             </div>
           </div>
           <Link
-            to={`/quote/${quote.id}/edit`}
+            to={`/quotes/${quote.id}/edit`}
             className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors"
           >
             Re-quote at current prices
@@ -517,53 +518,71 @@ const QuoteDetail = () => {
             </div>
           </div>
 
+          <QuoteDrawings quote={quote} />
+
           {/* Price breakdown */}
           <div className="bg-surface rounded-xl border border-edge p-6">
-            <h2 className="text-lg font-semibold text-ink mb-4">
-              Price Breakdown
-            </h2>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-ink">Price Breakdown</h2>
+              <PriceExplainer
+                numbers={{
+                  material: Number(quote.material_cost),
+                  machining: Number(quote.machining_cost),
+                  finish: Number(quote.finish_cost),
+                  inspection: Number(quote.inspection_cost),
+                  subtotal: Number(quote.subtotal),
+                  marginFactor: Number(quote.margin_factor),
+                  unitPrice: Number(quote.unit_price),
+                  quantity: quote.quantity,
+                  engineTotal: Number(quote.engine_total ?? quote.total_price),
+                  extras: Number(quote.total_price) - Number(quote.engine_total ?? quote.total_price),
+                  total: Number(quote.total_price),
+                  leadTimeDays: Number(quote.estimated_lead_time_days),
+                }}
+              />
+            </div>
             
             <div className="space-y-3">
               <div className="flex justify-between py-2 border-b border-edge">
-                <span className="text-ink-secondary">Material Cost</span>
+                <span className="text-ink-secondary">Material Cost<InfoTip term="material cost">{GLOSSARY.material}</InfoTip></span>
                 <span className="font-medium text-ink">
                   {formatCurrency(quote.material_cost)}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-edge">
-                <span className="text-ink-secondary">Machining Cost</span>
+                <span className="text-ink-secondary">Machining Cost<InfoTip term="machining cost">{GLOSSARY.machining}</InfoTip></span>
                 <span className="font-medium text-ink">
                   {formatCurrency(quote.machining_cost)}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-edge">
-                <span className="text-ink-secondary">Surface Finish</span>
+                <span className="text-ink-secondary">Surface Finish<InfoTip term="surface finish">{GLOSSARY.finish}</InfoTip></span>
                 <span className="font-medium text-ink">
                   {formatCurrency(quote.finish_cost)}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-edge">
-                <span className="text-ink-secondary">Inspection</span>
+                <span className="text-ink-secondary">Inspection<InfoTip term="inspection">{GLOSSARY.inspection}</InfoTip></span>
                 <span className="font-medium text-ink">
                   {formatCurrency(quote.inspection_cost)}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-edge">
-                <span className="text-ink-muted">Subtotal (per unit)</span>
+                <span className="text-ink-muted">Subtotal (per unit)<InfoTip term="subtotal">{GLOSSARY.subtotal}</InfoTip></span>
                 <span className="text-ink-muted">
                   {formatCurrency(quote.subtotal)}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-edge">
                 <span className="text-ink-muted">
-                  Margin ({((quote.margin_factor - 1) * 100).toFixed(0)}%)
+                  Margin ({((quote.margin_factor - 1) * 100).toFixed(0)}%)<InfoTip term="margin">{GLOSSARY.margin}</InfoTip>
                 </span>
                 <span className="text-ink-muted">
                   {formatCurrency(quote.unit_price - Number(quote.subtotal))}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-edge">
-                <span className="font-medium text-ink-secondary">Unit Price</span>
+                <span className="font-medium text-ink-secondary">Unit Price<InfoTip term="unit price">{GLOSSARY.unitPrice}</InfoTip></span>
                 <span className="font-semibold text-ink">
                   {formatCurrency(quote.unit_price)}
                 </span>
@@ -574,6 +593,29 @@ const QuoteDetail = () => {
                     × {quote.quantity} units
                   </span>
                 </div>
+              )}
+              {quote.line_items && quote.line_items.length > 0 && (
+                <>
+                  {quote.engine_total !== null && (
+                    <div className="flex justify-between py-2 border-b border-edge">
+                      <span className="font-medium text-ink-secondary">Computed price</span>
+                      <span className="font-semibold text-ink">{formatCurrency(Number(quote.engine_total))}</span>
+                    </div>
+                  )}
+                  {quote.line_items.map((item, index) => (
+                    <div key={index} className="flex justify-between gap-3 py-2 border-b border-edge">
+                      <span className={item.kind === 'note' ? 'italic text-ink-muted' : 'text-ink-secondary'}>
+                        {item.kind === 'discount' ? 'Discount: ' : item.kind === 'charge' ? '' : 'Note: '}
+                        {item.label}
+                      </span>
+                      {item.kind !== 'note' && (
+                        <span className={`whitespace-nowrap font-medium ${item.kind === 'discount' ? 'text-emerald-700 dark:text-emerald-300' : 'text-ink'}`}>
+                          {item.kind === 'discount' ? '−' : '+'}{formatCurrency(Number(item.amount))}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </>
               )}
               <div className="flex justify-between py-3 bg-primary-50 dark:bg-primary-500/10 -mx-6 px-6 rounded-lg">
                 <span className="font-semibold text-primary-900 dark:text-primary-300 text-lg">Total</span>
@@ -672,7 +714,10 @@ const QuoteDetail = () => {
             <p className={`text-sm ${isExpired ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
               {isExpired ? 'Expired on' : 'Valid until'} {formatDate(quote.valid_until)}
             </p>
+            <ExtendValidity quote={quote} onExtended={setQuote} />
           </div>
+
+          <VersionHistory quote={quote} />
 
           {/* Customer link & response */}
           <div className="bg-surface rounded-xl border border-edge p-6 space-y-4">
@@ -709,6 +754,12 @@ const QuoteDetail = () => {
                 </div>
                 <p className="text-xs text-ink-muted">
                   Anyone with this link can view the quote, download the PDF, and accept or decline it.
+                </p>
+                <p className="flex items-center gap-1.5 text-xs font-medium text-ink-secondary">
+                  <Eye className="h-3.5 w-3.5" />
+                  {quote.customer_viewed_at
+                    ? `Customer last opened it ${new Date(quote.customer_viewed_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                    : 'Not opened by the customer yet'}
                 </p>
               </>
             ) : (
