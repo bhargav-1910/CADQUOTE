@@ -27,8 +27,19 @@ export interface PublicSellerInfo {
   brand_color?: string | null;
 }
 
+/** A manual line on a quote: extra charge, discount, or text-only note. */
+export interface QuoteLineItem {
+  kind: 'charge' | 'discount' | 'note';
+  label: string;
+  amount: number | string | null;
+}
+
 export interface PublicQuote {
   quote_number: string;
+  title?: string | null;
+  version?: number;
+  adjustments?: QuoteLineItem[];
+  attachments?: Array<{ id: string; original_filename: string; file_size: number }>;
   status: QuoteStatus;
   customer_name?: string | null;
   customer_company?: string | null;
@@ -293,6 +304,8 @@ export interface BatchPricingResponse {
 
 // Quote
 export interface QuoteCreateRequest {
+  previous_version_id?: string;
+  line_items?: QuoteLineItem[];
   cad_file_id: string;
   material_id: string;
   surface_finish_id: string;
@@ -388,6 +401,8 @@ export interface CombinedQuoteLineItemRequest {
 }
 
 export interface CombinedQuoteCreateRequest {
+  previous_version_id?: string;
+  line_items?: QuoteLineItem[];
   items: CombinedQuoteLineItemRequest[];
   pricing_overrides?: PricingOverrides;
   customer_id?: string;
@@ -489,6 +504,14 @@ export interface CreateCheckoutSessionResponse {
 export interface Quote {
   id: string;
   quote_number: string;
+  /** User-given name shared by every version; the number stays the reference. */
+  title?: string | null;
+  version: number;
+  root_quote_id: string | null;
+  superseded_at: string | null;
+  customer_viewed_at: string | null;
+  line_items: QuoteLineItem[] | null;
+  engine_total: number | string | null;
   customer_name: string | null;
   customer_email: string | null;
   customer_company: string | null;
@@ -554,6 +577,8 @@ export interface Quote {
 export interface QuoteListItem {
   id: string;
   quote_number: string;
+  title?: string | null;
+  version?: number;
   cad_file_id: string | null;
   customer_name: string | null;
   total_price: number;
@@ -744,4 +769,33 @@ export interface AdminPrivacySummary {
     marketing: boolean;
     source: string;
   }>;
+}
+
+export interface QuoteVersion {
+  id: string;
+  quote_number: string;
+  version: number;
+  status: QuoteStatus;
+  total_price: number | string;
+  created_at: string;
+  superseded_at: string | null;
+  customer_viewed_at: string | null;
+  responded_at: string | null;
+}
+
+export interface QuoteTemplate {
+  id: string;
+  name: string;
+  payload: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface QuoteAttachment {
+  id: string;
+  original_filename: string;
+  content_type: string;
+  file_size: number;
+  share_with_customer: boolean;
+  created_at: string | null;
 }

@@ -7,7 +7,7 @@ import { buttonClasses } from '@/components/ui';
 
 const NotFoundPage = () => {
   const { user } = useAuth();
-  const homeHref = user ? '/workspace' : '/';
+  const homeHref = user ? '/dashboard' : '/';
   const homeLabel = user ? 'Back to dashboard' : 'Back to homepage';
 
   return (

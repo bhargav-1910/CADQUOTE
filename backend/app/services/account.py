@@ -23,6 +23,8 @@ from app.models.models import (
     PointsLedgerEntry,
     PointsWallet,
     Quote,
+    QuoteAttachment,
+    QuoteTemplate,
     StripeCheckoutCredit,
     User,
 )
@@ -38,7 +40,8 @@ async def _delete_stored_files(db: AsyncSession, user_id) -> None:
     pdf_rows = await db.execute(
         select(Quote.pdf_path).where(Quote.user_id == user_id, Quote.pdf_path.isnot(None))
     )
-    for path in [*file_rows.scalars().all(), *pdf_rows.scalars().all()]:
+    drawing_rows = await db.execute(select(QuoteAttachment.file_path).where(QuoteAttachment.user_id == user_id))
+    for path in [*file_rows.scalars().all(), *pdf_rows.scalars().all(), *drawing_rows.scalars().all()]:
         if not path:
             continue
         try:
@@ -63,6 +66,8 @@ async def purge_user_data(db: AsyncSession, user: User) -> None:
         await db.execute(
             sql_delete(GeometryAnalysis).where(GeometryAnalysis.cad_file_id.in_(cad_file_ids))
         )
+    await db.execute(sql_delete(QuoteAttachment).where(QuoteAttachment.user_id == user_id))
+    await db.execute(sql_delete(QuoteTemplate).where(QuoteTemplate.user_id == user_id))
     await db.execute(sql_delete(Quote).where(Quote.user_id == user_id))
     await db.execute(sql_delete(CADFile).where(CADFile.user_id == user_id))
     # Private Cost Master rows; only this user's (now deleted) quotes used them.

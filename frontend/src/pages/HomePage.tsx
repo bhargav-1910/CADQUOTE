@@ -7,7 +7,8 @@ import {
   Clock, TrendingUp, Inbox, CheckCircle2, Circle, X,
 } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
-import { listQuotes } from '@/services/api';
+import { extendQuoteValidity, listQuotes } from '@/services/api';
+import { useToast } from '@/components/Toast';
 import { useAuth } from '@/components/AuthProvider';
 import PartThumbnail from '@/components/PartThumbnail';
 import { uploadAndProcessCADFile } from '@/services/uploadWorkflow';
@@ -166,6 +167,23 @@ const HomePage = () => {
   const [quotesLoading, setQuotesLoading] = useState(true);
   const [quotesError, setQuotesError] = useState<string | null>(null);
 
+  const toast = useToast();
+  const [extendingId, setExtendingId] = useState<string | null>(null);
+
+  // The reminder's one-tap action: push validity out a week, then refresh.
+  const extendWeek = async (quoteId: string, quoteNumber: string) => {
+    setExtendingId(quoteId);
+    try {
+      await extendQuoteValidity(quoteId, 7);
+      toast({ message: `${quoteNumber} extended by 7 days` });
+      loadRecentQuotes();
+    } catch (err) {
+      toast({ tone: 'error', message: err instanceof Error ? err.message : 'Could not extend the quote' });
+    } finally {
+      setExtendingId(null);
+    }
+  };
+
   const loadRecentQuotes = () => {
     setQuotesLoading(true);
     setQuotesError(null);
@@ -192,7 +210,7 @@ const HomePage = () => {
         acceptedFiles.map((file) => uploadAndProcessCADFile(file))
       );
 
-      navigate('/quote', {
+      navigate('/quotes/new', {
         state: { multiFiles: processedFiles },
       });
     } catch (err) {
@@ -354,7 +372,7 @@ const HomePage = () => {
                 {isFreePlan && (
                   <p className="text-xs text-primary-800 dark:text-primary-300 bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/30 rounded-lg px-3 py-2">
                     Free plan: only the sample part can be quoted.{' '}
-                    <Link to="/billing" className="font-semibold underline">
+                    <Link to="/settings/billing" className="font-semibold underline">
                       Upgrade
                     </Link>{' '}
                     to quote your own CAD files.
@@ -380,13 +398,12 @@ const HomePage = () => {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new Event('profile:open'))}
+          <Link
+            to="/settings/account"
             className="shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
           >
             Complete profile
-          </button>
+          </Link>
         </section>
       )}
 
@@ -532,7 +549,7 @@ const HomePage = () => {
                     <div className="flex items-center gap-3 min-w-0">
                       <PartThumbnail fileId={quote.cad_file_id} className="w-8 h-8" />
                       <div className="min-w-0">
-                        <p className="font-medium text-ink truncate">{quote.quote_number}</p>
+                        <p className="font-medium text-ink truncate">{quote.title || quote.quote_number}</p>
                         <p className="text-xs text-ink-muted">{new Date(quote.created_at).toLocaleDateString('en-IN')}</p>
                       </div>
                     </div>
@@ -596,7 +613,7 @@ const HomePage = () => {
                       >
                         <div className="flex items-center justify-between">
                           <div className="min-w-0">
-                            <p className="font-medium text-ink truncate text-sm">{quote.quote_number}</p>
+                            <p className="font-medium text-ink truncate text-sm">{quote.title || quote.quote_number}</p>
                             <p className="text-xs text-ink-muted truncate">
                               {quote.customer_name || 'No customer'} · {formatCurrency(quote.total_price)}
                             </p>
@@ -641,13 +658,13 @@ const HomePage = () => {
                 {expiringQuotes.slice(0, 4).map((quote) => {
                   const daysLeft = Math.ceil((new Date(quote.valid_until).getTime() - now) / 86400000);
                   return (
-                    <li key={quote.id}>
+                    <li key={quote.id} className="flex items-stretch gap-2">
                       <Link
                         to={`/quotes/${quote.id}`}
-                        className="flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5 hover:border-amber-300 dark:hover:border-amber-500/30 hover:shadow-sm transition"
+                        className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5 hover:border-amber-300 dark:hover:border-amber-500/30 hover:shadow-sm transition"
                       >
                         <div className="min-w-0">
-                          <p className="font-medium text-ink truncate text-sm">{quote.quote_number}</p>
+                          <p className="font-medium text-ink truncate text-sm">{quote.title || quote.quote_number}</p>
                           <p className="text-xs text-ink-muted truncate">
                             {quote.customer_name || 'No customer'} · {formatCurrency(quote.total_price)}
                           </p>
@@ -656,6 +673,17 @@ const HomePage = () => {
                           {daysLeft} day{daysLeft === 1 ? '' : 's'} left
                         </span>
                       </Link>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={extendingId === quote.id}
+                        disabled={extendingId !== null}
+                        onClick={() => extendWeek(quote.id, quote.quote_number)}
+                        aria-label={`Extend ${quote.quote_number} by 7 days`}
+                        className="shrink-0 self-center"
+                      >
+                        +7 days
+                      </Button>
                     </li>
                   );
                 })}
@@ -675,7 +703,7 @@ const HomePage = () => {
             </div>
 
             <Link
-              to="/admin/pricing"
+              to="/settings/rates"
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-ink text-surface text-sm font-semibold hover:bg-ink/85 transition-colors"
             >
               Go to Cost Master

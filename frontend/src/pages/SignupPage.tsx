@@ -41,7 +41,7 @@ const SignupPage = () => {
       });
       // signup() stores the returned tokens — go straight to the workspace,
       // where the profile prompt and onboarding checklist take over.
-      navigate('/workspace', { replace: true, state: { justSignedUp: true } });
+      navigate('/settings/account', { replace: true, state: { justSignedUp: true } });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {

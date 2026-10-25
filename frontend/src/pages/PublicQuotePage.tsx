@@ -15,10 +15,11 @@ import {
   Mail,
   Phone,
   XCircle,
+  Paperclip,
 } from 'lucide-react';
-import { getPublicQuote, respondToPublicQuote, getPublicQuotePdfUrl } from '@/services/api';
+import { getPublicQuote, respondToPublicQuote, getPublicQuotePdfUrl, getPublicAttachmentUrl } from '@/services/api';
 import type { PublicQuote } from '@/types';
-import { Button, Card, SectionLabel, Skeleton, StatusPill, Textarea } from '@/components/ui';
+import { Button, Card, SectionLabel, Skeleton, StatusPill, Textarea, buttonClasses } from '@/components/ui';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
@@ -178,7 +179,8 @@ const PublicQuotePage = () => {
           >
             <div>
               <SectionLabel className="!text-primary-300">Quotation</SectionLabel>
-              <p className="mt-1 font-mono text-lg font-semibold">{quote.quote_number}</p>
+              {quote.title && <p className="mt-1 text-lg font-semibold">{quote.title}</p>}
+              <p className={quote.title ? 'font-mono text-sm text-ink-subtle' : 'mt-1 font-mono text-lg font-semibold'}>{quote.quote_number}</p>
               <p className="mt-1 text-xs text-ink-subtle">
                 Prepared for {quote.customer_name || quote.customer_company || 'you'} ·{' '}
                 {formatDate(quote.created_at)}
@@ -220,6 +222,20 @@ const PublicQuotePage = () => {
                     <td className="py-2.5 text-right font-mono font-semibold text-ink">
                       {formatCurrency(item.line_total)}
                     </td>
+                  </tr>
+                ))}
+                {(quote.adjustments ?? []).map((item, index) => (
+                  <tr key={`adj-${index}`} className="border-t border-edge">
+                    <td colSpan={item.kind === 'note' ? 4 : 3} className={`py-2.5 pr-4 ${item.kind === 'note' ? 'italic text-ink-muted' : 'text-ink-secondary'}`}>
+                      {item.kind === 'discount' ? 'Discount: ' : ''}
+                      {item.label}
+                    </td>
+                    {item.kind !== 'note' && (
+                      <td className="py-2.5 text-right font-mono font-semibold text-ink">
+                        {item.kind === 'discount' ? '−' : '+'}
+                        {formatCurrency(Number(item.amount))}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -331,11 +347,18 @@ const PublicQuotePage = () => {
         <div className="grid gap-5 sm:grid-cols-2">
           <Card>
             <h3 className="text-sm font-semibold text-ink">Documents</h3>
-            <a href={getPublicQuotePdfUrl(token!)} target="_blank" rel="noreferrer" className="mt-3 block">
-              <Button variant="secondary" icon={<Download className="h-4 w-4" />}>
+            <div className="mt-3 flex flex-col items-start gap-2">
+              <a href={getPublicQuotePdfUrl(token!)} target="_blank" rel="noreferrer" className={buttonClasses('secondary', 'md')}>
+                <Download className="h-4 w-4" />
                 Download quote PDF
-              </Button>
-            </a>
+              </a>
+              {(quote.attachments ?? []).map((file) => (
+                <a key={file.id} href={getPublicAttachmentUrl(token!, file.id)} className={buttonClasses('ghost', 'md', 'max-w-full')}>
+                  <Paperclip className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{file.original_filename}</span>
+                </a>
+              ))}
+            </div>
           </Card>
           <Card>
             <h3 className="text-sm font-semibold text-ink">Questions?</h3>

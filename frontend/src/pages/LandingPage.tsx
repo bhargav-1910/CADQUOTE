@@ -536,6 +536,9 @@ const LandingPage = () => {
                 {label}
               </a>
             ))}
+            <Link to="/pricing" className="rounded-lg px-1 py-2 text-sm font-medium text-ink-secondary transition hover:text-ink">
+              Pricing
+            </Link>
           </nav>
 
           <div className="flex shrink-0 items-center gap-2.5">
@@ -968,6 +971,16 @@ const LandingPage = () => {
               <li>
                 <Link to="/signup" className="text-ink-secondary transition hover:text-ink">
                   Create workspace
+                </Link>
+              </li>
+              <li>
+                <Link to="/pricing" className="text-ink-secondary transition hover:text-ink">
+                  Pricing
+                </Link>
+              </li>
+              <li>
+                <Link to="/help" className="text-ink-secondary transition hover:text-ink">
+                  Help center
                 </Link>
               </li>
             </ul>

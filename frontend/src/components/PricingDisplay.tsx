@@ -16,6 +16,9 @@ import {
 } from 'lucide-react';
 import type { PricingResponse, PricingOverrides, QuantityBreak } from '@/types';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
+import { InfoTip } from '@/components/ui';
+import { PriceExplainer } from '@/components/PriceExplainer';
+import { GLOSSARY } from '@/content/glossary';
 
 interface PricingDisplayProps {
   pricing: PricingResponse | null;
@@ -314,21 +317,21 @@ const PricingDisplay = ({
         <div>
           <div className="space-y-1">
             {[
-              { label: 'Material', sub: pricing.material.name, value: breakdown.material_cost },
-              { label: 'Machining', sub: undefined, value: breakdown.machining_cost },
-              { label: 'Surface Finish', sub: pricing.surface_finish.name, value: breakdown.finish_cost },
-              { label: 'Inspection', sub: pricing.inspection_level.name, value: breakdown.inspection_cost },
-            ].map(({ label, sub, value }) => (
+              { label: 'Material', sub: pricing.material.name, value: breakdown.material_cost, help: GLOSSARY.material },
+              { label: 'Machining', sub: undefined, value: breakdown.machining_cost, help: GLOSSARY.machining },
+              { label: 'Surface Finish', sub: pricing.surface_finish.name, value: breakdown.finish_cost, help: GLOSSARY.finish },
+              { label: 'Inspection', sub: pricing.inspection_level.name, value: breakdown.inspection_cost, help: GLOSSARY.inspection },
+            ].map(({ label, sub, value, help }) => (
               <div key={label} className="flex justify-between items-baseline py-1.5 border-b border-dashed border-edge">
                 <div>
-                  <span className="text-sm font-medium text-ink-secondary">{label}</span>
+                  <span className="text-sm font-medium text-ink-secondary">{label}<InfoTip term={label.toLowerCase()}>{help}</InfoTip></span>
                   {sub && <span className="ml-2 text-xs text-ink-subtle">{sub}</span>}
                 </div>
                 <span className="text-sm font-medium text-ink">{formatCurrency(value)}</span>
               </div>
             ))}
             <div className="flex justify-between items-baseline py-1.5 border-b border-dashed border-edge">
-              <span className="text-sm text-ink-muted">Subtotal (per unit)</span>
+              <span className="text-sm text-ink-muted">Subtotal (per unit)<InfoTip term="subtotal">{GLOSSARY.subtotal}</InfoTip></span>
               <span className="text-sm text-ink-muted">{formatCurrency(breakdown.subtotal)}</span>
             </div>
             <div className="flex justify-between items-baseline py-1.5">
@@ -342,6 +345,7 @@ const PricingDisplay = ({
                 <span className="text-ink-subtle">
                   (effective {((breakdown.margin_factor - 1) * 100).toFixed(0)}%)
                 </span>
+                <InfoTip term="margin">{GLOSSARY.margin}</InfoTip>
               </span>
               <span className="text-sm text-ink-muted">
                 {formatCurrency(breakdown.unit_price - breakdown.subtotal)}
@@ -394,7 +398,25 @@ const PricingDisplay = ({
 
         {/* Collapsible cost breakup */}
         <div>
-          <h3 className="text-sm font-semibold text-ink mb-2">Cost Breakup</h3>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-ink">Cost Breakup</h3>
+            <PriceExplainer
+              numbers={{
+                material: Number(breakdown.material_cost),
+                machining: Number(breakdown.machining_cost),
+                finish: Number(breakdown.finish_cost),
+                inspection: Number(breakdown.inspection_cost),
+                subtotal: Number(breakdown.subtotal),
+                marginFactor: Number(breakdown.margin_factor),
+                unitPrice: Number(breakdown.unit_price),
+                quantity: pricing.quantity,
+                engineTotal: Number(breakdown.total_price),
+                extras: 0,
+                total: Number(breakdown.total_price),
+                leadTimeDays: Number(pricing.estimated_lead_time_days),
+              }}
+            />
+          </div>
           <div className="space-y-2">
             <ReceiptSection
               title="Raw Material"

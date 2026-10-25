@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Home, ChevronRight, Eye, Settings2, Maximize2 } from 'lucide-react';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { ArrowLeft, FileText, Loader2, CheckCircle, Package, Eye, Settings2, Maximize2 } from 'lucide-react';
 import { Button, Input, Select, Skeleton, Textarea } from '@/components/ui';
+import Breadcrumbs from '@/components/Breadcrumbs';
 import FileUpload from '@/components/FileUpload';
 import ModelViewer from '@/components/ModelViewer';
 import ConfigurationPanel from '@/components/ConfigurationPanel';
@@ -10,7 +11,7 @@ import DFXAnalysis from '@/components/DFXAnalysis';
 import FilePreviewModal from '@/components/FilePreviewModal';
 import CustomerPicker from '@/components/CustomerPicker';
 import { useAuth } from '@/components/AuthProvider';
-import type { Customer } from '@/types';
+import type { Customer, QuoteLineItem } from '@/types';
 import type {
   CADFile,
   DFMIssueCostImpact,
@@ -21,7 +22,8 @@ import type {
   QuoteConfiguration,
   ToleranceTier,
 } from '@/types';
-import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile, deleteQuote } from '@/services/api';
+import { getInstantPricing, getBatchPricing, createQuote, createCombinedQuote, getQuote, getGeometryAnalysis, getCADFile } from '@/services/api';
+import { LineItemsEditor, TemplateMenu, adjustedTotal, cleanLineItems } from '@/components/QuoteExtras';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import type { ProcessedCADUpload } from '@/services/uploadWorkflow';
 
@@ -190,7 +192,7 @@ const buildPricingOverridesPayload = (
   return Object.fromEntries(filteredEntries) as PricingOverrides;
 };
 
-/** Desktop-only sticky bar with the running total and primary CTA. */
+/** Desktop-only bar with the running total and primary CTA; sticky, so it never covers the footer. */
 const StickyPriceBar = ({
   total,
   subLabel,
@@ -208,7 +210,7 @@ const StickyPriceBar = ({
 }) => {
   const animatedTotal = useAnimatedNumber(total);
   return (
-    <div className="hidden lg:flex fixed bottom-0 right-0 left-60 z-30 items-center justify-between gap-6 border-t border-edge surface-strong px-8 py-3.5 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.25)]">
+    <div className="hidden lg:flex sticky bottom-0 z-30 -mx-8 -mb-8 items-center justify-between gap-6 border-t border-edge surface-strong px-8 py-3.5 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.25)]">
       <div className="flex items-baseline gap-4 min-w-0">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">Total</p>
@@ -300,16 +302,8 @@ const QuoteBuilder = () => {
   const [processRouting, setProcessRouting] = useState<ProcessRoutingOperation[]>([{ ...emptyRoutingRow }]);
   const [showProcessRouting, setShowProcessRouting] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
-  const [editOriginalStatus, setEditOriginalStatus] = useState<string | null>(null);
-
-  // Editing an unanswered quote REPLACES it: create the new one, then remove
-  // the original so My Quotes doesn't collect a stale row per regenerate.
-  // Sent/responded quotes are kept — they're already with the customer.
-  const replaceEditedQuote = async () => {
-    if (editQuoteId && (editOriginalStatus === 'draft' || editOriginalStatus === 'generated')) {
-      await deleteQuote(editQuoteId).catch(() => {});
-    }
-  };
+  // Manual charges / discounts / notes on top of the computed price.
+  const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
   const [step, setStep] = useState<'upload' | 'configure'>(
     initialMultiFiles.length > 0 ? 'configure' : 'upload'
   );
@@ -366,7 +360,7 @@ const QuoteBuilder = () => {
       setError(null);
       try {
         const existingQuote = await getQuote(editQuoteId);
-        setEditOriginalStatus(existingQuote.status);
+        setLineItems(existingQuote.line_items ?? []);
         const combinedEditItems = parseCombinedEditItems(existingQuote.notes);
 
         if (combinedEditItems.length > 1) {
@@ -799,6 +793,52 @@ const QuoteBuilder = () => {
     setStep('configure');
   };
 
+  // Templates: everything about the setup except the CAD file and customer.
+  const buildTemplatePayload = (): Record<string, unknown> => ({
+    material_id: isMultiMode ? materialId : config.materialId,
+    surface_finish_id: isMultiMode ? surfaceFinishId : config.surfaceFinishId,
+    inspection_level_id: isMultiMode ? inspectionLevelId : config.inspectionLevelId,
+    quantity: isMultiMode ? quantity : config.quantity,
+    tolerance_tier: toleranceTier,
+    use_quote_specific_pricing: useQuoteSpecificPricing,
+    pricing_overrides: pricingOverrides,
+    commercial: {
+      toleranceNotes: rfqCommercialForm.toleranceNotes,
+      hsnCode: rfqCommercialForm.hsnCode,
+      priceValidity: rfqCommercialForm.priceValidity,
+      gst: rfqCommercialForm.gst,
+      delivery: rfqCommercialForm.delivery,
+      paymentTerms: rfqCommercialForm.paymentTerms,
+    },
+    notes: isMultiMode ? notes : config.notes,
+    line_items: cleanLineItems(lineItems),
+  });
+
+  const applyTemplate = (payload: Record<string, unknown>) => {
+    const str = (key: string) => (typeof payload[key] === 'string' ? (payload[key] as string) : null);
+    const qty = typeof payload.quantity === 'number' ? payload.quantity : null;
+    setConfig((prev) => ({
+      ...prev,
+      materialId: str('material_id') ?? prev.materialId,
+      surfaceFinishId: str('surface_finish_id') ?? prev.surfaceFinishId,
+      inspectionLevelId: str('inspection_level_id') ?? prev.inspectionLevelId,
+      quantity: qty ?? prev.quantity,
+      notes: str('notes') ?? prev.notes,
+    }));
+    if (str('material_id')) setMaterialId(str('material_id'));
+    if (str('surface_finish_id')) setSurfaceFinishId(str('surface_finish_id'));
+    if (str('inspection_level_id')) setInspectionLevelId(str('inspection_level_id'));
+    if (qty) setQuantity(qty);
+    if (str('notes') !== null) setNotes(str('notes') ?? '');
+    if (str('tolerance_tier')) setToleranceTier(str('tolerance_tier') as ToleranceTier);
+    if (typeof payload.use_quote_specific_pricing === 'boolean') setUseQuoteSpecificPricing(payload.use_quote_specific_pricing);
+    if (payload.pricing_overrides && typeof payload.pricing_overrides === 'object') setPricingOverrides(payload.pricing_overrides as PricingOverrides);
+    if (payload.commercial && typeof payload.commercial === 'object') {
+      setRfqCommercialForm((prev) => ({ ...prev, ...(payload.commercial as Partial<RFQCommercialFormState>) }));
+    }
+    if (Array.isArray(payload.line_items)) setLineItems(payload.line_items as QuoteLineItem[]);
+  };
+
   const handleCreateSingleQuote = async () => {
     if (!config.cadFile || !pricing) return;
     setCreating(true);
@@ -816,6 +856,8 @@ const QuoteBuilder = () => {
         }));
 
       const quote = await createQuote({
+        previous_version_id: editQuoteId,
+        line_items: cleanLineItems(lineItems),
         cad_file_id: config.cadFile.id,
         material_id: config.materialId!,
         surface_finish_id: config.surfaceFinishId!,
@@ -841,7 +883,6 @@ const QuoteBuilder = () => {
         payment_terms: toOptionalString(rfqCommercialForm.paymentTerms),
         notes: config.notes || undefined,
       });
-      await replaceEditedQuote();
       navigate(`/quotes/${quote.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create quote');
@@ -887,6 +928,8 @@ const QuoteBuilder = () => {
       });
 
       const quote = await createCombinedQuote({
+        previous_version_id: editQuoteId,
+        line_items: cleanLineItems(lineItems),
         items,
         pricing_overrides: {
           ...(pricingOverridesPayload ?? {}),
@@ -909,7 +952,6 @@ const QuoteBuilder = () => {
         notes: notes || undefined,
       });
 
-      await replaceEditedQuote();
       navigate(`/quotes/${quote.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create quote');
@@ -1156,42 +1198,41 @@ const QuoteBuilder = () => {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:pb-28">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-ink-muted">
-        <Link to="/workspace" className="flex items-center gap-1 hover:text-ink transition-colors">
-          <Home className="w-3.5 h-3.5" />
-          Home
-        </Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <Link to="/quotes" className="hover:text-ink transition-colors">My Quotes</Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-ink font-medium">New Quote</span>
-      </nav>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <Breadcrumbs
+        items={editQuoteId
+          ? [{ label: 'Quotes', to: '/quotes' }, { label: 'Quote', to: `/quotes/${editQuoteId}` }, { label: 'Edit' }]
+          : [{ label: 'Quotes', to: '/quotes' }, { label: 'New quote' }]}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-ink">
             {editQuoteId
-              ? 'Edit Quote'
+              ? 'Edit quote'
               : isMultiMode
               ? `New Quote — ${multiFiles.length} Files`
               : 'New Quote'}
           </h1>
           <p className="text-ink-muted text-sm mt-0.5">
-            {isMultiMode
+            {editQuoteId
+              ? 'Saving creates the next version of this quote. The customer\'s link will show the new version.'
+              : isMultiMode
               ? 'Choose files, configure shared or individual settings, and generate all quotes together.'
               : 'Upload your CAD file and configure options'}
           </p>
         </div>
           {step === 'configure' && (
-          <Button variant="secondary"
-            onClick={resetToUpload}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Start Over
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <TemplateMenu buildPayload={buildTemplatePayload} onApply={applyTemplate} />
+            <Button variant="secondary"
+              onClick={resetToUpload}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Start Over
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1341,6 +1382,11 @@ const QuoteBuilder = () => {
             />
             {customerForm}
             {rfqAndCommercialForm}
+            <LineItemsEditor
+              items={lineItems}
+              onChange={setLineItems}
+              engineTotal={pricing ? Number(pricing.price_breakdown.total_price) : null}
+            />
             <Button variant="accent" size="lg" className="lg:hidden w-full"
               onClick={handleCreateSingleQuote}
               disabled={!pricing || creating}
@@ -1351,20 +1397,6 @@ const QuoteBuilder = () => {
             </Button>
           </div>
 
-          <StickyPriceBar
-            total={Number(pricing?.price_breakdown.total_price ?? 0)}
-            subLabel={
-              pricing
-                ? `${pricing.quantity} unit${pricing.quantity > 1 ? 's' : ''} · ${Number(pricing.estimated_lead_time_days).toFixed(1)} days lead time · ${formatINR(Number(pricing.price_breakdown.unit_price))}/unit`
-                : pricingLoading
-                ? 'Calculating price…'
-                : 'Configure options to price this part'
-            }
-            ctaLabel={creating ? 'Generating Quote…' : 'Generate Quote'}
-            busy={creating || pricingLoading}
-            disabled={!pricing || creating}
-            onClick={handleCreateSingleQuote}
-          />
 
           {singlePreviewOpen && (
             <FilePreviewModal
@@ -1551,6 +1583,7 @@ const QuoteBuilder = () => {
 
             {customerForm}
             {rfqAndCommercialForm}
+            <LineItemsEditor items={lineItems} onChange={setLineItems} engineTotal={multiTotal > 0 ? multiTotal : null} />
           </div>
 
           <div className="space-y-6 lg:sticky lg:top-6 self-start">
@@ -1713,22 +1746,6 @@ const QuoteBuilder = () => {
             </Button>
           </div>
 
-          <StickyPriceBar
-            total={multiTotal}
-            subLabel={
-              anyMultiLoading
-                ? 'Calculating prices…'
-                : `${pricedFileCount}/${selectedMultiFiles.length} files priced · combined quote`
-            }
-            ctaLabel={
-              creating
-                ? 'Generating Combined Quote…'
-                : `Generate One Quote (${selectedMultiFiles.length} Files)`
-            }
-            busy={creating || anyMultiLoading}
-            disabled={!allMultiPriced || anyMultiLoading || creating}
-            onClick={handleCreateBatchQuotes}
-          />
 
           {previewFile && (
             <FilePreviewModal
@@ -1738,6 +1755,42 @@ const QuoteBuilder = () => {
             />
           )}
         </div>
+      )}
+
+      {/* Last child of the page so it sticks while scrolling and settles above the footer. */}
+      {step === 'configure' && !isMultiMode && config.cadFile && (
+        <StickyPriceBar
+          total={adjustedTotal(Number(pricing?.price_breakdown.total_price ?? 0), lineItems)}
+          subLabel={
+            pricing
+              ? `${pricing.quantity} unit${pricing.quantity > 1 ? 's' : ''} · ${Number(pricing.estimated_lead_time_days).toFixed(1)} days lead time · ${formatINR(Number(pricing.price_breakdown.unit_price))}/unit`
+              : pricingLoading
+              ? 'Calculating price…'
+              : 'Configure options to price this part'
+          }
+          ctaLabel={creating ? 'Generating Quote…' : 'Generate Quote'}
+          busy={creating || pricingLoading}
+          disabled={!pricing || creating}
+          onClick={handleCreateSingleQuote}
+        />
+      )}
+      {step === 'configure' && isMultiMode && (
+        <StickyPriceBar
+          total={adjustedTotal(multiTotal, lineItems)}
+          subLabel={
+            anyMultiLoading
+              ? 'Calculating prices…'
+              : `${pricedFileCount}/${selectedMultiFiles.length} files priced · combined quote`
+          }
+          ctaLabel={
+            creating
+              ? 'Generating Combined Quote…'
+              : `Generate One Quote (${selectedMultiFiles.length} Files)`
+          }
+          busy={creating || anyMultiLoading}
+          disabled={!allMultiPriced || anyMultiLoading || creating}
+          onClick={handleCreateBatchQuotes}
+        />
       )}
     </div>
   );

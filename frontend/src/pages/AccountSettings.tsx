@@ -1,16 +1,18 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Building2, Phone, Upload, User } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import AccountSecurityPanel from '@/components/AccountSecurityPanel';
-import { Button, Dialog, Field, Input, Textarea } from '@/components/ui';
+import { useToast } from '@/components/Toast';
+import { Button, Field, Input, Textarea } from '@/components/ui';
 
-interface ProfileEditModalProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
+/** /settings/account: company details used on quotes and PDFs, plus sign-in security. */
+const AccountSettings = () => {
   const { user, updateProfile } = useAuth();
+  const toast = useToast();
+  // Fresh signups land here once, so the first quote already carries their details.
+  const location = useLocation();
+  const justSignedUp = Boolean((location.state as { justSignedUp?: boolean } | null)?.justSignedUp);
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
@@ -20,11 +22,10 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   const [logo, setLogo] = useState<File | undefined>(undefined);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open || !user) {
+    if (!user) {
       return;
     }
     setFullName(user.full_name ?? '');
@@ -36,17 +37,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
     setLogo(undefined);
     setLogoPreviewUrl(null);
     setError(null);
-  }, [open, user]);
-
-  // Deliberately keyed on `open` alone, not `user`: a successful save updates
-  // the `user` object from context, which would otherwise re-run an
-  // `[open, user]` effect and reset `saved` back to false before the
-  // confirmation message ever gets painted.
-  useEffect(() => {
-    if (open) {
-      setSaved(false);
-    }
-  }, [open]);
+  }, [user]);
 
   useEffect(() => {
     if (!logo) {
@@ -81,8 +72,7 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
         brand_color: brandColor,
         logo,
       });
-      setSaved(true);
-      window.setTimeout(onClose, 1100);
+      toast({ message: 'Account details saved' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update profile');
     } finally {
@@ -91,17 +81,17 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} labelledBy="profile-settings-title" className="max-w-3xl">
-        <div className="flex items-center justify-between border-b border-edge px-6 py-5">
-          <div>
-            <h2 id="profile-settings-title" className="text-xl font-semibold text-ink">Profile Settings</h2>
-            <p className="text-sm text-ink-muted mt-0.5">Update your public details used in quotes and PDF branding.</p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
+    <div className="max-w-4xl space-y-6">
+      {justSignedUp && (
+        <p className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900 dark:border-primary-500/30 dark:bg-primary-500/10 dark:text-primary-100">
+          Welcome to ForgeQuote! Add your company details and logo first. They appear on every quote, PDF and customer page.
+        </p>
+      )}
+      <section className="rounded-2xl border border-edge bg-surface">
+        <div className="border-b border-edge px-6 py-5">
+          <h1 className="text-xl font-semibold text-ink">Company & profile</h1>
+          <p className="mt-0.5 text-sm text-ink-muted">Your details as they appear on quotes and PDF branding.</p>
         </div>
-
         <form onSubmit={onSubmit} className="space-y-5 px-6 py-6">
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_220px]">
             <div className="space-y-5">
@@ -209,25 +199,20 @@ const ProfileEditModal = ({ open, onClose }: ProfileEditModalProps) => {
           </div>
 
           {error && <p role="alert" className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
-          {saved && (
-            <p role="status" className="rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-              Profile saved.
-            </p>
-          )}
-
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-edge">
-            <Button variant="secondary" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={saving} disabled={saved}>
-              {saved ? 'Saved' : 'Save Changes'}
+            <Button type="submit" loading={saving}>
+              Save changes
             </Button>
           </div>
         </form>
+      </section>
 
+      <section className="rounded-2xl border border-edge bg-surface">
+        <h2 className="px-6 pt-5 text-lg font-semibold text-ink">Sign-in & security</h2>
         <AccountSecurityPanel />
-    </Dialog>
+      </section>
+    </div>
   );
 };
 
-export default ProfileEditModal;
+export default AccountSettings;

@@ -128,6 +128,24 @@ def gst_breakup(
     return {"rate": rate, "tax": total_tax, "lines": lines}
 
 
+
+def _engine_total(quote: Quote):
+    """Price of the machined part(s) before manual charges/discounts."""
+    return quote.engine_total if quote.engine_total is not None else quote.total_price
+
+
+def _adjustment_rows(quote: Quote) -> list[tuple[str, str, str]]:
+    """(kind, label, signed amount text) for each manual line on the quote."""
+    rows = []
+    for item in quote.line_items or []:
+        if item.get("kind") == "note":
+            rows.append(("note", item.get("label", ""), ""))
+        else:
+            amount = float(item.get("amount") or 0)
+            sign = "" if item.get("kind") == "charge" else "-"
+            rows.append((item.get("kind", "charge"), item.get("label", ""), f"{sign}{amount:,.2f}"))
+    return rows
+
 class PDFGenerator:
     """Generate PDF quotation documents."""
     
@@ -306,6 +324,7 @@ class PDFGenerator:
 
         meta_rows = [
             [Paragraph("<b>Quotation No.</b>", base_style), Paragraph(f"<b>{quote.quote_number}</b>", base_style)],
+            *([[Paragraph("<b>Reference</b>", base_style), Paragraph(f"<b>{escape(quote.title)}</b>", base_style)]] if quote.title else []),
             [Paragraph("<b>Date</b>", base_style), Paragraph(f"<b>{quote.created_at.strftime('%d-%m-%Y')}</b>", base_style)],
             [Paragraph("<b>Terms of Payment</b>", base_style), Paragraph(f"<b>{escape(quote.payment_terms or 'Not specified')}</b>", base_style)],
             [Paragraph("<b>Client ID</b>", base_style), Paragraph(f"<b>{str(quote.id).split('-')[0].upper()}</b>", base_style)],
@@ -370,8 +389,18 @@ class PDFGenerator:
                 escape(quote.hsn_code or "-"),
                 f"{max(int(quote.quantity), 1):,} pcs",
                 f"{float(quote.unit_price):,.2f}",
-                f"{float(quote.total_price):,.2f}",
+                f"{float(_engine_total(quote)):,.2f}",
             ]]
+        for kind, label, amount in _adjustment_rows(quote):
+            if kind == "note":
+                line_rows.append(["", Paragraph(f"<i>{escape(label)}</i>", base_style), "", "", "", ""])
+            else:
+                meta = "Additional charge" if kind == "charge" else "Discount"
+                line_rows.append([
+                    "",
+                    Paragraph(f"<b>{escape(label)}</b><br/><font size='7.5' color='#64748b'>{meta}</font>", base_style),
+                    "", "", "", amount,
+                ])
 
         items = Table(
             [["#", "Part & Specification", "HSN", "Qty", "Unit Price (Rs.)", "Amount (Rs.)"]] + line_rows,
@@ -549,7 +578,7 @@ class PDFGenerator:
                 "hsn_code": escape(quote.hsn_code or "—"),
                 "qty": max(int(quote.quantity), 1),
                 "unit_price": float(quote.unit_price),
-                "line_total": float(quote.total_price),
+                "line_total": float(_engine_total(quote)),
             }]
 
         line_items_html = ""
@@ -564,6 +593,19 @@ class PDFGenerator:
                 f"<td class=\"right num strong\">{item['line_total']:,.2f}</td>"
                 "</tr>"
             )
+        for kind, label, amount in _adjustment_rows(quote):
+            if kind == "note":
+                line_items_html += f'<tr><td></td><td colspan="5" class="muted">{escape(label)}</td></tr>'
+            else:
+                meta = "Additional charge" if kind == "charge" else "Discount"
+                line_items_html += (
+                    "<tr>"
+                    "<td class=\"center muted\">—</td>"
+                    f"<td><span class=\"part-name\">{escape(label)}</span><span class=\"desc-meta\">{meta}</span></td>"
+                    "<td></td><td></td><td></td>"
+                    f"<td class=\"right num strong\">{amount}</td>"
+                    "</tr>"
+                )
 
         subtotal = float(quote.total_price)
         gst_display = quote.gst or "As applicable"
@@ -581,7 +623,7 @@ class PDFGenerator:
             )
             grand_total = subtotal
 
-        subject_line = cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quotation for CNC machined components"
+        subject_line = quote.title or (cleaned_notes.splitlines()[0].strip() if cleaned_notes else "Quotation for CNC machined components")
         client_lines = [
             quote.customer_name or "Valued Customer",
             quote.customer_company or "",

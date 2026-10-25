@@ -3,9 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Box,
   FolderOpen,
-  Settings,
   User,
-  Layers,
   LogOut,
   Building2,
   Mail,
@@ -23,14 +21,19 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  LifeBuoy,
+  Gift,
+  UserCog,
+  MoreHorizontal,
+  ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { QuoteListItem } from '@/types';
 import { listQuotes } from '@/services/api';
 import { useAuth } from '@/components/AuthProvider';
-import ProfileEditModal from '@/components/ProfileEditModal';
 import LegalFooter from './LegalFooter';
 import CommandPalette from '@/components/CommandPalette';
+import { WhatsNewDialog, useWhatsNew } from '@/components/WhatsNew';
 import { Button, Dialog, buttonClasses } from '@/components/ui';
 import { useTheme, type Theme } from '@/theme';
 
@@ -38,34 +41,39 @@ interface LayoutProps {
   children: ReactNode;
 }
 
-// `adminOnly` entries are hidden from ordinary users. The API enforces the
-// same rule, so hiding a link is presentation, not protection. The admin page
-// is deliberately never linked: it lives at an unlisted URL (see App.tsx).
-const NAV: Array<{
-  path: string;
-  icon: LucideIcon;
-  label: string;
-  exact: boolean;
-  adminOnly?: boolean;
-  /** false = desktop sidebar only; reached from the account menu on phones. */
-  inBottomBar?: boolean;
-}> = [
-  { path: '/workspace', icon: LayoutDashboard, label: 'Dashboard', exact: true },
-  { path: '/quote', icon: Layers, label: 'New Quote', exact: true },
-  { path: '/quotes', icon: FolderOpen, label: 'My Quotes', exact: false },
-  { path: '/customers', icon: Users, label: 'Customers', exact: false },
+// The admin page is deliberately never linked: it lives at an unlisted URL (see App.tsx).
+const NAV: Array<{ path: string; icon: LucideIcon; label: string; group: 'workspace' | 'settings' }> = [
+  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', group: 'workspace' },
+  { path: '/quotes', icon: FolderOpen, label: 'Quotes', group: 'workspace' },
+  { path: '/customers', icon: Users, label: 'Customers', group: 'workspace' },
   // Every shop tunes its own rates here; edits are private to the workspace.
-  { path: '/admin/pricing', icon: SlidersHorizontal, label: 'Cost Master', exact: false },
-  { path: '/billing', icon: CreditCard, label: 'Billing', exact: false, inBottomBar: false },
+  { path: '/settings/rates', icon: SlidersHorizontal, label: 'Cost Master', group: 'settings' },
+  { path: '/settings/billing', icon: CreditCard, label: 'Billing', group: 'settings' },
+  { path: '/settings/account', icon: UserCog, label: 'Account', group: 'settings' },
 ];
 
-// Desktop sidebar renders NAV grouped; New Quote is promoted to a CTA button.
-const NAV_GROUPS: Array<{ label: string; paths: string[] }> = [
-  { label: 'Workspace', paths: ['/workspace', '/quotes', '/customers'] },
-  { label: 'Setup', paths: ['/admin/pricing', '/billing'] },
+const NAV_GROUPS = [
+  { key: 'workspace', label: 'Workspace' },
+  { key: 'settings', label: 'Settings' },
+] as const;
+
+// Phone bottom bar: four destinations plus More (settings, help, log out).
+const BOTTOM_BAR: Array<{ path: string; icon: LucideIcon; label: string }> = [
+  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/quotes/new', icon: Plus, label: 'New' },
+  { path: '/quotes', icon: FolderOpen, label: 'Quotes' },
+  { path: '/customers', icon: Users, label: 'Customers' },
 ];
 
 const RESPONSES_SEEN_KEY = 'fq-responses-seen';
+// Day (YYYY-MM-DD) the bell was last opened; the expiry nudge shows once per day.
+const EXPIRY_SEEN_KEY = 'fq-expiry-seen-day';
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+const bottomItemClass = 'flex min-h-[48px] min-w-[56px] flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1.5 transition-colors';
+const bottomItemActive = 'text-primary-700 dark:text-primary-300 bg-primary-600/10';
+const bottomItemIdle = 'text-ink-muted hover:text-ink-secondary';
+const sheetItemClass = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[15px] font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink aria-[current=page]:text-primary-700 dark:aria-[current=page]:text-primary-300';
 
 const APPEARANCE: Array<{ value: Theme; label: string; icon: LucideIcon }> = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -75,13 +83,8 @@ const APPEARANCE: Array<{ value: Theme; label: string; icon: LucideIcon }> = [
 const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const { user, logout } = useAuth();
-  // Hide privileged destinations from ordinary users; the API rejects them
-  // regardless, this just avoids a dead link.
-  const visibleNav = NAV.filter((item) => !item.adminOnly || user?.role === 'admin');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
-  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -141,11 +144,24 @@ const Layout = ({ children }: LayoutProps) => {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  const { unread: whatsNewUnread, markSeen: markWhatsNewSeen } = useWhatsNew();
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const openWhatsNew = () => {
+    setProfileMenuOpen(false);
+    setMoreOpen(false);
+    setWhatsNewOpen(true);
+    markWhatsNewSeen();
+  };
+
+  const [expirySeenDay, setExpirySeenDay] = useState(() => localStorage.getItem(EXPIRY_SEEN_KEY));
+
   const openNotifications = () => {
     setNotifOpen((prev) => !prev);
     if (!notifOpen) {
       localStorage.setItem(RESPONSES_SEEN_KEY, String(Date.now()));
       setResponsesBadge(0);
+      localStorage.setItem(EXPIRY_SEEN_KEY, todayKey());
+      setExpirySeenDay(todayKey());
     }
   };
 
@@ -161,6 +177,10 @@ const Layout = ({ children }: LayoutProps) => {
     })
     .sort((a, b) => new Date(a.valid_until).getTime() - new Date(b.valid_until).getTime())
     .slice(0, 5);
+  // In-app expiry reminder: a quote lapses within 3 days and the bell hasn't been opened today.
+  const expiryNudge =
+    expirySeenDay !== todayKey() &&
+    notifExpiring.some((q) => new Date(q.valid_until).getTime() - Date.now() < 3 * 86400000);
 
   // The API client fires this whenever the backend answers 402 to a gated
   // action — one global prompt instead of per-page handling.
@@ -169,21 +189,6 @@ const Layout = ({ children }: LayoutProps) => {
     window.addEventListener('billing:subscription-required', onSubscriptionRequired);
     return () => window.removeEventListener('billing:subscription-required', onSubscriptionRequired);
   }, []);
-
-  // Pages can request the profile modal (e.g. the complete-your-profile
-  // banner); fresh signups get it opened for them once.
-  useEffect(() => {
-    const onOpenProfile = () => setProfileSettingsOpen(true);
-    window.addEventListener('profile:open', onOpenProfile);
-    return () => window.removeEventListener('profile:open', onOpenProfile);
-  }, []);
-
-  useEffect(() => {
-    if ((location.state as { justSignedUp?: boolean } | null)?.justSignedUp) {
-      setProfileSettingsOpen(true);
-      window.history.replaceState({}, '');
-    }
-  }, [location.state]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -209,27 +214,17 @@ const Layout = ({ children }: LayoutProps) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Close menus when navigating.
   useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const onPointer = (event: MouseEvent) => {
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) setMobileMenuOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [mobileMenuOpen]);
+    setMoreOpen(false);
+    setProfileMenuOpen(false);
+  }, [location.pathname]);
 
-  // Close the menu when navigating.
-  useEffect(() => setMobileMenuOpen(false), [location.pathname]);
-
-  const isActive = (path: string, exact: boolean) =>
-    exact ? location.pathname === path : location.pathname.startsWith(path);
+  // "Quotes" covers a quote and its edit page, but not New quote, which has its own entry.
+  const isActive = (path: string) =>
+    path === '/quotes'
+      ? location.pathname.startsWith('/quotes') && location.pathname !== '/quotes/new'
+      : location.pathname === path || location.pathname.startsWith(`${path}/`);
 
   const profileMenu = (
     <div className="relative" ref={profileMenuRef}>
@@ -240,7 +235,7 @@ const Layout = ({ children }: LayoutProps) => {
         aria-expanded={profileMenuOpen}
         aria-haspopup="menu"
       >
-        <span className="w-8 h-8 rounded-lg bg-surface-raised border border-edge-strong flex items-center justify-center shrink-0">
+        <span className="relative w-8 h-8 rounded-lg bg-surface-raised border border-edge-strong flex items-center justify-center shrink-0">
           {user?.company_logo_url ? (
             <img src={user.company_logo_url} alt="" className="w-full h-full rounded-lg object-contain bg-surface" />
           ) : (
@@ -273,18 +268,10 @@ const Layout = ({ children }: LayoutProps) => {
               <span className="truncate">{user?.company_name || 'No company'}</span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setProfileMenuOpen(false);
-              setProfileSettingsOpen(true);
-            }}
-            className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink flex items-center gap-2"
-            role="menuitem"
-          >
-            <Settings className="w-4 h-4" />
-            Profile Settings
-          </button>
+          <Link to="/settings/account" className="w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink flex items-center gap-2" role="menuitem">
+            <UserCog className="w-4 h-4" />
+            Account settings
+          </Link>
           <button
             type="button"
             onClick={() => {
@@ -295,7 +282,7 @@ const Layout = ({ children }: LayoutProps) => {
             role="menuitem"
           >
             <LogOut className="w-4 h-4" />
-            Logout
+            Log out
           </button>
         </div>
       )}
@@ -306,7 +293,7 @@ const Layout = ({ children }: LayoutProps) => {
     <div className="min-h-screen relative">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col bg-surface text-ink border-r border-edge">
-        <Link to="/workspace" className="flex items-center gap-3 px-4 py-5 group">
+        <Link to="/dashboard" className="flex items-center gap-3 px-4 py-5 group">
           <div
             className="w-10 h-10 rounded-xl text-white flex items-center justify-center shadow-lg shadow-primary-900/40 group-hover:scale-105 transition-transform"
             style={
@@ -338,13 +325,15 @@ const Layout = ({ children }: LayoutProps) => {
             <button
               type="button"
               onClick={openNotifications}
-              aria-label="Notifications"
+              aria-label={responsesBadge > 0 ? 'Notifications: new customer responses' : expiryNudge ? 'Notifications: quotes expiring soon' : 'Notifications'}
               className="relative h-full w-9 flex items-center justify-center rounded-lg border border-edge bg-surface-muted text-ink-muted hover:border-edge-strong hover:text-ink-secondary transition-colors"
             >
               <Bell className="w-3.5 h-3.5" />
-              {responsesBadge > 0 && (
+              {responsesBadge > 0 ? (
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary-400 border-2 border-surface" />
-              )}
+              ) : expiryNudge ? (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-surface" />
+              ) : null}
             </button>
 
             {notifOpen && (
@@ -369,7 +358,7 @@ const Layout = ({ children }: LayoutProps) => {
                       )}
                       <span className="min-w-0">
                         <span className="block text-xs font-semibold text-ink truncate">
-                          {q.quote_number} {q.status === 'accepted' ? 'accepted' : 'declined'}
+                          {q.title || q.quote_number} {q.status === 'accepted' ? 'accepted' : 'declined'}
                         </span>
                         <span className="block text-[11px] text-ink-muted truncate">
                           {q.customer_name || 'No customer'} ·{' '}
@@ -395,7 +384,7 @@ const Layout = ({ children }: LayoutProps) => {
                     >
                       <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                       <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-ink truncate">{q.quote_number}</span>
+                        <span className="block text-xs font-semibold text-ink truncate">{q.title || q.quote_number}</span>
                         <span className="block text-[11px] text-ink-muted truncate">
                           valid until {new Date(q.valid_until).toLocaleDateString('en-IN')}
                         </span>
@@ -409,26 +398,27 @@ const Layout = ({ children }: LayoutProps) => {
         </div>
 
         <Link
-          to="/quote" className={buttonClasses('accent', 'md', 'mx-3 mb-4')}
+          to="/quotes/new" className={buttonClasses('accent', 'md', 'mx-3 mb-4')}
         >
           <Plus className="w-4 h-4" />
-          New Quote
+          New quote
         </Link>
 
         <nav className="flex-1 px-3 space-y-4 overflow-y-auto">
           {NAV_GROUPS.map((group) => (
-            <div key={group.label}>
+            <div key={group.key}>
               <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-ink-secondary">
                 {group.label}
               </p>
               <div className="space-y-1">
-                {visibleNav.filter((item) => group.paths.includes(item.path)).map(
-                  ({ path, icon: Icon, label, exact }) => {
-                    const active = isActive(path, exact);
+                {NAV.filter((item) => item.group === group.key).map(
+                  ({ path, icon: Icon, label }) => {
+                    const active = isActive(path);
                     return (
                       <Link
                         key={path}
                         to={path}
+                        aria-current={active ? 'page' : undefined}
                         className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
                           active
                             ? 'bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-500/25'
@@ -454,10 +444,22 @@ const Layout = ({ children }: LayoutProps) => {
           ))}
         </nav>
 
+        <div className="px-3 pt-2 pb-1 space-y-0.5">
+          <Link to="/help" className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink transition">
+            <LifeBuoy className="w-4 h-4" />
+            Help center
+          </Link>
+          <button type="button" onClick={openWhatsNew} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink transition">
+            <Gift className="w-4 h-4" />
+            What’s new
+            {whatsNewUnread && <span className="ml-auto h-2 w-2 rounded-full bg-primary-500" aria-label="unread" />}
+          </button>
+        </div>
+
         <div className="px-3 pb-4 space-y-1 border-t border-edge pt-3">
           {isFreePlan && (
             <Link
-              to="/billing" className="block mb-2 rounded-xl border border-primary-500/30 bg-primary-600/10 px-3 py-2.5 hover:bg-primary-600/20 transition-colors"
+              to="/settings/billing" className="block mb-2 rounded-xl border border-primary-500/30 bg-primary-600/10 px-3 py-2.5 hover:bg-primary-600/20 transition-colors"
             >
               <p className="flex items-center gap-1.5 text-xs font-semibold text-primary-700 dark:text-primary-300">
                 <Sparkles className="w-3.5 h-3.5" />
@@ -492,7 +494,7 @@ const Layout = ({ children }: LayoutProps) => {
       {/* Mobile top bar */}
       <header className="lg:hidden sticky top-0 z-40 border-b border-edge/70 surface-panel">
         <div className="px-4 py-3 flex items-center justify-between gap-3">
-          <Link to="/workspace" className="flex items-center gap-2.5">
+          <Link to="/dashboard" className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white flex items-center justify-center">
               <Box className="w-5 h-5" />
             </div>
@@ -515,88 +517,19 @@ const Layout = ({ children }: LayoutProps) => {
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <div className="relative" ref={mobileMenuRef}>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen((open) => !open)}
-                aria-label="Account menu"
-                aria-haspopup="menu"
-                aria-expanded={mobileMenuOpen}
-                className="w-11 h-11 rounded-lg border border-edge bg-surface/80 text-ink-secondary flex items-center justify-center overflow-hidden"
-              >
-                {user?.company_logo_url ? (
-                  <img src={user.company_logo_url} alt="" className="h-full w-full bg-white object-contain" />
-                ) : (
-                  <User className="w-4 h-4" />
-                )}
-              </button>
-              {mobileMenuOpen && (
-                <div role="menu" className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-edge bg-surface p-2 shadow-2xl z-50">
-                  <div className="border-b border-edge px-3 py-2">
-                    <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-                      <span className="truncate">{user?.full_name || 'User'}</span>
-                      {!isFreePlan && (
-                        <span className="shrink-0 rounded-lg border border-primary-500/40 bg-primary-500/15 px-1.5 py-px text-[10px] font-bold text-primary-700 dark:text-primary-300">PRO</span>
-                      )}
-                    </p>
-                    <p className="truncate text-xs text-ink-muted">{user?.email}</p>
-                  </div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      setProfileSettingsOpen(true);
-                    }}
-                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink"
-                  >
-                    <Settings className="w-4 h-4" />
-                    Profile settings
-                  </button>
-                  <Link
-                    to="/billing"
-                    role="menuitem"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-secondary hover:bg-surface-raised hover:text-ink"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    Billing
-                  </Link>
-                  {/* Destructive action set apart from the rest. */}
-                  <div className="my-1 border-t border-edge" />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      logout();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Log out
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </header>
 
       {/* Content */}
-      <main className="lg:pl-60 w-full pb-24 lg:pb-6 relative z-10 min-h-screen">
+      <main className="lg:pl-60 w-full pb-24 lg:pb-6 min-h-screen">
         {children}
       </main>
 
       {/* Policy links stay reachable from inside the workspace too. */}
-      <div className="lg:pl-60 relative z-10 pb-24 lg:pb-0">
+      <div className="lg:pl-60 pb-24 lg:pb-0">
         <LegalFooter />
       </div>
-
-      <ProfileEditModal
-        open={profileSettingsOpen}
-        onClose={() => setProfileSettingsOpen(false)}
-      />
 
       {/* Subscription-required prompt (triggered by any gated 402) */}
       <Dialog open={upgradeOpen} onClose={() => setUpgradeOpen(false)} labelledBy="upgrade-title" className="max-w-md">
@@ -611,7 +544,7 @@ const Layout = ({ children }: LayoutProps) => {
             </p>
             <div className="mt-5 flex gap-2">
               <Link
-                to="/billing"
+                to="/settings/billing"
                 onClick={() => setUpgradeOpen(false)} className={buttonClasses('primary', 'md', 'flex-1')}
               >
                 <Sparkles className="w-4 h-4" />
@@ -626,7 +559,51 @@ const Layout = ({ children }: LayoutProps) => {
           </div>
       </Dialog>
 
+      <WhatsNewDialog open={whatsNewOpen} onClose={() => setWhatsNewOpen(false)} />
+
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onToggleTheme={toggleTheme} />
+
+      {/* Phone "More" sheet: settings, help and account actions in one place. */}
+      <Dialog open={moreOpen} onClose={() => setMoreOpen(false)} label="More" className="!mb-0 !mt-auto !w-full !max-w-full !rounded-b-none lg:hidden">
+        <div className="p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-3 px-3 py-2">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-edge bg-surface-raised">
+              {user?.company_logo_url ? <img src={user.company_logo_url} alt="" className="h-full w-full bg-white object-contain" /> : <User className="h-4 w-4" />}
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                <span className="truncate">{user?.full_name || 'User'}</span>
+                {!isFreePlan && <span className="shrink-0 rounded-lg border border-primary-500/40 bg-primary-500/15 px-1.5 py-px text-[10px] font-bold text-primary-700 dark:text-primary-300">PRO</span>}
+              </span>
+              <span className="block truncate text-xs text-ink-muted">{user?.email}</span>
+            </span>
+          </div>
+          <p className="mt-2 px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-ink-muted">Settings</p>
+          {NAV.filter((item) => item.group === 'settings').map(({ path, icon: Icon, label }) => (
+            <Link key={path} to={path} className={sheetItemClass} aria-current={isActive(path) ? 'page' : undefined}>
+              <Icon className="h-[18px] w-[18px]" />
+              {label}
+              <ChevronRight className="ml-auto h-4 w-4 text-ink-subtle" />
+            </Link>
+          ))}
+          <p className="mt-2 px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-ink-muted">Support</p>
+          <Link to="/help" className={sheetItemClass}>
+            <LifeBuoy className="h-[18px] w-[18px]" />
+            Help center
+            <ChevronRight className="ml-auto h-4 w-4 text-ink-subtle" />
+          </Link>
+          <button type="button" onClick={openWhatsNew} className={sheetItemClass}>
+            <Gift className="h-[18px] w-[18px]" />
+            What’s new
+            {whatsNewUnread && <span className="ml-auto h-2 w-2 rounded-full bg-primary-500" aria-label="unread" />}
+          </button>
+          <div className="my-2 border-t border-edge" />
+          <button type="button" onClick={() => { setMoreOpen(false); logout(); }} className={`${sheetItemClass} !text-red-600 dark:!text-red-400`}>
+            <LogOut className="h-[18px] w-[18px]" />
+            Log out
+          </button>
+        </div>
+      </Dialog>
 
       {/* Mobile bottom nav — labeled, top-level destinations only */}
       <nav
@@ -634,24 +611,30 @@ const Layout = ({ children }: LayoutProps) => {
         aria-label="Primary"
       >
         <div className="flex items-stretch justify-around px-1 py-1">
-          {visibleNav.filter((item) => item.inBottomBar !== false).map(({ path, icon: Icon, label, exact }) => {
-            const active = isActive(path, exact);
+          {BOTTOM_BAR.map(({ path, icon: Icon, label }) => {
+            const active = isActive(path);
             return (
               <Link
                 key={path}
                 to={path}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-h-[48px] min-w-[56px] flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1.5 transition-colors ${
-                  active ? 'text-primary-700 dark:text-primary-300 bg-primary-600/10' : 'text-ink-muted hover:text-ink-secondary'
-                }`}
+                className={`${bottomItemClass} ${active ? bottomItemActive : bottomItemIdle}`}
               >
                 <Icon className="w-[18px] h-[18px]" />
-                <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-medium'}`}>
-                  {label}
-                </span>
+                <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            aria-haspopup="dialog"
+            className={`relative ${bottomItemClass} ${location.pathname.startsWith('/settings') ? bottomItemActive : bottomItemIdle}`}
+          >
+            <MoreHorizontal className="w-[18px] h-[18px]" />
+            <span className="text-[10px] font-medium leading-none">More</span>
+            {whatsNewUnread && <span className="absolute right-3 top-1.5 h-2 w-2 rounded-full bg-primary-500" aria-hidden />}
+          </button>
         </div>
       </nav>
     </div>

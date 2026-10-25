@@ -5,7 +5,7 @@ token; the token is an unguessable capability URL. Internal cost breakdowns
 and margins are never exposed here.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,14 +18,18 @@ from app.core import ratelimit
 from app.core.database import get_db
 from app.core.errors import internal_error
 from app.core.security_log import log_security_event
-from app.models.models import Quote, QuoteStatus
+from app.models.models import Quote, QuoteAttachment, QuoteStatus
 from app.schemas.schemas import (
+    PublicQuoteAdjustment,
+    PublicQuoteAttachment,
     PublicQuoteLineItem,
     PublicQuoteRespondRequest,
     PublicQuoteResponse,
     PublicSellerInfo,
 )
 from app.services.document import ensure_quote_document, pdf_generator
+from app.services.quote import family_root_id
+from app.services.storage import storage
 
 router = APIRouter(tags=["Public Quotes"], prefix="/public")
 
@@ -97,14 +101,28 @@ def _public_line_items(quote: Quote) -> list[PublicQuoteLineItem]:
             part_name=part_name,
             quantity=quote.quantity or 1,
             unit_price=quote.unit_price,
-            line_total=quote.total_price,
+            line_total=quote.engine_total if quote.engine_total is not None else quote.total_price,
         )
     ]
 
 
-def _to_public_response(quote: Quote) -> PublicQuoteResponse:
+async def _shared_attachments(db: AsyncSession, quote: Quote) -> list[QuoteAttachment]:
+    rows = await db.execute(
+        select(QuoteAttachment)
+        .where(
+            QuoteAttachment.quote_root_id == family_root_id(quote),
+            QuoteAttachment.user_id == quote.user_id,
+            QuoteAttachment.share_with_customer.is_(True),
+        )
+        .order_by(QuoteAttachment.created_at)
+    )
+    return list(rows.scalars().all())
+
+
+def _to_public_response(quote: Quote, attachments: list[QuoteAttachment] | None = None) -> PublicQuoteResponse:
     return PublicQuoteResponse(
         quote_number=quote.quote_number,
+        title=quote.title,
         status=_public_status(quote),
         customer_name=quote.customer_name,
         customer_company=quote.customer_company,
@@ -114,6 +132,12 @@ def _to_public_response(quote: Quote) -> PublicQuoteResponse:
         inspection_level_name=quote.inspection_level.name if quote.inspection_level else None,
         tolerance_notes=quote.tolerance_notes,
         line_items=_public_line_items(quote),
+        adjustments=[PublicQuoteAdjustment(**item) for item in (quote.line_items or [])],
+        attachments=[
+            PublicQuoteAttachment(id=a.id, original_filename=a.original_filename, file_size=a.file_size)
+            for a in (attachments or [])
+        ],
+        version=quote.version or 1,
         total_price=quote.total_price,
         estimated_lead_time_days=quote.estimated_lead_time_days,
         valid_until=quote.valid_until,
@@ -143,7 +167,13 @@ async def get_public_quote(
 ):
     await ratelimit.enforce(request, "public.quote.view", limit=60, window_seconds=300)
     quote = await _get_shared_quote(db, share_token)
-    return _to_public_response(quote)
+    # Lets the shop see "viewed by customer" on this version.
+    now = datetime.utcnow()
+    if quote.customer_viewed_at is None or now - quote.customer_viewed_at > timedelta(minutes=10):
+        quote.customer_viewed_at = now
+        await db.commit()
+        await db.refresh(quote)
+    return _to_public_response(quote, await _shared_attachments(db, quote))
 
 
 @router.post("/quotes/{share_token}/respond", response_model=PublicQuoteResponse)
@@ -179,7 +209,7 @@ async def respond_to_public_quote(
         quote_id=str(quote.id),
         action=request.action,
     )
-    return _to_public_response(quote)
+    return _to_public_response(quote, await _shared_attachments(db, quote))
 
 
 @router.get("/quotes/{share_token}/pdf")
@@ -205,3 +235,28 @@ async def download_public_quote_pdf(
         media_type="application/pdf",
         headers={"X-Content-Type-Options": "nosniff"},
     )
+
+
+@router.get("/quotes/{share_token}/attachments/{attachment_id}")
+async def download_public_attachment(
+    request: Request,
+    share_token: str,
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """A drawing the shop shared on this quote; anything else is a 404."""
+    import uuid
+
+    from app.api.quotes import attachment_response
+
+    await ratelimit.enforce(request, "public.quote.attachment", limit=30, window_seconds=300)
+    quote = await _get_shared_quote(db, share_token)
+    try:
+        attachment_uuid = uuid.UUID(attachment_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    shared = {a.id: a for a in await _shared_attachments(db, quote)}
+    attachment = shared.get(attachment_uuid)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return attachment_response(attachment, await storage.get(attachment.file_path))
