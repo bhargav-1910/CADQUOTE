@@ -54,7 +54,6 @@ export const PLANS: Plan[] = [
     blurb: 'For manufacturers needing tailored workflows and volume.',
     features: [
       'Everything in Professional',
-      'Multiple team members',
       'Vendor routing & custom machine rates',
       'Onboarding & dedicated support',
     ],

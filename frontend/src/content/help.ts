@@ -207,7 +207,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       { type: 'list', items: [
         'Starter (free): try the full quoting flow with the built-in sample part.',
         'Professional: quote your own CAD files, with every feature included.',
-        'Enterprise: for larger shops and teams. Contact us.',
+        'Enterprise: for larger shops with custom workflows and volume. Contact us.',
       ] },
       { type: 'p', text: 'See current prices on the Pricing page. To upgrade, open Settings → Billing in the app.' },
     ],
